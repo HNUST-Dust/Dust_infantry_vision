@@ -1,0 +1,9 @@
+build/
+install/
+log/
+Testing/
+neo/
+src//install/
+src//log/
+**/pycache/
+**/*.pyc
