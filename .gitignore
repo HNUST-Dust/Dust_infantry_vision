@@ -1,9 +1,52 @@
+# CMake / build outputs
 build/
+build-*/
 install/
 log/
+logs/
 Testing/
+records/
 neo/
-src//install/
-src//log/
-**/pycache/
-**/*.pyc
+
+# ROS 2 local overlay artifacts
+src/install/
+src/log/
+
+# CMake generated files
+CMakeCache.txt
+CMakeFiles/
+cmake-build-*/
+cmake_install.cmake
+compile_commands.json
+CTestTestfile.cmake
+DartConfiguration.tcl
+Makefile
+
+# Compiled objects / binaries
+*.o
+*.obj
+*.a
+*.lib
+*.so
+*.dll
+*.dylib
+*.exe
+
+# Python cache
+__pycache__/
+*.py[cod]
+*.pyd
+
+# Editor / IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Runtime logs and recordings
+*.log
+*.avi
+*.mp4
+*.mkv
+*.mov
