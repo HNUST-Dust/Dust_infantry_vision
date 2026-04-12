@@ -1,0 +1,11 @@
+source;share/sp_msgs/hook/cmake_prefix_path.ps1
+source;share/sp_msgs/hook/cmake_prefix_path.dsv
+source;share/sp_msgs/hook/cmake_prefix_path.sh
+source;share/sp_msgs/hook/ld_library_path_lib.ps1
+source;share/sp_msgs/hook/ld_library_path_lib.dsv
+source;share/sp_msgs/hook/ld_library_path_lib.sh
+source;share/sp_msgs/local_setup.bash
+source;share/sp_msgs/local_setup.dsv
+source;share/sp_msgs/local_setup.ps1
+source;share/sp_msgs/local_setup.sh
+source;share/sp_msgs/local_setup.zsh

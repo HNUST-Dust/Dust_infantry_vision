@@ -1,0 +1,10 @@
+msg/Armors.idl
+msg/Armors.msg
+msg/GimbalCmd.idl
+msg/GimbalCmd.msg
+msg/Measurement.idl
+msg/Measurement.msg
+msg/Target.idl
+msg/Target.msg
+msg/TrackerInfo.idl
+msg/TrackerInfo.msg

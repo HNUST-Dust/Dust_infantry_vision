@@ -1,0 +1,2 @@
+builtin_interfaces/Time timestamp
+int8[] invincible_enemy_ids

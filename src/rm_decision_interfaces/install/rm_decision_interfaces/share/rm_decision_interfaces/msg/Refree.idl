@@ -1,0 +1,21 @@
+// generated from rosidl_adapter/resource/msg.idl.em
+// with input from rm_decision_interfaces/msg/Refree.msg
+// generated code does not contain a copyright notice
+
+#include "builtin_interfaces/msg/Time.idl"
+
+module rm_decision_interfaces {
+  module msg {
+    typedef uint16 uint16__16[16];
+    typedef uint8 uint8__16[16];
+    struct Refree {
+      builtin_interfaces::msg::Time timestamp;
+
+      uint8 game_status;
+
+      uint16__16 robot_hp;
+
+      uint8__16 robot_status;
+    };
+  };
+};

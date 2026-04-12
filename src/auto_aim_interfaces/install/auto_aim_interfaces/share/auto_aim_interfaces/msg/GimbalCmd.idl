@@ -1,0 +1,14 @@
+// generated from rosidl_adapter/resource/msg.idl.em
+// with input from auto_aim_interfaces/msg/GimbalCmd.msg
+// generated code does not contain a copyright notice
+
+
+module auto_aim_interfaces {
+  module msg {
+    struct GimbalCmd {
+      float yaw;
+
+      float pitch;
+    };
+  };
+};

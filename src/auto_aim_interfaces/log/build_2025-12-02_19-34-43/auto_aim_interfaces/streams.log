@@ -1,0 +1,376 @@
+[0.005s] Invoking command in '/home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/build/auto_aim_interfaces': CMAKE_PREFIX_PATH=/opt/ros/humble /usr/local/bin/cmake /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces -DCMAKE_INSTALL_PREFIX=/home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces
+[0.032s] -- The C compiler identification is GNU 11.4.0
+[0.063s] -- The CXX compiler identification is GNU 11.4.0
+[0.069s] -- Detecting C compiler ABI info
+[0.103s] -- Detecting C compiler ABI info - done
+[0.112s] -- Check for working C compiler: /usr/bin/cc - skipped
+[0.113s] -- Detecting C compile features
+[0.113s] -- Detecting C compile features - done
+[0.115s] -- Detecting CXX compiler ABI info
+[0.157s] -- Detecting CXX compiler ABI info - done
+[0.166s] -- Check for working CXX compiler: /usr/bin/c++ - skipped
+[0.167s] -- Detecting CXX compile features
+[0.167s] -- Detecting CXX compile features - done
+[0.168s] -- Found ament_cmake: 1.3.12 (/opt/ros/humble/share/ament_cmake/cmake)
+[0.243s] -- Found Python3: /usr/bin/python3 (found version "3.10.12") found components: Interpreter
+[0.290s] -- Found rosidl_default_generators: 1.2.0 (/opt/ros/humble/share/rosidl_default_generators/cmake)
+[0.291s] -- Using all available rosidl_typesupport_c: rosidl_typesupport_fastrtps_c;rosidl_typesupport_introspection_c
+[0.295s] -- Found rosidl_adapter: 3.1.7 (/opt/ros/humble/share/rosidl_adapter/cmake)
+[0.318s] -- Using all available rosidl_typesupport_cpp: rosidl_typesupport_fastrtps_cpp;rosidl_typesupport_introspection_cpp
+[0.338s] -- Found std_msgs: 4.9.0 (/opt/ros/humble/share/std_msgs/cmake)
+[0.357s] -- Found geometry_msgs: 4.9.0 (/opt/ros/humble/share/geometry_msgs/cmake)
+[0.615s] -- Found ament_cmake_ros: 0.10.0 (/opt/ros/humble/share/ament_cmake_ros/cmake)
+[0.887s] -- Using all available rosidl_typesupport_c: rosidl_typesupport_fastrtps_c;rosidl_typesupport_introspection_c
+[1.245s] -- Using all available rosidl_typesupport_cpp: rosidl_typesupport_fastrtps_cpp;rosidl_typesupport_introspection_cpp
+[1.246s] [33mCMake Warning (dev) at /opt/ros/humble/share/rosidl_generator_py/cmake/rosidl_generator_py_generate_interfaces.cmake:20 (find_package):
+[1.246s]   Policy CMP0148 is not set: The FindPythonInterp and FindPythonLibs modules
+[1.246s]   are removed.  Run "cmake --help-policy CMP0148" for policy details.  Use
+[1.246s]   the cmake_policy command to set the policy and suppress this warning.
+[1.246s] 
+[1.246s] Call Stack (most recent call first):
+[1.246s]   /opt/ros/humble/share/ament_cmake_core/cmake/core/ament_execute_extensions.cmake:48 (include)
+[1.247s]   /opt/ros/humble/share/rosidl_cmake/cmake/rosidl_generate_interfaces.cmake:286 (ament_execute_extensions)
+[1.247s]   CMakeLists.txt:14 (rosidl_generate_interfaces)
+[1.247s] This warning is for project developers.  Use -Wno-dev to suppress it.
+[1.247s] [0m
+[1.258s] -- Found PythonInterp: /usr/bin/python3 (found suitable version "3.10.12", minimum required is "3.6")
+[1.259s] -- Found python_cmake_module: 0.10.0 (/opt/ros/humble/share/python_cmake_module/cmake)
+[1.259s] [33mCMake Warning (dev) at /opt/ros/humble/share/python_cmake_module/cmake/Modules/FindPythonExtra.cmake:52 (find_package):
+[1.259s]   Policy CMP0148 is not set: The FindPythonInterp and FindPythonLibs modules
+[1.259s]   are removed.  Run "cmake --help-policy CMP0148" for policy details.  Use
+[1.259s]   the cmake_policy command to set the policy and suppress this warning.
+[1.259s] 
+[1.259s] Call Stack (most recent call first):
+[1.259s]   /opt/ros/humble/share/rosidl_generator_py/cmake/rosidl_generator_py_generate_interfaces.cmake:23 (find_package)
+[1.259s]   /opt/ros/humble/share/ament_cmake_core/cmake/core/ament_execute_extensions.cmake:48 (include)
+[1.259s]   /opt/ros/humble/share/rosidl_cmake/cmake/rosidl_generate_interfaces.cmake:286 (ament_execute_extensions)
+[1.259s]   CMakeLists.txt:14 (rosidl_generate_interfaces)
+[1.259s] This warning is for project developers.  Use -Wno-dev to suppress it.
+[1.259s] [0m
+[1.270s] [33mCMake Warning (dev) at /opt/ros/humble/share/python_cmake_module/cmake/Modules/FindPythonExtra.cmake:140 (find_package):
+[1.270s]   Policy CMP0148 is not set: The FindPythonInterp and FindPythonLibs modules
+[1.270s]   are removed.  Run "cmake --help-policy CMP0148" for policy details.  Use
+[1.270s]   the cmake_policy command to set the policy and suppress this warning.
+[1.270s] 
+[1.270s] Call Stack (most recent call first):
+[1.270s]   /opt/ros/humble/share/rosidl_generator_py/cmake/rosidl_generator_py_generate_interfaces.cmake:23 (find_package)
+[1.270s]   /opt/ros/humble/share/ament_cmake_core/cmake/core/ament_execute_extensions.cmake:48 (include)
+[1.270s]   /opt/ros/humble/share/rosidl_cmake/cmake/rosidl_generate_interfaces.cmake:286 (ament_execute_extensions)
+[1.270s]   CMakeLists.txt:14 (rosidl_generate_interfaces)
+[1.270s] This warning is for project developers.  Use -Wno-dev to suppress it.
+[1.270s] [0m
+[1.274s] -- Found PythonLibs: /usr/lib/x86_64-linux-gnu/libpython3.10.so (found suitable version "3.10.12", minimum required is "3.5")
+[1.274s] -- Using PYTHON_EXECUTABLE: /usr/bin/python3
+[1.274s] -- Using PYTHON_INCLUDE_DIRS: /usr/include/python3.10
+[1.274s] -- Using PYTHON_LIBRARIES: /usr/lib/x86_64-linux-gnu/libpython3.10.so
+[1.286s] -- Found PythonExtra: .so
+[1.325s] -- Configuring done (1.3s)
+[1.350s] -- Generating done (0.0s)
+[1.357s] -- Build files have been written to: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/build/auto_aim_interfaces
+[1.360s] Invoked command in '/home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/build/auto_aim_interfaces' returned '0': CMAKE_PREFIX_PATH=/opt/ros/humble /usr/local/bin/cmake /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces -DCMAKE_INSTALL_PREFIX=/home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces
+[1.362s] Invoking command in '/home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/build/auto_aim_interfaces': CMAKE_PREFIX_PATH=/opt/ros/humble /usr/local/bin/cmake --build /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/build/auto_aim_interfaces --target install -- -j12 -l12
+[1.376s] [  1%] [34m[1mGenerating C code for ROS interfaces[0m
+[1.379s] [  3%] [34m[1mGenerating C++ code for ROS interfaces[0m
+[1.380s] [  3%] Built target ament_cmake_python_copy_auto_aim_interfaces
+[1.513s] running egg_info
+[1.513s] creating auto_aim_interfaces.egg-info
+[1.513s] writing auto_aim_interfaces.egg-info/PKG-INFO
+[1.513s] writing dependency_links to auto_aim_interfaces.egg-info/dependency_links.txt
+[1.513s] writing top-level names to auto_aim_interfaces.egg-info/top_level.txt
+[1.513s] writing manifest file 'auto_aim_interfaces.egg-info/SOURCES.txt'
+[1.515s] reading manifest file 'auto_aim_interfaces.egg-info/SOURCES.txt'
+[1.515s] writing manifest file 'auto_aim_interfaces.egg-info/SOURCES.txt'
+[1.528s] [  3%] Built target ament_cmake_python_build_auto_aim_interfaces_egg
+[1.601s] [  3%] Built target auto_aim_interfaces__cpp
+[1.604s] [  4%] [34m[1mGenerating C++ type support dispatch for ROS interfaces[0m
+[1.605s] [  6%] [34m[1mGenerating C++ type support for eProsima Fast-RTPS[0m
+[1.605s] [  7%] [34m[1mGenerating C++ introspection for ROS interfaces[0m
+[1.608s] [ 11%] [32mBuilding C object CMakeFiles/auto_aim_interfaces__rosidl_generator_c.dir/rosidl_generator_c/auto_aim_interfaces/msg/detail/measurement__functions.c.o[0m
+[1.608s] [ 11%] [32mBuilding C object CMakeFiles/auto_aim_interfaces__rosidl_generator_c.dir/rosidl_generator_c/auto_aim_interfaces/msg/detail/gimbal_cmd__functions.c.o[0m
+[1.608s] [ 12%] [32mBuilding C object CMakeFiles/auto_aim_interfaces__rosidl_generator_c.dir/rosidl_generator_c/auto_aim_interfaces/msg/detail/armors__functions.c.o[0m
+[1.609s] [ 14%] [32mBuilding C object CMakeFiles/auto_aim_interfaces__rosidl_generator_c.dir/rosidl_generator_c/auto_aim_interfaces/msg/detail/target__functions.c.o[0m
+[1.609s] [ 15%] [32mBuilding C object CMakeFiles/auto_aim_interfaces__rosidl_generator_c.dir/rosidl_generator_c/auto_aim_interfaces/msg/detail/tracker_info__functions.c.o[0m
+[1.644s] [ 17%] [32m[1mLinking C shared library libauto_aim_interfaces__rosidl_generator_c.so[0m
+[1.661s] [ 17%] Built target auto_aim_interfaces__rosidl_generator_c
+[1.665s] [ 19%] [34m[1mGenerating C introspection for ROS interfaces[0m
+[1.665s] [ 20%] [34m[1mGenerating C type support dispatch for ROS interfaces[0m
+[1.666s] [ 22%] [34m[1mGenerating C type support for eProsima Fast-RTPS[0m
+[1.775s] [ 25%] [32mBuilding CXX object CMakeFiles/auto_aim_interfaces__rosidl_typesupport_cpp.dir/rosidl_typesupport_cpp/auto_aim_interfaces/msg/measurement__type_support.cpp.o[0m
+[1.775s] [ 25%] [32mBuilding CXX object CMakeFiles/auto_aim_interfaces__rosidl_typesupport_cpp.dir/rosidl_typesupport_cpp/auto_aim_interfaces/msg/armors__type_support.cpp.o[0m
+[1.775s] [ 26%] [32mBuilding CXX object CMakeFiles/auto_aim_interfaces__rosidl_typesupport_cpp.dir/rosidl_typesupport_cpp/auto_aim_interfaces/msg/gimbal_cmd__type_support.cpp.o[0m
+[1.776s] [ 30%] [32mBuilding CXX object CMakeFiles/auto_aim_interfaces__rosidl_typesupport_cpp.dir/rosidl_typesupport_cpp/auto_aim_interfaces/msg/target__type_support.cpp.o[0m
+[1.776s] [ 30%] [32mBuilding CXX object CMakeFiles/auto_aim_interfaces__rosidl_typesupport_cpp.dir/rosidl_typesupport_cpp/auto_aim_interfaces/msg/tracker_info__type_support.cpp.o[0m
+[1.831s] [ 33%] [32mBuilding CXX object CMakeFiles/auto_aim_interfaces__rosidl_typesupport_introspection_cpp.dir/rosidl_typesupport_introspection_cpp/auto_aim_interfaces/msg/detail/armors__type_support.cpp.o[0m
+[1.832s] [ 33%] [32mBuilding CXX object CMakeFiles/auto_aim_interfaces__rosidl_typesupport_introspection_cpp.dir/rosidl_typesupport_introspection_cpp/auto_aim_interfaces/msg/detail/gimbal_cmd__type_support.cpp.o[0m
+[1.832s] [ 34%] [32mBuilding CXX object CMakeFiles/auto_aim_interfaces__rosidl_typesupport_introspection_cpp.dir/rosidl_typesupport_introspection_cpp/auto_aim_interfaces/msg/detail/target__type_support.cpp.o[0m
+[1.885s] [ 36%] [32mBuilding CXX object CMakeFiles/auto_aim_interfaces__rosidl_typesupport_c.dir/rosidl_typesupport_c/auto_aim_interfaces/msg/gimbal_cmd__type_support.cpp.o[0m
+[1.913s] [ 38%] [32mBuilding CXX object CMakeFiles/auto_aim_interfaces__rosidl_typesupport_c.dir/rosidl_typesupport_c/auto_aim_interfaces/msg/armors__type_support.cpp.o[0m
+[1.936s] [ 39%] [32mBuilding C object CMakeFiles/auto_aim_interfaces__rosidl_typesupport_introspection_c.dir/rosidl_typesupport_introspection_c/auto_aim_interfaces/msg/detail/gimbal_cmd__type_support.c.o[0m
+[1.941s] [ 41%] [32mBuilding CXX object CMakeFiles/auto_aim_interfaces__rosidl_typesupport_c.dir/rosidl_typesupport_c/auto_aim_interfaces/msg/target__type_support.cpp.o[0m
+[1.965s] [ 44%] [32mBuilding C object CMakeFiles/auto_aim_interfaces__rosidl_typesupport_introspection_c.dir/rosidl_typesupport_introspection_c/auto_aim_interfaces/msg/detail/armors__type_support.c.o[0m
+[1.966s] [ 44%] [32mBuilding CXX object CMakeFiles/auto_aim_interfaces__rosidl_typesupport_c.dir/rosidl_typesupport_c/auto_aim_interfaces/msg/tracker_info__type_support.cpp.o[0m
+[1.993s] [ 46%] [32mBuilding CXX object CMakeFiles/auto_aim_interfaces__rosidl_typesupport_c.dir/rosidl_typesupport_c/auto_aim_interfaces/msg/measurement__type_support.cpp.o[0m
+[2.001s] [ 47%] [32mBuilding C object CMakeFiles/auto_aim_interfaces__rosidl_typesupport_introspection_c.dir/rosidl_typesupport_introspection_c/auto_aim_interfaces/msg/detail/target__type_support.c.o[0m
+[2.005s] [ 49%] [32mBuilding CXX object CMakeFiles/auto_aim_interfaces__rosidl_typesupport_fastrtps_cpp.dir/rosidl_typesupport_fastrtps_cpp/auto_aim_interfaces/msg/detail/dds_fastrtps/gimbal_cmd__type_support.cpp.o[0m
+[2.007s] [ 50%] [32mBuilding CXX object CMakeFiles/auto_aim_interfaces__rosidl_typesupport_introspection_cpp.dir/rosidl_typesupport_introspection_cpp/auto_aim_interfaces/msg/detail/tracker_info__type_support.cpp.o[0m
+[2.021s] [ 52%] [32m[1mLinking CXX shared library libauto_aim_interfaces__rosidl_typesupport_c.so[0m
+[2.028s] [ 53%] [32mBuilding CXX object CMakeFiles/auto_aim_interfaces__rosidl_typesupport_introspection_cpp.dir/rosidl_typesupport_introspection_cpp/auto_aim_interfaces/msg/detail/measurement__type_support.cpp.o[0m
+[2.035s] [ 55%] [32mBuilding CXX object CMakeFiles/auto_aim_interfaces__rosidl_typesupport_fastrtps_cpp.dir/rosidl_typesupport_fastrtps_cpp/auto_aim_interfaces/msg/detail/dds_fastrtps/armors__type_support.cpp.o[0m
+[2.035s] [ 58%] [32mBuilding C object CMakeFiles/auto_aim_interfaces__rosidl_typesupport_introspection_c.dir/rosidl_typesupport_introspection_c/auto_aim_interfaces/msg/detail/tracker_info__type_support.c.o[0m
+[2.035s] [ 58%] [32mBuilding C object CMakeFiles/auto_aim_interfaces__rosidl_typesupport_introspection_c.dir/rosidl_typesupport_introspection_c/auto_aim_interfaces/msg/detail/measurement__type_support.c.o[0m
+[2.040s] [ 60%] [32m[1mLinking CXX shared library libauto_aim_interfaces__rosidl_typesupport_cpp.so[0m
+[2.057s] [ 60%] Built target auto_aim_interfaces__rosidl_typesupport_c
+[2.061s] [ 61%] [32mBuilding CXX object CMakeFiles/auto_aim_interfaces__rosidl_typesupport_fastrtps_cpp.dir/rosidl_typesupport_fastrtps_cpp/auto_aim_interfaces/msg/detail/dds_fastrtps/target__type_support.cpp.o[0m
+[2.064s] [ 63%] [32mBuilding CXX object CMakeFiles/auto_aim_interfaces__rosidl_typesupport_fastrtps_cpp.dir/rosidl_typesupport_fastrtps_cpp/auto_aim_interfaces/msg/detail/dds_fastrtps/tracker_info__type_support.cpp.o[0m
+[2.064s] [ 65%] [32m[1mLinking C shared library libauto_aim_interfaces__rosidl_typesupport_introspection_c.so[0m
+[2.089s] [ 65%] Built target auto_aim_interfaces__rosidl_typesupport_cpp
+[2.090s] [ 65%] Built target auto_aim_interfaces__rosidl_typesupport_introspection_c
+[2.092s] [ 66%] [32mBuilding CXX object CMakeFiles/auto_aim_interfaces__rosidl_typesupport_fastrtps_c.dir/rosidl_typesupport_fastrtps_c/auto_aim_interfaces/msg/detail/gimbal_cmd__type_support_c.cpp.o[0m
+[2.094s] [ 69%] [32mBuilding CXX object CMakeFiles/auto_aim_interfaces__rosidl_typesupport_fastrtps_cpp.dir/rosidl_typesupport_fastrtps_cpp/auto_aim_interfaces/msg/detail/dds_fastrtps/measurement__type_support.cpp.o[0m
+[2.094s] [ 69%] [32mBuilding CXX object CMakeFiles/auto_aim_interfaces__rosidl_typesupport_fastrtps_c.dir/rosidl_typesupport_fastrtps_c/auto_aim_interfaces/msg/detail/armors__type_support_c.cpp.o[0m
+[2.198s] [ 71%] [32mBuilding CXX object CMakeFiles/auto_aim_interfaces__rosidl_typesupport_fastrtps_c.dir/rosidl_typesupport_fastrtps_c/auto_aim_interfaces/msg/detail/target__type_support_c.cpp.o[0m
+[2.217s] [ 73%] [32mBuilding CXX object CMakeFiles/auto_aim_interfaces__rosidl_typesupport_fastrtps_c.dir/rosidl_typesupport_fastrtps_c/auto_aim_interfaces/msg/detail/tracker_info__type_support_c.cpp.o[0m
+[2.232s] [ 74%] [32mBuilding CXX object CMakeFiles/auto_aim_interfaces__rosidl_typesupport_fastrtps_c.dir/rosidl_typesupport_fastrtps_c/auto_aim_interfaces/msg/detail/measurement__type_support_c.cpp.o[0m
+[2.395s] [ 76%] [32m[1mLinking CXX shared library libauto_aim_interfaces__rosidl_typesupport_introspection_cpp.so[0m
+[2.445s] [ 76%] Built target auto_aim_interfaces__rosidl_typesupport_introspection_cpp
+[2.454s] [ 77%] [32m[1mLinking CXX shared library libauto_aim_interfaces__rosidl_typesupport_fastrtps_cpp.so[0m
+[2.494s] [ 77%] Built target auto_aim_interfaces__rosidl_typesupport_fastrtps_cpp
+[2.507s] [ 79%] [32m[1mLinking CXX shared library libauto_aim_interfaces__rosidl_typesupport_fastrtps_c.so[0m
+[2.544s] [ 79%] Built target auto_aim_interfaces__rosidl_typesupport_fastrtps_c
+[2.551s] [ 79%] Built target auto_aim_interfaces
+[2.558s] [ 80%] [34m[1mGenerating Python code for ROS interfaces[0m
+[2.844s] [ 80%] Built target auto_aim_interfaces__py
+[2.851s] [ 84%] [32mBuilding C object CMakeFiles/auto_aim_interfaces__rosidl_generator_py.dir/rosidl_generator_py/auto_aim_interfaces/msg/_gimbal_cmd_s.c.o[0m
+[2.851s] [ 84%] [32mBuilding C object CMakeFiles/auto_aim_interfaces__rosidl_generator_py.dir/rosidl_generator_py/auto_aim_interfaces/msg/_armors_s.c.o[0m
+[2.851s] [ 85%] [32mBuilding C object CMakeFiles/auto_aim_interfaces__rosidl_generator_py.dir/rosidl_generator_py/auto_aim_interfaces/msg/_target_s.c.o[0m
+[2.851s] [ 87%] [32mBuilding C object CMakeFiles/auto_aim_interfaces__rosidl_generator_py.dir/rosidl_generator_py/auto_aim_interfaces/msg/_tracker_info_s.c.o[0m
+[2.851s] [ 88%] [32mBuilding C object CMakeFiles/auto_aim_interfaces__rosidl_generator_py.dir/rosidl_generator_py/auto_aim_interfaces/msg/_measurement_s.c.o[0m
+[2.906s] [ 90%] [32m[1mLinking C shared library rosidl_generator_py/auto_aim_interfaces/libauto_aim_interfaces__rosidl_generator_py.so[0m
+[2.925s] [ 90%] Built target auto_aim_interfaces__rosidl_generator_py
+[2.932s] [ 92%] [32mBuilding C object CMakeFiles/auto_aim_interfaces__rosidl_typesupport_introspection_c__pyext.dir/rosidl_generator_py/auto_aim_interfaces/_auto_aim_interfaces_s.ep.rosidl_typesupport_introspection_c.c.o[0m
+[2.932s] [ 95%] [32mBuilding C object CMakeFiles/auto_aim_interfaces__rosidl_typesupport_fastrtps_c__pyext.dir/rosidl_generator_py/auto_aim_interfaces/_auto_aim_interfaces_s.ep.rosidl_typesupport_fastrtps_c.c.o[0m
+[2.932s] [ 95%] [32mBuilding C object CMakeFiles/auto_aim_interfaces__rosidl_typesupport_c__pyext.dir/rosidl_generator_py/auto_aim_interfaces/_auto_aim_interfaces_s.ep.rosidl_typesupport_c.c.o[0m
+[2.989s] [100%] [32m[1mLinking C shared library rosidl_generator_py/auto_aim_interfaces/auto_aim_interfaces_s__rosidl_typesupport_c.cpython-310-x86_64-linux-gnu.so[0m
+[2.989s] [100%] [32m[1mLinking C shared library rosidl_generator_py/auto_aim_interfaces/auto_aim_interfaces_s__rosidl_typesupport_introspection_c.cpython-310-x86_64-linux-gnu.so[0m
+[2.989s] [100%] [32m[1mLinking C shared library rosidl_generator_py/auto_aim_interfaces/auto_aim_interfaces_s__rosidl_typesupport_fastrtps_c.cpython-310-x86_64-linux-gnu.so[0m
+[3.006s] [100%] Built target auto_aim_interfaces__rosidl_typesupport_c__pyext
+[3.007s] [100%] Built target auto_aim_interfaces__rosidl_typesupport_fastrtps_c__pyext
+[3.007s] [100%] Built target auto_aim_interfaces__rosidl_typesupport_introspection_c__pyext
+[3.012s] [36mInstall the project...[0m
+[3.015s] -- Install configuration: ""
+[3.015s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/share/ament_index/resource_index/rosidl_interfaces/auto_aim_interfaces
+[3.015s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/include/auto_aim_interfaces/auto_aim_interfaces
+[3.015s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/include/auto_aim_interfaces/auto_aim_interfaces/msg
+[3.015s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/include/auto_aim_interfaces/auto_aim_interfaces/msg/tracker_info.h
+[3.015s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/include/auto_aim_interfaces/auto_aim_interfaces/msg/rosidl_generator_c__visibility_control.h
+[3.015s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/include/auto_aim_interfaces/auto_aim_interfaces/msg/gimbal_cmd.h
+[3.015s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/include/auto_aim_interfaces/auto_aim_interfaces/msg/armors.h
+[3.016s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/include/auto_aim_interfaces/auto_aim_interfaces/msg/measurement.h
+[3.016s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/include/auto_aim_interfaces/auto_aim_interfaces/msg/detail
+[3.016s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/include/auto_aim_interfaces/auto_aim_interfaces/msg/detail/gimbal_cmd__functions.h
+[3.016s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/include/auto_aim_interfaces/auto_aim_interfaces/msg/detail/armors__functions.c
+[3.016s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/include/auto_aim_interfaces/auto_aim_interfaces/msg/detail/gimbal_cmd__functions.c
+[3.016s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/include/auto_aim_interfaces/auto_aim_interfaces/msg/detail/measurement__functions.c
+[3.016s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/include/auto_aim_interfaces/auto_aim_interfaces/msg/detail/tracker_info__functions.c
+[3.016s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/include/auto_aim_interfaces/auto_aim_interfaces/msg/detail/tracker_info__type_support.h
+[3.016s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/include/auto_aim_interfaces/auto_aim_interfaces/msg/detail/target__functions.c
+[3.016s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/include/auto_aim_interfaces/auto_aim_interfaces/msg/detail/measurement__type_support.h
+[3.016s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/include/auto_aim_interfaces/auto_aim_interfaces/msg/detail/target__struct.h
+[3.016s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/include/auto_aim_interfaces/auto_aim_interfaces/msg/detail/tracker_info__functions.h
+[3.016s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/include/auto_aim_interfaces/auto_aim_interfaces/msg/detail/armors__struct.h
+[3.016s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/include/auto_aim_interfaces/auto_aim_interfaces/msg/detail/target__type_support.h
+[3.016s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/include/auto_aim_interfaces/auto_aim_interfaces/msg/detail/target__functions.h
+[3.016s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/include/auto_aim_interfaces/auto_aim_interfaces/msg/detail/gimbal_cmd__type_support.h
+[3.016s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/include/auto_aim_interfaces/auto_aim_interfaces/msg/detail/measurement__functions.h
+[3.016s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/include/auto_aim_interfaces/auto_aim_interfaces/msg/detail/gimbal_cmd__struct.h
+[3.016s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/include/auto_aim_interfaces/auto_aim_interfaces/msg/detail/armors__type_support.h
+[3.016s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/include/auto_aim_interfaces/auto_aim_interfaces/msg/detail/measurement__struct.h
+[3.016s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/include/auto_aim_interfaces/auto_aim_interfaces/msg/detail/armors__functions.h
+[3.016s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/include/auto_aim_interfaces/auto_aim_interfaces/msg/detail/tracker_info__struct.h
+[3.016s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/include/auto_aim_interfaces/auto_aim_interfaces/msg/target.h
+[3.016s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/share/auto_aim_interfaces/environment/library_path.sh
+[3.017s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/share/auto_aim_interfaces/environment/library_path.dsv
+[3.017s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/lib/libauto_aim_interfaces__rosidl_generator_c.so
+[3.017s] -- Set non-toolchain portion of runtime path of "/home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/lib/libauto_aim_interfaces__rosidl_generator_c.so" to ""
+[3.017s] -- Up-to-date: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/include/auto_aim_interfaces/auto_aim_interfaces
+[3.017s] -- Up-to-date: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/include/auto_aim_interfaces/auto_aim_interfaces/msg
+[3.017s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/include/auto_aim_interfaces/auto_aim_interfaces/msg/rosidl_typesupport_fastrtps_c__visibility_control.h
+[3.017s] -- Up-to-date: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/include/auto_aim_interfaces/auto_aim_interfaces/msg/detail
+[3.017s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/include/auto_aim_interfaces/auto_aim_interfaces/msg/detail/gimbal_cmd__rosidl_typesupport_fastrtps_c.h
+[3.017s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/include/auto_aim_interfaces/auto_aim_interfaces/msg/detail/tracker_info__rosidl_typesupport_fastrtps_c.h
+[3.017s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/include/auto_aim_interfaces/auto_aim_interfaces/msg/detail/armors__rosidl_typesupport_fastrtps_c.h
+[3.017s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/include/auto_aim_interfaces/auto_aim_interfaces/msg/detail/target__rosidl_typesupport_fastrtps_c.h
+[3.017s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/include/auto_aim_interfaces/auto_aim_interfaces/msg/detail/measurement__rosidl_typesupport_fastrtps_c.h
+[3.017s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/lib/libauto_aim_interfaces__rosidl_typesupport_fastrtps_c.so
+[3.017s] -- Set non-toolchain portion of runtime path of "/home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/lib/libauto_aim_interfaces__rosidl_typesupport_fastrtps_c.so" to ""
+[3.017s] -- Up-to-date: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/include/auto_aim_interfaces/auto_aim_interfaces
+[3.017s] -- Up-to-date: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/include/auto_aim_interfaces/auto_aim_interfaces/msg
+[3.017s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/include/auto_aim_interfaces/auto_aim_interfaces/msg/rosidl_typesupport_introspection_c__visibility_control.h
+[3.017s] -- Up-to-date: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/include/auto_aim_interfaces/auto_aim_interfaces/msg/detail
+[3.017s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/include/auto_aim_interfaces/auto_aim_interfaces/msg/detail/measurement__rosidl_typesupport_introspection_c.h
+[3.017s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/include/auto_aim_interfaces/auto_aim_interfaces/msg/detail/target__type_support.c
+[3.017s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/include/auto_aim_interfaces/auto_aim_interfaces/msg/detail/armors__rosidl_typesupport_introspection_c.h
+[3.017s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/include/auto_aim_interfaces/auto_aim_interfaces/msg/detail/measurement__type_support.c
+[3.017s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/include/auto_aim_interfaces/auto_aim_interfaces/msg/detail/tracker_info__type_support.c
+[3.017s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/include/auto_aim_interfaces/auto_aim_interfaces/msg/detail/armors__type_support.c
+[3.018s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/include/auto_aim_interfaces/auto_aim_interfaces/msg/detail/gimbal_cmd__rosidl_typesupport_introspection_c.h
+[3.018s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/include/auto_aim_interfaces/auto_aim_interfaces/msg/detail/gimbal_cmd__type_support.c
+[3.018s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/include/auto_aim_interfaces/auto_aim_interfaces/msg/detail/tracker_info__rosidl_typesupport_introspection_c.h
+[3.018s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/include/auto_aim_interfaces/auto_aim_interfaces/msg/detail/target__rosidl_typesupport_introspection_c.h
+[3.018s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/lib/libauto_aim_interfaces__rosidl_typesupport_introspection_c.so
+[3.018s] -- Set non-toolchain portion of runtime path of "/home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/lib/libauto_aim_interfaces__rosidl_typesupport_introspection_c.so" to ""
+[3.018s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/lib/libauto_aim_interfaces__rosidl_typesupport_c.so
+[3.018s] -- Set non-toolchain portion of runtime path of "/home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/lib/libauto_aim_interfaces__rosidl_typesupport_c.so" to ""
+[3.018s] -- Up-to-date: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/include/auto_aim_interfaces/auto_aim_interfaces
+[3.018s] -- Up-to-date: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/include/auto_aim_interfaces/auto_aim_interfaces/msg
+[3.018s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/include/auto_aim_interfaces/auto_aim_interfaces/msg/measurement.hpp
+[3.018s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/include/auto_aim_interfaces/auto_aim_interfaces/msg/gimbal_cmd.hpp
+[3.018s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/include/auto_aim_interfaces/auto_aim_interfaces/msg/target.hpp
+[3.018s] -- Up-to-date: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/include/auto_aim_interfaces/auto_aim_interfaces/msg/detail
+[3.018s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/include/auto_aim_interfaces/auto_aim_interfaces/msg/detail/tracker_info__type_support.hpp
+[3.018s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/include/auto_aim_interfaces/auto_aim_interfaces/msg/detail/tracker_info__struct.hpp
+[3.018s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/include/auto_aim_interfaces/auto_aim_interfaces/msg/detail/measurement__builder.hpp
+[3.018s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/include/auto_aim_interfaces/auto_aim_interfaces/msg/detail/armors__type_support.hpp
+[3.018s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/include/auto_aim_interfaces/auto_aim_interfaces/msg/detail/armors__builder.hpp
+[3.018s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/include/auto_aim_interfaces/auto_aim_interfaces/msg/detail/armors__traits.hpp
+[3.018s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/include/auto_aim_interfaces/auto_aim_interfaces/msg/detail/target__builder.hpp
+[3.018s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/include/auto_aim_interfaces/auto_aim_interfaces/msg/detail/tracker_info__builder.hpp
+[3.018s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/include/auto_aim_interfaces/auto_aim_interfaces/msg/detail/gimbal_cmd__type_support.hpp
+[3.019s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/include/auto_aim_interfaces/auto_aim_interfaces/msg/detail/tracker_info__traits.hpp
+[3.019s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/include/auto_aim_interfaces/auto_aim_interfaces/msg/detail/measurement__traits.hpp
+[3.019s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/include/auto_aim_interfaces/auto_aim_interfaces/msg/detail/measurement__type_support.hpp
+[3.019s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/include/auto_aim_interfaces/auto_aim_interfaces/msg/detail/gimbal_cmd__struct.hpp
+[3.019s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/include/auto_aim_interfaces/auto_aim_interfaces/msg/detail/gimbal_cmd__builder.hpp
+[3.019s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/include/auto_aim_interfaces/auto_aim_interfaces/msg/detail/target__type_support.hpp
+[3.019s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/include/auto_aim_interfaces/auto_aim_interfaces/msg/detail/armors__struct.hpp
+[3.019s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/include/auto_aim_interfaces/auto_aim_interfaces/msg/detail/gimbal_cmd__traits.hpp
+[3.019s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/include/auto_aim_interfaces/auto_aim_interfaces/msg/detail/target__struct.hpp
+[3.019s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/include/auto_aim_interfaces/auto_aim_interfaces/msg/detail/measurement__struct.hpp
+[3.019s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/include/auto_aim_interfaces/auto_aim_interfaces/msg/detail/target__traits.hpp
+[3.019s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/include/auto_aim_interfaces/auto_aim_interfaces/msg/tracker_info.hpp
+[3.019s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/include/auto_aim_interfaces/auto_aim_interfaces/msg/armors.hpp
+[3.019s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/include/auto_aim_interfaces/auto_aim_interfaces/msg/rosidl_generator_cpp__visibility_control.hpp
+[3.019s] -- Up-to-date: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/include/auto_aim_interfaces/auto_aim_interfaces
+[3.019s] -- Up-to-date: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/include/auto_aim_interfaces/auto_aim_interfaces/msg
+[3.019s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/include/auto_aim_interfaces/auto_aim_interfaces/msg/rosidl_typesupport_fastrtps_cpp__visibility_control.h
+[3.019s] -- Up-to-date: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/include/auto_aim_interfaces/auto_aim_interfaces/msg/detail
+[3.019s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/include/auto_aim_interfaces/auto_aim_interfaces/msg/detail/gimbal_cmd__rosidl_typesupport_fastrtps_cpp.hpp
+[3.019s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/include/auto_aim_interfaces/auto_aim_interfaces/msg/detail/tracker_info__rosidl_typesupport_fastrtps_cpp.hpp
+[3.019s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/include/auto_aim_interfaces/auto_aim_interfaces/msg/detail/dds_fastrtps
+[3.019s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/include/auto_aim_interfaces/auto_aim_interfaces/msg/detail/target__rosidl_typesupport_fastrtps_cpp.hpp
+[3.019s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/include/auto_aim_interfaces/auto_aim_interfaces/msg/detail/armors__rosidl_typesupport_fastrtps_cpp.hpp
+[3.019s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/include/auto_aim_interfaces/auto_aim_interfaces/msg/detail/measurement__rosidl_typesupport_fastrtps_cpp.hpp
+[3.019s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/lib/libauto_aim_interfaces__rosidl_typesupport_fastrtps_cpp.so
+[3.020s] -- Set non-toolchain portion of runtime path of "/home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/lib/libauto_aim_interfaces__rosidl_typesupport_fastrtps_cpp.so" to ""
+[3.020s] -- Up-to-date: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/include/auto_aim_interfaces/auto_aim_interfaces
+[3.020s] -- Up-to-date: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/include/auto_aim_interfaces/auto_aim_interfaces/msg
+[3.020s] -- Up-to-date: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/include/auto_aim_interfaces/auto_aim_interfaces/msg/detail
+[3.020s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/include/auto_aim_interfaces/auto_aim_interfaces/msg/detail/target__rosidl_typesupport_introspection_cpp.hpp
+[3.020s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/include/auto_aim_interfaces/auto_aim_interfaces/msg/detail/measurement__type_support.cpp
+[3.020s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/include/auto_aim_interfaces/auto_aim_interfaces/msg/detail/tracker_info__rosidl_typesupport_introspection_cpp.hpp
+[3.020s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/include/auto_aim_interfaces/auto_aim_interfaces/msg/detail/armors__type_support.cpp
+[3.020s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/include/auto_aim_interfaces/auto_aim_interfaces/msg/detail/armors__rosidl_typesupport_introspection_cpp.hpp
+[3.020s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/include/auto_aim_interfaces/auto_aim_interfaces/msg/detail/measurement__rosidl_typesupport_introspection_cpp.hpp
+[3.020s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/include/auto_aim_interfaces/auto_aim_interfaces/msg/detail/gimbal_cmd__type_support.cpp
+[3.020s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/include/auto_aim_interfaces/auto_aim_interfaces/msg/detail/tracker_info__type_support.cpp
+[3.020s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/include/auto_aim_interfaces/auto_aim_interfaces/msg/detail/gimbal_cmd__rosidl_typesupport_introspection_cpp.hpp
+[3.020s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/include/auto_aim_interfaces/auto_aim_interfaces/msg/detail/target__type_support.cpp
+[3.020s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/lib/libauto_aim_interfaces__rosidl_typesupport_introspection_cpp.so
+[3.020s] -- Set non-toolchain portion of runtime path of "/home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/lib/libauto_aim_interfaces__rosidl_typesupport_introspection_cpp.so" to ""
+[3.020s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/lib/libauto_aim_interfaces__rosidl_typesupport_cpp.so
+[3.020s] -- Set non-toolchain portion of runtime path of "/home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/lib/libauto_aim_interfaces__rosidl_typesupport_cpp.so" to ""
+[3.020s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/share/auto_aim_interfaces/environment/pythonpath.sh
+[3.020s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/share/auto_aim_interfaces/environment/pythonpath.dsv
+[3.021s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/local/lib/python3.10/dist-packages/auto_aim_interfaces-0.0.0-py3.10.egg-info
+[3.021s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/local/lib/python3.10/dist-packages/auto_aim_interfaces-0.0.0-py3.10.egg-info/dependency_links.txt
+[3.021s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/local/lib/python3.10/dist-packages/auto_aim_interfaces-0.0.0-py3.10.egg-info/SOURCES.txt
+[3.021s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/local/lib/python3.10/dist-packages/auto_aim_interfaces-0.0.0-py3.10.egg-info/PKG-INFO
+[3.021s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/local/lib/python3.10/dist-packages/auto_aim_interfaces-0.0.0-py3.10.egg-info/top_level.txt
+[3.021s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/local/lib/python3.10/dist-packages/auto_aim_interfaces
+[3.021s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/local/lib/python3.10/dist-packages/auto_aim_interfaces/auto_aim_interfaces_s__rosidl_typesupport_fastrtps_c.cpython-310-x86_64-linux-gnu.so
+[3.021s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/local/lib/python3.10/dist-packages/auto_aim_interfaces/msg
+[3.021s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/local/lib/python3.10/dist-packages/auto_aim_interfaces/msg/_gimbal_cmd_s.c
+[3.021s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/local/lib/python3.10/dist-packages/auto_aim_interfaces/msg/_target.py
+[3.021s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/local/lib/python3.10/dist-packages/auto_aim_interfaces/msg/_gimbal_cmd.py
+[3.021s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/local/lib/python3.10/dist-packages/auto_aim_interfaces/msg/_measurement_s.c
+[3.021s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/local/lib/python3.10/dist-packages/auto_aim_interfaces/msg/_armors_s.c
+[3.021s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/local/lib/python3.10/dist-packages/auto_aim_interfaces/msg/_armors.py
+[3.021s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/local/lib/python3.10/dist-packages/auto_aim_interfaces/msg/__init__.py
+[3.021s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/local/lib/python3.10/dist-packages/auto_aim_interfaces/msg/_target_s.c
+[3.021s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/local/lib/python3.10/dist-packages/auto_aim_interfaces/msg/_tracker_info_s.c
+[3.021s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/local/lib/python3.10/dist-packages/auto_aim_interfaces/msg/_measurement.py
+[3.021s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/local/lib/python3.10/dist-packages/auto_aim_interfaces/msg/_tracker_info.py
+[3.021s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/local/lib/python3.10/dist-packages/auto_aim_interfaces/_auto_aim_interfaces_s.ep.rosidl_typesupport_introspection_c.c
+[3.021s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/local/lib/python3.10/dist-packages/auto_aim_interfaces/_auto_aim_interfaces_s.ep.rosidl_typesupport_fastrtps_c.c
+[3.021s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/local/lib/python3.10/dist-packages/auto_aim_interfaces/_auto_aim_interfaces_s.ep.rosidl_typesupport_c.c
+[3.021s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/local/lib/python3.10/dist-packages/auto_aim_interfaces/__init__.py
+[3.022s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/local/lib/python3.10/dist-packages/auto_aim_interfaces/auto_aim_interfaces_s__rosidl_typesupport_c.cpython-310-x86_64-linux-gnu.so
+[3.022s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/local/lib/python3.10/dist-packages/auto_aim_interfaces/auto_aim_interfaces_s__rosidl_typesupport_introspection_c.cpython-310-x86_64-linux-gnu.so
+[3.022s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/local/lib/python3.10/dist-packages/auto_aim_interfaces/libauto_aim_interfaces__rosidl_generator_py.so
+[3.043s] Listing '/home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/local/lib/python3.10/dist-packages/auto_aim_interfaces'...
+[3.043s] Compiling '/home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/local/lib/python3.10/dist-packages/auto_aim_interfaces/__init__.py'...
+[3.043s] Listing '/home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/local/lib/python3.10/dist-packages/auto_aim_interfaces/msg'...
+[3.043s] Compiling '/home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/local/lib/python3.10/dist-packages/auto_aim_interfaces/msg/__init__.py'...
+[3.043s] Compiling '/home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/local/lib/python3.10/dist-packages/auto_aim_interfaces/msg/_armors.py'...
+[3.043s] Compiling '/home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/local/lib/python3.10/dist-packages/auto_aim_interfaces/msg/_gimbal_cmd.py'...
+[3.043s] Compiling '/home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/local/lib/python3.10/dist-packages/auto_aim_interfaces/msg/_measurement.py'...
+[3.043s] Compiling '/home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/local/lib/python3.10/dist-packages/auto_aim_interfaces/msg/_target.py'...
+[3.043s] Compiling '/home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/local/lib/python3.10/dist-packages/auto_aim_interfaces/msg/_tracker_info.py'...
+[3.046s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/local/lib/python3.10/dist-packages/auto_aim_interfaces/auto_aim_interfaces_s__rosidl_typesupport_fastrtps_c.cpython-310-x86_64-linux-gnu.so
+[3.046s] -- Set non-toolchain portion of runtime path of "/home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/local/lib/python3.10/dist-packages/auto_aim_interfaces/auto_aim_interfaces_s__rosidl_typesupport_fastrtps_c.cpython-310-x86_64-linux-gnu.so" to ""
+[3.046s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/local/lib/python3.10/dist-packages/auto_aim_interfaces/auto_aim_interfaces_s__rosidl_typesupport_introspection_c.cpython-310-x86_64-linux-gnu.so
+[3.046s] -- Set non-toolchain portion of runtime path of "/home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/local/lib/python3.10/dist-packages/auto_aim_interfaces/auto_aim_interfaces_s__rosidl_typesupport_introspection_c.cpython-310-x86_64-linux-gnu.so" to ""
+[3.046s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/local/lib/python3.10/dist-packages/auto_aim_interfaces/auto_aim_interfaces_s__rosidl_typesupport_c.cpython-310-x86_64-linux-gnu.so
+[3.046s] -- Set non-toolchain portion of runtime path of "/home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/local/lib/python3.10/dist-packages/auto_aim_interfaces/auto_aim_interfaces_s__rosidl_typesupport_c.cpython-310-x86_64-linux-gnu.so" to ""
+[3.046s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/lib/libauto_aim_interfaces__rosidl_generator_py.so
+[3.047s] -- Set non-toolchain portion of runtime path of "/home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/lib/libauto_aim_interfaces__rosidl_generator_py.so" to ""
+[3.047s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/share/auto_aim_interfaces/msg/GimbalCmd.idl
+[3.047s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/share/auto_aim_interfaces/msg/Armors.idl
+[3.047s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/share/auto_aim_interfaces/msg/Target.idl
+[3.047s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/share/auto_aim_interfaces/msg/TrackerInfo.idl
+[3.047s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/share/auto_aim_interfaces/msg/Measurement.idl
+[3.047s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/share/auto_aim_interfaces/msg/GimbalCmd.msg
+[3.047s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/share/auto_aim_interfaces/msg/Armors.msg
+[3.047s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/share/auto_aim_interfaces/msg/Target.msg
+[3.047s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/share/auto_aim_interfaces/msg/TrackerInfo.msg
+[3.047s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/share/auto_aim_interfaces/msg/Measurement.msg
+[3.047s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/share/ament_index/resource_index/package_run_dependencies/auto_aim_interfaces
+[3.047s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/share/ament_index/resource_index/parent_prefix_path/auto_aim_interfaces
+[3.047s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/share/auto_aim_interfaces/environment/ament_prefix_path.sh
+[3.047s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/share/auto_aim_interfaces/environment/ament_prefix_path.dsv
+[3.047s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/share/auto_aim_interfaces/environment/path.sh
+[3.047s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/share/auto_aim_interfaces/environment/path.dsv
+[3.047s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/share/auto_aim_interfaces/local_setup.bash
+[3.047s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/share/auto_aim_interfaces/local_setup.sh
+[3.048s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/share/auto_aim_interfaces/local_setup.zsh
+[3.048s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/share/auto_aim_interfaces/local_setup.dsv
+[3.048s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/share/auto_aim_interfaces/package.dsv
+[3.048s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/share/ament_index/resource_index/packages/auto_aim_interfaces
+[3.048s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/share/auto_aim_interfaces/cmake/export_auto_aim_interfaces__rosidl_generator_cExport.cmake
+[3.048s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/share/auto_aim_interfaces/cmake/export_auto_aim_interfaces__rosidl_generator_cExport-noconfig.cmake
+[3.048s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/share/auto_aim_interfaces/cmake/export_auto_aim_interfaces__rosidl_typesupport_fastrtps_cExport.cmake
+[3.048s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/share/auto_aim_interfaces/cmake/export_auto_aim_interfaces__rosidl_typesupport_fastrtps_cExport-noconfig.cmake
+[3.048s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/share/auto_aim_interfaces/cmake/auto_aim_interfaces__rosidl_typesupport_introspection_cExport.cmake
+[3.048s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/share/auto_aim_interfaces/cmake/auto_aim_interfaces__rosidl_typesupport_introspection_cExport-noconfig.cmake
+[3.048s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/share/auto_aim_interfaces/cmake/auto_aim_interfaces__rosidl_typesupport_cExport.cmake
+[3.048s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/share/auto_aim_interfaces/cmake/auto_aim_interfaces__rosidl_typesupport_cExport-noconfig.cmake
+[3.048s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/share/auto_aim_interfaces/cmake/export_auto_aim_interfaces__rosidl_generator_cppExport.cmake
+[3.048s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/share/auto_aim_interfaces/cmake/export_auto_aim_interfaces__rosidl_typesupport_fastrtps_cppExport.cmake
+[3.048s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/share/auto_aim_interfaces/cmake/export_auto_aim_interfaces__rosidl_typesupport_fastrtps_cppExport-noconfig.cmake
+[3.048s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/share/auto_aim_interfaces/cmake/auto_aim_interfaces__rosidl_typesupport_introspection_cppExport.cmake
+[3.048s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/share/auto_aim_interfaces/cmake/auto_aim_interfaces__rosidl_typesupport_introspection_cppExport-noconfig.cmake
+[3.048s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/share/auto_aim_interfaces/cmake/auto_aim_interfaces__rosidl_typesupport_cppExport.cmake
+[3.049s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/share/auto_aim_interfaces/cmake/auto_aim_interfaces__rosidl_typesupport_cppExport-noconfig.cmake
+[3.049s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/share/auto_aim_interfaces/cmake/export_auto_aim_interfaces__rosidl_generator_pyExport.cmake
+[3.049s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/share/auto_aim_interfaces/cmake/export_auto_aim_interfaces__rosidl_generator_pyExport-noconfig.cmake
+[3.049s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/share/auto_aim_interfaces/cmake/rosidl_cmake-extras.cmake
+[3.049s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/share/auto_aim_interfaces/cmake/ament_cmake_export_dependencies-extras.cmake
+[3.049s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/share/auto_aim_interfaces/cmake/ament_cmake_export_include_directories-extras.cmake
+[3.049s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/share/auto_aim_interfaces/cmake/ament_cmake_export_libraries-extras.cmake
+[3.049s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/share/auto_aim_interfaces/cmake/ament_cmake_export_targets-extras.cmake
+[3.049s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/share/auto_aim_interfaces/cmake/rosidl_cmake_export_typesupport_targets-extras.cmake
+[3.049s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/share/auto_aim_interfaces/cmake/rosidl_cmake_export_typesupport_libraries-extras.cmake
+[3.049s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/share/auto_aim_interfaces/cmake/auto_aim_interfacesConfig.cmake
+[3.049s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/share/auto_aim_interfaces/cmake/auto_aim_interfacesConfig-version.cmake
+[3.049s] -- Installing: /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/install/auto_aim_interfaces/share/auto_aim_interfaces/package.xml
+[3.051s] Invoked command in '/home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/build/auto_aim_interfaces' returned '0': CMAKE_PREFIX_PATH=/opt/ros/humble /usr/local/bin/cmake --build /home/rmsentry/DUST_Infantry_Vision/src/auto_aim_interfaces/build/auto_aim_interfaces --target install -- -j12 -l12
