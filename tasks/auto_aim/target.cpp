@@ -123,12 +123,17 @@ void Target::predict(double dt)
   };
   // clang-format on
 
-  // 仅4装甲板目标：为 r, l, h 添加过程噪声，防止协方差崩塌导致 r/l 持续缩小
+  // 4装甲板目标：为 r, l, h 添加过程噪声，防止协方差崩塌
+  // 前哨站旋转半径固定，不添加过程噪声
   if (armor_num_ == 4) {
-    double v3 = 0.1;  // 几何参数随机游走方差
-    Q(8, 8) = v3 * c;    // r
-    Q(9, 9) = v3 * c;    // l
-    Q(10, 10) = v3 * c;  // h
+    double v3 = 0.1;
+    Q(8, 8) = v3 * c;
+    Q(9, 9) = v3 * c;
+    Q(10, 10) = v3 * c;
+  } else if (armor_num_ == 3 && this->name == ArmorName::outpost) {
+    // 前哨站：只给 h 添加过程噪声，r 固定
+    double v3 = 0.1;
+    Q(10, 10) = v3 * c;
   }
 
   // 防止夹角求和出现异常值
@@ -300,7 +305,17 @@ Eigen::Vector3d Target::h_armor_xyz(const Eigen::VectorXd & x, int id) const
   auto r = (use_l_h) ? x[8] + x[9] : x[8];
   auto armor_x = x[0] - r * std::cos(angle);
   auto armor_y = x[2] - r * std::sin(angle);
-  auto armor_z = (use_l_h) ? x[4] + x[10] : x[4];
+
+  double armor_z;
+  if (armor_num_ == 3 && this->name == ArmorName::outpost) {
+    // 前哨站三装甲板：高度等差分布
+    // id=0: z-h, id=1: z, id=2: z+h
+    armor_z = x[4] + (id - 1) * x[10];
+  } else if (use_l_h) {
+    armor_z = x[4] + x[10];
+  } else {
+    armor_z = x[4];
+  }
 
   return {armor_x, armor_y, armor_z};
 }
@@ -319,7 +334,12 @@ Eigen::MatrixXd Target::h_jacobian(const Eigen::VectorXd & x, int id) const
   auto dx_dl = (use_l_h) ? -std::cos(angle) : 0.0;
   auto dy_dl = (use_l_h) ? -std::sin(angle) : 0.0;
 
-  auto dz_dh = (use_l_h) ? 1.0 : 0.0;
+  double dz_dh;
+  if (armor_num_ == 3 && this->name == ArmorName::outpost) {
+    dz_dh = id - 1;  // id=0: -1, id=1: 0, id=2: +1
+  } else {
+    dz_dh = (use_l_h) ? 1.0 : 0.0;
+  }
 
   // clang-format off
   Eigen::MatrixXd H_armor_xyza{
