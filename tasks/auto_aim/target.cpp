@@ -98,7 +98,7 @@ void Target::predict(double dt)
   double v1, v2;
   if (name == ArmorName::outpost) {
     v1 = 10;   // 前哨站加速度方差
-    v2 = 0.1;  // 前哨站角加速度方差
+    v2 = 100;  // 前哨站角加速度方差（先提到和普通车一致，排除过程噪声因素）
   } else {
     v1 = 10;  // 加速度方差
     v2 = 100;  // 角加速度方差
@@ -131,9 +131,16 @@ void Target::predict(double dt)
     Q(9, 9) = v3 * c;
     Q(10, 10) = v3 * c;
   } else if (armor_num_ == 3 && this->name == ArmorName::outpost) {
-    // 前哨站：只给 h 添加过程噪声，r 固定
-    double v3 = 0.1;
-    Q(10, 10) = v3 * c;
+    // 前哨站：r 固定，h 已改用固定高度差不参与观测，不需要过程噪声
+    // 空：不给 x[8](r), x[9](l), x[10](h) 加噪声
+
+    // 前哨站旋转中心高度固定，不估计 z 方向速度
+    // ID 切换时高度变化不应激励 vz，否则 predict 会产生虚假 pitch 速度
+    for (int i = 4; i <= 5; i++) {
+      for (int j = 4; j <= 5; j++) {
+        Q(i, j) = 0;
+      }
+    }
   }
 
   // 防止夹角求和出现异常值
@@ -154,8 +161,14 @@ void Target::update(const Armor & armor)
 {
   // 装甲板匹配
   int id;
-  auto min_angle_error = 1e10;
+  auto min_total_error = 1e10;
   const std::vector<Eigen::Vector4d> & xyza_list = armor_xyza_list();
+
+  if (this->name == ArmorName::outpost && armor_num_ == 3) {
+    tools::logger()->debug(
+      "[Target] xyza z: {:.3f} {:.3f} {:.3f}",
+      xyza_list[0][2], xyza_list[1][2], xyza_list[2][2]);
+  }
 
   std::vector<std::pair<Eigen::Vector4d, int>> xyza_i_list;
   for (int i = 0; i < armor_num_; i++) {
@@ -170,17 +183,50 @@ void Target::update(const Armor & armor)
       return ypd1[2] < ypd2[2];
     });
 
+  // 前哨站3装甲板：利用高度差辅助判断 id
+  // id=0: 最低, id=1: 中等, id=2: 最高
+  // 高度差固定为 102mm（相邻装甲板）
+  constexpr double SENTRY_HEIGHT_DIFF = 0.102;
+  bool is_sentry_outpost = (this->name == ArmorName::outpost && armor_num_ == 3);
+
   // 取前3个distance最小的装甲板
   for (int i = 0; i < 3; i++) {
     const auto & xyza = xyza_i_list[i].first;
     Eigen::Vector3d ypd = tools::xyz2ypd(xyza.head(3));
+
+    // 角度误差（法向 yaw + 位置 yaw）
     auto angle_error = std::abs(tools::limit_rad(armor.ypr_in_world[0] - xyza[3])) +
                        std::abs(tools::limit_rad(armor.ypd_in_world[0] - ypd[0]));
 
-    if (std::abs(angle_error) < std::abs(min_angle_error)) {
-      id = xyza_i_list[i].second;
-      min_angle_error = angle_error;
+    double total_error;
+    if (is_sentry_outpost) {
+      // 前哨站：法向 yaw + 高度差联合匹配
+      // 法向 yaw 提供帧间稳定性，高度差通过 id_offset_ 校正系统性偏移
+      double norm_yaw_error = std::abs(tools::limit_rad(armor.ypr_in_world[0] - xyza[3]));
+      int predicted_id = xyza_i_list[i].second;
+      double h_off = (predicted_id == 0) ? -SENTRY_HEIGHT_DIFF : (predicted_id == 1) ? SENTRY_HEIGHT_DIFF : 0.0;
+      double predicted_z = ekf_.x[4] + h_off;
+      double height_error = std::abs(armor.xyz_in_world[2] - predicted_z);
+      total_error = norm_yaw_error + 5.0 * height_error;
+      tools::logger()->debug(
+        "[Match] i={} pred_id={} total_err={:.4f} norm_yaw_err={:.4f} height_err={:.4f} "
+        "obs_z={:.3f} pred_z={:.3f} head_yaw={:.3f} pred_angle={:.3f}",
+        i, predicted_id, total_error, norm_yaw_error, height_error,
+        armor.xyz_in_world[2], predicted_z, armor.ypr_in_world[0], xyza[3]);
+    } else {
+      total_error = angle_error;
     }
+
+    if (total_error < min_total_error) {
+      id = xyza_i_list[i].second;
+      min_total_error = total_error;
+    }
+  }
+
+  if (is_sentry_outpost) {
+    tools::logger()->debug(
+      "[Match] selected id: {}, min_err={:.4f}, ekf_angle={:.3f}, obs_ypd0={:.3f}, obs_head_yaw={:.3f}",
+      id, min_total_error, ekf_.x[6], armor.ypd_in_world[0], armor.ypr_in_world[0]);
   }
 
   if (id != 0) jumped = true;
@@ -194,9 +240,41 @@ void Target::update(const Armor & armor)
   if (is_switch_) switch_count_++;
 
   last_id = id;
+  virtual_update_count_ = 0;
+  tools::logger()->debug(
+    "[Target] tracking id: {}, name: {}, dist: {:.3f}", id, ARMOR_NAMES[this->name], distance);
   update_count_++;
 
   update_ypda(armor, id);
+
+  // 前哨站 ID 映射校正：累积每类 ID 的 obs_z，检测高度排列是否正确
+  if (this->name == ArmorName::outpost && armor_num_ == 3) {
+    const double alpha = 0.05;
+    avg_z_[id] = (1 - alpha) * avg_z_[id] + alpha * armor.xyz_in_world[2];
+    z_count_[id]++;
+
+    if (z_count_[0] >= 10 && z_count_[1] >= 10 && z_count_[2] >= 10) {
+      // 按 avg_z 从小到大排列对应的 ID
+      int order[3] = {0, 1, 2};
+      if (avg_z_[order[0]] > avg_z_[order[1]]) std::swap(order[0], order[1]);
+      if (avg_z_[order[1]] > avg_z_[order[2]]) std::swap(order[1], order[2]);
+      if (avg_z_[order[0]] > avg_z_[order[1]]) std::swap(order[0], order[1]);
+
+      // 置信度：最高最低高度差 > 0.12 才认为数据有效
+      if (avg_z_[order[2]] - avg_z_[order[0]] > 0.12 && order[0] != 0) {
+        // 校正 x[6]：把 实际最低板的当前预测角度 设为 id=0 的参考角度
+        double pred_angle_of_lowest =
+          tools::limit_rad(ekf_.x[6] + order[0] * 2.0 * CV_PI / 3.0);
+        tools::logger()->debug(
+          "[Target] ID mapping corrected: lowest_matched_id={}, "
+          "x[6]: {:.3f} -> {:.3f}",
+          order[0], ekf_.x[6], pred_angle_of_lowest);
+        ekf_.x[6] = pred_angle_of_lowest;
+      }
+      // 重置累积器，让校正后的新映射重新积累
+      for (int j = 0; j < 3; j++) z_count_[j] = 0;
+    }
+  }
 }
 
 void Target::update_ypda(const Armor & armor, int id)
@@ -208,7 +286,7 @@ void Target::update_ypda(const Armor & armor, int id)
   auto delta_angle = tools::limit_rad(armor.ypr_in_world[0] - center_yaw);
   Eigen::VectorXd R_dig{
     {4e-3, 4e-3, log(std::abs(delta_angle) + 1) + 1,
-     log(std::abs(armor.ypd_in_world[2]) + 1) / 200 + 9e-2}};
+     log(std::abs(armor.ypd_in_world[2]) + 1) / 200 + 1e-2}};
 
   //测量过程噪声偏差的方差
   Eigen::MatrixXd R = R_dig.asDiagonal();
@@ -236,6 +314,14 @@ void Target::update_ypda(const Armor & armor, int id)
 
   ekf_.update(z, H, R, h, z_subtract);
 
+  // debug: 看角度残差是否接近π
+  if (this->name == ArmorName::outpost && armor_num_ == 3) {
+    tools::logger()->debug(
+      "[Target] residual_angle={:.4f} residual_yaw={:.4f} omega={:.4f} ypr0={:.4f} pred_angle={:.4f}",
+      ekf_.data["residual_angle"], ekf_.data["residual_yaw"], ekf_.x[7],
+      armor.ypr_in_world[0], tools::limit_rad(ekf_.x[6] + id * 2 * CV_PI / armor_num_));
+  }
+
   distance = std::sqrt(tools::square(armor.xyz_in_world[0]) + tools::square(armor.xyz_in_world[1]));
 
   // 仅4装甲板目标：将 r 和 r+l 约束在绝对物理范围内
@@ -247,6 +333,13 @@ void Target::update_ypda(const Armor & armor, int id)
     double r2 = ekf_.x[8] + ekf_.x[9];
     r2 = std::clamp(r2, r_min, r_max);
     ekf_.x[9] = r2 - ekf_.x[8];
+  }
+
+  // 前哨站旋转中心高度固定，ID 切换不应产生 z 方向速度
+  if (this->name == ArmorName::outpost && armor_num_ == 3) {
+    ekf_.x[5] = 0;
+    ekf_.P(5, 4) = 0;
+    ekf_.P(4, 5) = 0;
   }
 
   // tools::logger()->debug(
@@ -269,6 +362,8 @@ std::vector<Eigen::Vector4d> Target::armor_xyza_list() const
   }
   return _armor_xyza_list;
 }
+
+void Target::set_initial_omega(double w) { ekf_.x[7] = w; }
 
 bool Target::diverged()
 {
@@ -308,9 +403,10 @@ Eigen::Vector3d Target::h_armor_xyz(const Eigen::VectorXd & x, int id) const
 
   double armor_z;
   if (armor_num_ == 3 && this->name == ArmorName::outpost) {
-    // 前哨站三装甲板：高度等差分布
-    // id=0: z-h, id=1: z, id=2: z+h
-    armor_z = x[4] + (id - 1) * x[10];
+    // 前哨站三装甲板：固定高度差102mm，排列 id0=最低 id1=最高 id2=中间
+    constexpr double SENTRY_HEIGHT_DIFF = 0.102;  // 102mm
+    double h_off = (id == 0) ? -SENTRY_HEIGHT_DIFF : (id == 1) ? SENTRY_HEIGHT_DIFF : 0.0;
+    armor_z = x[4] + h_off;
   } else if (use_l_h) {
     armor_z = x[4] + x[10];
   } else {
@@ -335,8 +431,9 @@ Eigen::MatrixXd Target::h_jacobian(const Eigen::VectorXd & x, int id) const
   auto dy_dl = (use_l_h) ? -std::sin(angle) : 0.0;
 
   double dz_dh;
-  if (armor_num_ == 3 && this->name == ArmorName::outpost) {
-    dz_dh = id - 1;  // id=0: -1, id=1: 0, id=2: +1
+  bool is_outpost_3 = (armor_num_ == 3 && this->name == ArmorName::outpost);
+  if (is_outpost_3) {
+    dz_dh = 1.0;
   } else {
     dz_dh = (use_l_h) ? 1.0 : 0.0;
   }
@@ -345,7 +442,7 @@ Eigen::MatrixXd Target::h_jacobian(const Eigen::VectorXd & x, int id) const
   Eigen::MatrixXd H_armor_xyza{
     {1, 0, 0, 0, 0, 0, dx_da, 0, dx_dr, dx_dl,     0},
     {0, 0, 1, 0, 0, 0, dy_da, 0, dy_dr, dy_dl,     0},
-    {0, 0, 0, 0, 1, 0,     0, 0,     0,     0, dz_dh},
+    {0, 0, 0, 0, dz_dh, 0,     0, 0,     0,     0,     0},
     {0, 0, 0, 0, 0, 0,     1, 0,     0,     0,     0}
   };
   // clang-format on

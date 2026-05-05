@@ -43,11 +43,11 @@ std::list<Target> Tracker::track(
   armors.remove_if([&](const auto_aim::Armor & a) { return a.color != enemy_color_; });
 
   // 过滤前哨站顶部装甲板
-  // armors.remove_if([this](const auto_aim::Armor & a) {
-  //   return a.name == ArmorName::outpost &&
-  //          solver_.oupost_reprojection_error(a, 27.5 * CV_PI / 180.0) <
-  //            solver_.oupost_reprojection_error(a, -15 * CV_PI / 180.0);
-  // });
+  armors.remove_if([this](const auto_aim::Armor & a) {
+    return a.name == ArmorName::outpost &&
+           solver_.oupost_reprojection_error(a, 27.5 * CV_PI / 180.0) <
+             solver_.oupost_reprojection_error(a, -15 * CV_PI / 180.0);
+  });
 
   // 优先选择靠近图像中心的装甲板
   armors.sort([](const Armor & a, const Armor & b) {
@@ -248,6 +248,7 @@ bool Tracker::set_target(std::list<Armor> & armors, std::chrono::steady_clock::t
   else if (armor.name == ArmorName::outpost) {
     Eigen::VectorXd P0_dig{{1, 64, 1, 64, 1, 81, 0.4, 100, 1e-4, 0, 1}};
     target_ = Target(armor, t, 0.2765, 3, P0_dig);
+    target_.set_initial_omega(0.5);  // 前哨站典型转速，避免从0开始收敛
   }
 
   else if (armor.name == ArmorName::base) {
@@ -275,7 +276,15 @@ bool Tracker::update_target(std::list<Armor> & armors, std::chrono::steady_clock
     min_x = armor.center.x < min_x ? armor.center.x : min_x;
   }
 
-  if (found_count == 0) return false;
+  if (found_count == 0) {
+    // 前哨站已收敛：短时间检测间隙用 EKF 预测顶着，避免 temp_lost 抖动
+    if (target_.name == ArmorName::outpost && target_.convergened() && target_.virtual_update_count_ < 10) {
+      target_.virtual_update_count_++;
+      tools::logger()->debug("[Target] outpost gap frame {}, predict only", target_.virtual_update_count_);
+      return true;
+    }
+    return false;
+  }
 
   for (auto & armor : armors) {
     if (

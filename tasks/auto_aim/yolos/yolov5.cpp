@@ -1,5 +1,6 @@
 #include "yolov5.hpp"
 
+#include <chrono>
 #include <fmt/chrono.h>
 #include <yaml-cpp/yaml.h>
 
@@ -87,9 +88,24 @@ std::list<Armor> YOLOV5::detect(const cv::Mat & raw_img, int frame_count)
   ov::Tensor input_tensor(ov::element::u8, {1, 640, 640, 3}, input.data);
 
   // infer
+  static int frame_count_fps = 0;
+  static auto last_time = std::chrono::steady_clock::now();
   auto infer_request = compiled_model_.create_infer_request();
   infer_request.set_input_tensor(input_tensor);
+  auto infer_start = std::chrono::steady_clock::now();
   infer_request.infer();
+  auto infer_end = std::chrono::steady_clock::now();
+  double infer_ms = std::chrono::duration<double, std::milli>(infer_end - infer_start).count();
+
+  frame_count_fps++;
+  auto now = std::chrono::steady_clock::now();
+  double elapsed = std::chrono::duration<double>(now - last_time).count();
+  if (elapsed >= 1.0) {
+    double fps = frame_count_fps / elapsed;
+    tools::logger()->info("[YOLO] FPS: {:.1f}, Infer time: {:.2f} ms", fps, infer_ms);
+    frame_count_fps = 0;
+    last_time = now;
+  }
 
   // postprocess
   auto output_tensor = infer_request.get_output_tensor();

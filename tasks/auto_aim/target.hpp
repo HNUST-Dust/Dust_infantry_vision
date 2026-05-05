@@ -37,6 +37,8 @@ public:
   const tools::ExtendedKalmanFilter & ekf() const;
   std::vector<Eigen::Vector4d> armor_xyza_list() const;
 
+  void set_initial_omega(double w);
+
   bool diverged();
 
   bool convergened();
@@ -50,6 +52,10 @@ private:
   int armor_num_;
   int switch_count_;
   int update_count_;
+  int virtual_update_count_ = 0;
+  int id_offset_ = 0;         // ID 映射校正偏移量（相对于实际高度排列）
+  double avg_z_[3] = {0, 0, 0};  // 每类 ID 对应的观测高度 EMA
+  int z_count_[3] = {0, 0, 0};   // 每类 ID 累积帧数
 
   bool is_switch_, is_converged_;
 

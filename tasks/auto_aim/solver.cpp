@@ -28,7 +28,7 @@ Solver::Solver(const std::string & config_path) : R_gimbal2world_(Eigen::Matrix3
 {
   auto yaml = YAML::LoadFile(config_path);
 
-  auto R_gimbal2imubody_data = yaml["R_gimbal2imubody"].as<std::vector<double>>();
+  auto R_gimbal2imubody_data = yaml["R_gimbal2imubody"].as<std::vector<double>>(); 
   auto R_camera2gimbal_data = yaml["R_camera2gimbal"].as<std::vector<double>>();
   auto t_camera2gimbal_data = yaml["t_camera2gimbal"].as<std::vector<double>>();
   R_gimbal2imubody_ = Eigen::Matrix<double, 3, 3, Eigen::RowMajor>(R_gimbal2imubody_data.data());
