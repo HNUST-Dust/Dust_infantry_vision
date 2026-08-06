@@ -38,6 +38,8 @@ public:
   std::vector<Eigen::Vector4d> armor_xyza_list() const;
 
   void set_initial_omega(double w);
+  int virtual_update_count() const;
+  int record_virtual_update();
 
   bool diverged();
 

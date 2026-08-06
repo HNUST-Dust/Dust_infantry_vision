@@ -2,8 +2,9 @@
 #define AUTO_AIM__ARMOR_HPP
 
 #include <Eigen/Dense>
-#include <opencv2/opencv.hpp>
+#include <opencv2/core.hpp>
 #include <string>
+#include <tuple>
 #include <vector>
 
 namespace auto_aim

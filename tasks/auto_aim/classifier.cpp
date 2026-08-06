@@ -1,18 +1,23 @@
 #include "classifier.hpp"
 
+#include <opencv2/dnn.hpp>
+#include <openvino/openvino.hpp>
 #include <yaml-cpp/yaml.h>
 
 namespace auto_aim
 {
 Classifier::Classifier(const std::string & config_path)
+: core_(std::make_unique<ov::Core>())
 {
   auto yaml = YAML::LoadFile(config_path);
   auto model = yaml["classify_model"].as<std::string>();
   net_ = cv::dnn::readNetFromONNX(model);
-  auto ovmodel = core_.read_model(model);
-  compiled_model_ = core_.compile_model(
-    ovmodel, "AUTO", ov::hint::performance_mode(ov::hint::PerformanceMode::LATENCY));
+  auto ovmodel = core_->read_model(model);
+  compiled_model_ = std::make_unique<ov::CompiledModel>(core_->compile_model(
+    ovmodel, "AUTO", ov::hint::performance_mode(ov::hint::PerformanceMode::LATENCY)));
 }
+
+Classifier::~Classifier() = default;
 
 void Classifier::classify(Armor & armor)
 {
@@ -88,7 +93,7 @@ void Classifier::ovclassify(Armor & armor)
 
   ov::Tensor input_tensor(ov::element::f32, {1, 1, 32, 32}, input.data);
 
-  ov::InferRequest infer_request = compiled_model_.create_infer_request();
+  ov::InferRequest infer_request = compiled_model_->create_infer_request();
   infer_request.set_input_tensor(input_tensor);
   infer_request.infer();
 

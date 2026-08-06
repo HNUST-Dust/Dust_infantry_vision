@@ -22,8 +22,9 @@ Camera::Camera(const std::string & config_path)
 
   else if (camera_name == "hikrobot") {
     auto gain = tools::read<double>(yaml, "gain");
+    auto frame_rate = yaml["frame_rate"] ? tools::read<double>(yaml, "frame_rate") : 165.0;
     auto vid_pid = tools::read<std::string>(yaml, "vid_pid");
-    camera_ = std::make_unique<HikRobot>(exposure_ms, gain, vid_pid);
+    camera_ = std::make_unique<HikRobot>(exposure_ms, gain, frame_rate, vid_pid);
   }
 
   else {

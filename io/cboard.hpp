@@ -49,13 +49,11 @@ namespace io
 {
 enum Mode
 {
-  idle,
-  auto_aim,
-  small_buff,
-  big_buff,
-  outpost
+  idle = 0,
+  auto_aim = 1,
+  outpost = 4
 };
-const std::vector<std::string> MODES = {"idle", "auto_aim", "small_buff", "big_buff", "outpost"};
+const std::vector<std::string> MODES = {"idle", "auto_aim", "unknown", "unknown", "outpost"};
 
 // 哨兵专有
 enum ShootMode

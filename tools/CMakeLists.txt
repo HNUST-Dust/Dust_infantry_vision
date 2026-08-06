@@ -13,3 +13,9 @@ add_library(tools OBJECT
     pid.cpp
     crc.cpp
 )
+
+target_precompile_headers(tools PRIVATE
+  <Eigen/Geometry>
+  <opencv2/opencv.hpp>
+  <spdlog/spdlog.h>
+)

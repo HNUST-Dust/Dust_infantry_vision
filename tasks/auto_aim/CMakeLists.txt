@@ -26,3 +26,10 @@ add_library(auto_aim OBJECT
 )
 
 target_link_libraries(auto_aim io openvino::runtime tinympcstatic)
+
+target_precompile_headers(auto_aim PRIVATE
+  <Eigen/Geometry>
+  <opencv2/opencv.hpp>
+  <spdlog/spdlog.h>
+  <openvino/openvino.hpp>
+)

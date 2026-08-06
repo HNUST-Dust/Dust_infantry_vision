@@ -18,7 +18,7 @@ const std::string keys =
   "{circle      c  |         0.2         | delta_angle的切片数}"
   "{signal-mode m  |     triangle_wave   | 发送信号的模式}"
   "{axis        x  |         yaw         | 发送信号的轴}"
-  "{@config-path   | configs/sentry.yaml | 位置参数，yaml配置文件路径 }";
+  "{@config-path   | configs/standard3.yaml | 位置参数，yaml配置文件路径 }";
 
 double yaw_cal(double t)
 {

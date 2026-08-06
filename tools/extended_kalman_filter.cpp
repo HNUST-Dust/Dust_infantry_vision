@@ -63,8 +63,8 @@ Eigen::VectorXd ExtendedKalmanFilter::update(
   double nees = (x - x_prior).transpose() * P.inverse() * (x - x_prior);
 
   // 卡方检验阈值（自由度=4，取置信水平95%）
-  constexpr double nis_threshold = 0.8;
-  constexpr double nees_threshold = 0.8;
+  constexpr double nis_threshold = 9.4877;
+  constexpr double nees_threshold = 9.4877;
 
   if (nis > nis_threshold) nis_count_++, data["nis_fail"] = 1;
   if (nees > nees_threshold) nees_count_++, data["nees_fail"] = 1;

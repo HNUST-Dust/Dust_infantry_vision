@@ -8,8 +8,14 @@ using namespace std::chrono_literals;
 
 namespace io
 {
-HikRobot::HikRobot(double exposure_ms, double gain, const std::string & vid_pid)
-: exposure_us_(exposure_ms * 1e3), gain_(gain), queue_(1), daemon_quit_(false), vid_(-1), pid_(-1)
+HikRobot::HikRobot(double exposure_ms, double gain, double frame_rate, const std::string & vid_pid)
+: exposure_us_(exposure_ms * 1e3),
+  gain_(gain),
+  frame_rate_(frame_rate),
+  queue_(1),
+  daemon_quit_(false),
+  vid_(-1),
+  pid_(-1)
 {
   set_vid_pid(vid_pid);
   if (libusb_init(NULL)) tools::logger()->warn("Unable to init libusb!");
@@ -87,7 +93,8 @@ void HikRobot::capture_start()
   set_enum_value("GainAuto", MV_GAIN_MODE_OFF);
   set_float_value("ExposureTime", exposure_us_);
   set_float_value("Gain", gain_);
-  MV_CC_SetFrameRate(handle_, 150);
+  set_bool_value("AcquisitionFrameRateEnable", true);
+  set_float_value("AcquisitionFrameRate", frame_rate_);
 
   ret = MV_CC_StartGrabbing(handle_);
   if (ret != MV_OK) {
@@ -189,6 +196,18 @@ void HikRobot::set_float_value(const std::string & name, double value)
 
   if (ret != MV_OK) {
     tools::logger()->warn("MV_CC_SetFloatValue(\"{}\", {}) failed: {:#x}", name, value, ret);
+    return;
+  }
+}
+
+void HikRobot::set_bool_value(const std::string & name, bool value)
+{
+  unsigned int ret;
+
+  ret = MV_CC_SetBoolValue(handle_, name.c_str(), value);
+
+  if (ret != MV_OK) {
+    tools::logger()->warn("MV_CC_SetBoolValue(\"{}\", {}) failed: {:#x}", name, value, ret);
     return;
   }
 }

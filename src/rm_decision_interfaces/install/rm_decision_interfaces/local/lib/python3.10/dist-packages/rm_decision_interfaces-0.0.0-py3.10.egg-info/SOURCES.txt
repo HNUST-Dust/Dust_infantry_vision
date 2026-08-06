@@ -1,6 +1,0 @@
-setup.py
-rm_decision_interfaces/__init__.py
-rm_decision_interfaces.egg-info/PKG-INFO
-rm_decision_interfaces.egg-info/SOURCES.txt
-rm_decision_interfaces.egg-info/dependency_links.txt
-rm_decision_interfaces.egg-info/top_level.txt

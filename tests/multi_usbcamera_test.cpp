@@ -11,7 +11,7 @@ using namespace std::chrono_literals;
 
 const std::string keys =
   "{help h usage ? |                        | 输出命令行参数说明}"
-  "{@config-path   | configs/sentry.yaml    | 位置参数，yaml配置文件路径 }"
+  "{@config-path   | configs/standard3.yaml | 位置参数，yaml配置文件路径 }"
   "{d display      |                        | 显示视频流       }";
 
 int main(int argc, char * argv[])
@@ -28,7 +28,7 @@ int main(int argc, char * argv[])
 
   io::USBCamera usbcam1("video0", config_path);
   io::USBCamera usbcam2("video2", config_path);
-  io::Camera camera("configs/camera.yaml");
+  io::Camera camera("configs/standard3.yaml");
 
   cv::Mat img1, img2, img3;
   std::chrono::steady_clock::time_point timestamp;

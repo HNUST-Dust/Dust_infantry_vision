@@ -1,48 +1,34 @@
 # Repository Guidelines
 
-This document describes how to contribute to `sp_vision`, the DUST infantry vision system (auto-aim, auto-buff, and omni-perception) for RoboMaster. It is a C++17, CMake-based project that runs without ROS, though optional ROS 2 message packages live under `src/`.
-
 ## Project Structure & Module Organization
-
-- `tasks/` — feature modules: `auto_aim`, `auto_buff`, `omniperception`. Each is a CMake library (e.g. `add_library(auto_aim OBJECT ...)`).
-- `io/` — hardware drivers: Hikrobot/MindVision/USB cameras, serial, gimbal, DM IMU, and the ROS 2 bridge.
-- `tools/` — shared utilities: EKF, PID, logger, plotter, recorder, CRC, math helpers.
-- `tests/` — standalone test programs, one per module (e.g. `auto_aim_test.cpp`).
-- `calibration/` — camera, hand-eye, and robot-world hand-eye calibration executables.
-- `configs/` — YAML runtime configuration (e.g. `standard3.yaml`); `assets/` — models and demo recordings; `install/` and `autostart.sh` — deployment and autostart.
+This is a C++17 vision stack built with CMake. Application entry points live in `src/` (`infantry.cpp`, debug variants). Core feature modules are under `tasks/`: `auto_aim/` and `omniperception/`. Hardware and communication abstractions are in `io/`, shared utilities in `tools/`, calibration programs in `calibration/`, and runnable test programs in `tests/`. Robot and camera parameters are YAML files in `configs/`; model weights and demo data are in `assets/`. Treat `build/`, `install/`, and `log/` as generated output.
 
 ## Build, Test, and Development Commands
-
-Dependencies: OpenCV, fmt, Eigen3, spdlog, yaml-cpp, nlohmann-json, and OpenVINO 2024.6.0 at `/opt/intel/openvino_2024.6.0` (hardcoded in `CMakeLists.txt`).
+Install the SDKs and libraries described in `readme.md` first, including OpenCV, OpenVINO, Eigen, fmt, spdlog, yaml-cpp, and nlohmann-json. Build from the repository root:
 
 ```bash
-cmake -B build                        # configure the build
-make -C build -j$(nproc)              # compile all targets
-./build/infantry_debug -c configs/standard3.yaml   # run the main program
-./build/auto_aim_test                 # run a module test
+cmake -B build
+cmake --build build -j$(nproc)
 ```
+
+Primary binaries are emitted under `build/`, for example:
+
+```bash
+./build/infantry configs/standard3.yaml
+./build/camera_test
+./build/gimbal_test
+```
+
+Use `cmake --build build --target <target>` for focused iteration, such as `camera_test` or `infantry_debug`.
 
 ## Coding Style & Naming Conventions
-
-- Format with clang-format: 2-space indentation, Google-style braces. Preserve hand-aligned tables with `// clang-format off` / `// clang-format on`.
-- Use `snake_case` for functions and variables, `PascalCase` for types, `SCREAMING_SNAKE` for constants (e.g. `COLORS`).
-- Headers use `*_hpp` names and include guards such as `AUTO_AIM__ARMOR_HPP`; group code in namespaces (`auto_aim`, `tools`).
-- Comments are commonly written in Chinese; match the language of the surrounding file.
+Follow the existing C++ style: two-space indentation, K&R braces for functions and control flow, `snake_case` for files, variables, and functions, and PascalCase for classes such as `Tracker` or `ThreadSafeQueue`. Keep headers beside their implementation files (`detector.hpp` with `detector.cpp`). Prefer existing helpers in `tools/` and established module boundaries before adding new utilities.
 
 ## Testing Guidelines
-
-Tests are standalone executables in `tests/`, registered in the root `CMakeLists.txt`, and named `*_test.cpp`. Build, then run the binary directly:
-
-```bash
-make -C build -j$(nproc)
-./build/camera_test
-./build/planner_test
-```
-
-There is no CI or coverage gate. Hardware-dependent behavior (cameras, gimbal, serial) must be verified on the robot, and the results documented in the pull request.
+Tests are standalone CMake executables rather than a centralized CTest suite. Add new test files under `tests/` with names ending in `_test.cpp`, then register them in the root `CMakeLists.txt` with `add_executable` and `target_link_libraries`. Run the relevant binary directly from `build/`. Hardware-dependent tests should document required devices and config files in comments or usage output.
 
 ## Commit & Pull Request Guidelines
+Recent history uses short, direct commit summaries, often in Chinese, without strict prefixes. Keep commits focused and describe the changed behavior, for example `修复相机线程退出逻辑` or `Add planner offline test`. Pull requests should include a concise summary, affected modules, build/test commands run, linked issues if any, and screenshots or logs when changing visualization, detection output, or hardware behavior.
 
-Git history uses short, single-line summaries describing the change, often in Chinese, e.g. `新前哨站自瞄` ("new outpost auto-aim"). Follow that pattern: one concise line stating what changed, with the body reserved for why.
-
-Pull requests should state what and why, list changed configs/assets, and describe how the change was tested (simulated video vs. on-robot). Link the related issue when one exists.
+## Security & Configuration Tips
+Do not commit machine-specific secrets, absolute device IDs, or large generated logs. Keep reusable configuration in `configs/` and document robot-specific deviations. Verify OpenVINO path changes carefully because `CMakeLists.txt` currently points to `/opt/intel/openvino_2024.6.0/runtime/cmake/`.

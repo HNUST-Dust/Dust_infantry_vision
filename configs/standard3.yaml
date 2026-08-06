@@ -54,13 +54,13 @@ auto_fire: true # 是否由自瞄控制射击
 camera_name: "hikrobot"
 exposure_ms: 1.0
 gain: 16.9
+frame_rate: 165
 vid_pid: "2bdf:0001"
 
 #  1  0  0
 #  0  1  0
 #  0  0  1
 R_gimbal2imubody: [1, 0, 0, 0, 1, 0, 0, 0, 1]
-
 
 # 重投影误差: 0.0810px
 camera_matrix: [1772.9522573009506, 0, 710.9675421991991, 0, 1773.7469537258482, 558.21505301821605, 0, 0, 1]
@@ -70,21 +70,8 @@ distort_coeffs: [-0.081031579387608993, 0.088293870276620307, 0.0003182767423593
 R_camera2gimbal: [0.026937008699372988, -0.018830116998824867, 0.999459766201792, -0.99837928036845069, 0.0496344538528386, 0.027843015671890355, -0.050131926886013319, -0.99858992969313554, -0.017462594943318033]
 t_camera2gimbal: [0.28154374088604311, 0.24670979582321115, 0.067270501450574019]
 
-#####-----cboard参数-----#####
-cboard_com_port: "/dev/gimbal"
-cboard_baudrate: 115200
-skip_cboard_crc: true
-# quaternion_canid: 0x100
-# bullet_speed_canid: 0x101
-# send_canid: 0xff
-# can_interface: "can0"
-
 #####-----gimbal参数-----#####
 com_port: "/dev/gimbal"
-yaw_kp: 0
-yaw_kd: 0
-pitch_kp: 0
-pitch_kd: 0
 
 #####-----planner-----#####
 fire_thresh_high_speed: 1e-3   # 高速旋转时使用较宽松的阈值
@@ -97,10 +84,3 @@ R_yaw: [1]
 max_pitch_acc: 100
 Q_pitch: [9e9, 0]
 R_pitch: [1]
-
-#####-----buff_detector参数-----#####
-model: "assets/yolo11_buff_int8.xml"
-
-#####-----buff_aimer参数-----#####
-fire_gap_time: 0.700   # s
-predict_time: 0.120     # s

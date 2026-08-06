@@ -8,7 +8,8 @@
 
 const std::string keys =
   "{help h usage ? |                     | 输出命令行参数说明}"
-  "{config-path c  | configs/camera.yaml | yaml配置文件路径 }"
+  "{@config-path   | configs/standard3.yaml | yaml配置文件路径 }"
+  "{config c       |                     | yaml配置文件路径 }"
   "{d display      |                     | 显示视频流       }";
 
 int main(int argc, char * argv[])
@@ -21,7 +22,8 @@ int main(int argc, char * argv[])
 
   tools::Exiter exiter;
 
-  auto config_path = cli.get<std::string>("config-path");
+  auto config_path = cli.get<std::string>(0);
+  if (cli.has("config")) config_path = cli.get<std::string>("config");
   auto display = cli.has("display");
   io::Camera camera(config_path);
 

@@ -24,7 +24,7 @@
 
 const std::string keys =
   "{help h usage ? |                        | 输出命令行参数说明}"
-  "{@config-path   | configs/ascento.yaml | 位置参数，yaml配置文件路径 }";
+  "{@config-path   | configs/standard3.yaml | 位置参数，yaml配置文件路径 }";
 
 tools::OrderedQueue frame_queue;
 
@@ -68,8 +68,8 @@ int main(int argc, char * argv[])
 
   io::Camera camera(config_path);
   int num_yolo_thread = 8;
-  auto yolos = tools::create_yolov8s(config_path, num_yolo_thread, true);
-  // auto yolos = tools::create_yolo11s(config_path, num_yolo_thread, true);
+  auto yolos = auto_aim::create_yolov8s(config_path, num_yolo_thread, true);
+  // auto yolos = auto_aim::create_yolo11s(config_path, num_yolo_thread, true);
   std::vector<bool> yolo_used(num_yolo_thread, false);
   tools::ThreadPool thread_pool(num_yolo_thread);
 

@@ -54,10 +54,6 @@ std::string Gimbal::str(GimbalMode mode) const
       return "IDLE";
     case GimbalMode::AUTO_AIM:
       return "AUTO_AIM";
-    case GimbalMode::SMALL_BUFF:
-      return "SMALL_BUFF";
-    case GimbalMode::BIG_BUFF:
-      return "BIG_BUFF";
     default:
       return "INVALID";
   }
@@ -227,12 +223,6 @@ void Gimbal::read_thread()
         break;
       case 1:
         mode_ = GimbalMode::AUTO_AIM;
-        break;
-      case 2:
-        mode_ = GimbalMode::SMALL_BUFF;
-        break;
-      case 3:
-        mode_ = GimbalMode::BIG_BUFF;
         break;
       default:
         mode_ = GimbalMode::IDLE;

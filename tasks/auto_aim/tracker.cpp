@@ -1,9 +1,12 @@
 #include "tracker.hpp"
 
+#include <numeric>
+
 #include <yaml-cpp/yaml.h>
 
 #include <tuple>
 
+#include "tasks/omniperception/detection.hpp"
 #include "tools/logger.hpp"
 #include "tools/math_tools.hpp"
 
@@ -278,9 +281,9 @@ bool Tracker::update_target(std::list<Armor> & armors, std::chrono::steady_clock
 
   if (found_count == 0) {
     // 前哨站已收敛：短时间检测间隙用 EKF 预测顶着，避免 temp_lost 抖动
-    if (target_.name == ArmorName::outpost && target_.convergened() && target_.virtual_update_count_ < 10) {
-      target_.virtual_update_count_++;
-      tools::logger()->debug("[Target] outpost gap frame {}, predict only", target_.virtual_update_count_);
+    if (target_.name == ArmorName::outpost && target_.convergened() && target_.virtual_update_count() < 10) {
+      int virtual_update_count = target_.record_virtual_update();
+      tools::logger()->debug("[Target] outpost gap frame {}, predict only", virtual_update_count);
       return true;
     }
     return false;

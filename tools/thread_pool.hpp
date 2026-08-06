@@ -1,14 +1,21 @@
 #ifndef TOOLS__THREAD_POOL_HPP
 #define TOOLS__THREAD_POOL_HPP
 
+#include <chrono>
 #include <condition_variable>
 #include <functional>
+#include <list>
 #include <mutex>
 #include <queue>
+#include <stdexcept>
 #include <thread>
+#include <unordered_map>
+#include <utility>
 #include <vector>
 
-#include "tasks/auto_aim/yolo.hpp"
+#include <Eigen/Geometry>
+
+#include "tasks/auto_aim/armor.hpp"
 #include "tools/logger.hpp"
 
 namespace tools
@@ -21,26 +28,6 @@ struct Frame
   Eigen::Quaterniond q;
   std::list<auto_aim::Armor> armors;
 };
-
-inline std::vector<auto_aim::YOLO> create_yolo11s(
-  const std::string & config_path, int numebr, bool debug)
-{
-  std::vector<auto_aim::YOLO> yolo11s;
-  for (int i = 0; i < numebr; i++) {
-    yolo11s.push_back(auto_aim::YOLO(config_path, debug));
-  }
-  return yolo11s;
-}
-
-inline std::vector<auto_aim::YOLO> create_yolov8s(
-  const std::string & config_path, int numebr, bool debug)
-{
-  std::vector<auto_aim::YOLO> yolov8s;
-  for (int i = 0; i < numebr; i++) {
-    yolov8s.push_back(auto_aim::YOLO(config_path, debug));
-  }
-  return yolov8s;
-}
 
 class OrderedQueue
 {

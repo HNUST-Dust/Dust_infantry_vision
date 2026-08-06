@@ -1,2 +1,0 @@
-geometry_msgs/Pose measurement
-float32 timestamp

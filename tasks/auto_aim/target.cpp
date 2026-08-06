@@ -365,6 +365,10 @@ std::vector<Eigen::Vector4d> Target::armor_xyza_list() const
 
 void Target::set_initial_omega(double w) { ekf_.x[7] = w; }
 
+int Target::virtual_update_count() const { return virtual_update_count_; }
+
+int Target::record_virtual_update() { return ++virtual_update_count_; }
+
 bool Target::diverged()
 {
   auto r_ok = ekf_.x[8] > 0 && ekf_.x[8] < 0.8;

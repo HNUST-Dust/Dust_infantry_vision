@@ -1,2 +1,0 @@
-bool is_tracking
-float32 tracking_score
