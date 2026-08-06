@@ -40,8 +40,14 @@ MultiThreadDetector::MultiThreadDetector(const std::string & config_path, bool d
   tools::logger()->info("[MultiThreadDetector] initialized !");
 }
 
-void MultiThreadDetector::push(cv::Mat img, std::chrono::steady_clock::time_point t)
+bool MultiThreadDetector::push(cv::Mat img, std::chrono::steady_clock::time_point t)
 {
+  // 延迟优先：队列已满时直接丢弃新帧，不要启动推理浪费 GPU 时间
+  if (queue_.full()) {
+    tools::logger()->debug("[MultiThreadDetector] queue is full, drop frame!");
+    return false;
+  }
+
   auto x_scale = static_cast<double>(640) / img.rows;
   auto y_scale = static_cast<double>(640) / img.cols;
   auto scale = std::min(x_scale, y_scale);
@@ -60,6 +66,7 @@ void MultiThreadDetector::push(cv::Mat img, std::chrono::steady_clock::time_poin
   infer_request.set_input_tensor(input_tensor);
   infer_request.start_async();
   queue_.push({img.clone(), t, std::move(infer_request)});
+  return true;
 }
 
 std::tuple<std::list<Armor>, std::chrono::steady_clock::time_point> MultiThreadDetector::pop()

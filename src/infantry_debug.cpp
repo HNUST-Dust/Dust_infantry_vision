@@ -8,10 +8,10 @@
 
 #include "io/camera.hpp"
 #include "io/gimbal/gimbal.hpp"
+#include "tasks/auto_aim/multithread/mt_detector.hpp"
 #include "tasks/auto_aim/planner/planner.hpp"
 #include "tasks/auto_aim/solver.hpp"
 #include "tasks/auto_aim/tracker.hpp"
-#include "tasks/auto_aim/yolo.hpp"
 #include "tools/exiter.hpp"
 #include "tools/img_tools.hpp"
 #include "tools/logger.hpp"
@@ -40,7 +40,7 @@ int main(int argc, char * argv[])
   io::Gimbal gimbal(config_path);
   io::Camera camera(config_path);
 
-  auto_aim::YOLO yolo(config_path, true);
+  auto_aim::multithread::MultiThreadDetector detector(config_path, true);
   auto_aim::Solver solver(config_path);
   auto_aim::Tracker tracker(config_path, solver);
   auto_aim::Planner planner(config_path);
@@ -118,18 +118,23 @@ int main(int argc, char * argv[])
     }
   });
 
-  cv::Mat img;
-  std::chrono::steady_clock::time_point t;
-  auto t0 = std::chrono::steady_clock::now();
   std::string last_state = "lost";
 
-  while (!exiter.exit()) {
-    camera.read(img, t);
-    auto q = gimbal.q(t);
+  auto detect_thread = std::thread([&]() {
+    cv::Mat img;
+    std::chrono::steady_clock::time_point t;
+    while (!exiter.exit()) {
+      camera.read(img, t);
+      detector.push(img, t);
+    }
+  });
 
+  while (!exiter.exit()) {
+    auto [img_det, armors, t_det] = detector.debug_pop();
+
+    auto q = gimbal.q(t_det);
     solver.set_R_gimbal2world(q);
-    auto armors = yolo.detect(img);
-    auto targets = tracker.track(armors, t);
+    auto targets = tracker.track(armors, t_det);
     
     // 调试信息：Tracker 状态变化
     auto current_state = tracker.state();
@@ -158,13 +163,13 @@ int main(int argc, char * argv[])
       for (const Eigen::Vector4d & xyza : armor_xyza_list) {
         auto image_points =
           solver.reproject_armor(xyza.head(3), xyza[3], target.armor_type, target.name);
-        tools::draw_points(img, image_points, {0, 255, 0});
+        tools::draw_points(img_det, image_points, {0, 255, 0});
 
       }
       Eigen::Vector4d aim_xyza = planner.debug_xyza;
       auto image_points =
         solver.reproject_armor(aim_xyza.head(3), aim_xyza[3], target.armor_type, target.name);
-      tools::draw_points(img, image_points, {0, 0, 255});
+      tools::draw_points(img_det, image_points, {0, 0, 255});
       
       // 在终端上显示 EKF 状态信息
       auto ekf_x = target.ekf_x();
@@ -179,19 +184,20 @@ int main(int argc, char * argv[])
                              (current_state == "detecting") ? cv::Scalar(0, 255, 255) :
                              (current_state == "temp_lost") ? cv::Scalar(0, 165, 255) :
                              cv::Scalar(0, 0, 255);  // lost = red
-    cv::putText(img, fmt::format("State: {}", current_state), 
+    cv::putText(img_det, fmt::format("State: {}", current_state), 
                 {10, 30}, cv::FONT_HERSHEY_SIMPLEX, 0.8, state_color, 2);
-    cv::line(img, cv::Point(700, 540), cv::Point(740, 540), cv::Scalar(255, 255, 255));
-    cv::line(img, cv::Point(720, 520), cv::Point(720, 560), cv::Scalar(255, 255, 255));
+    cv::line(img_det, cv::Point(700, 540), cv::Point(740, 540), cv::Scalar(255, 255, 255));
+    cv::line(img_det, cv::Point(720, 520), cv::Point(720, 560), cv::Scalar(255, 255, 255));
 
-    cv::resize(img, img, {}, 0.5, 0.5);  // 显示时缩小图片尺寸
-    cv::imshow("reprojection", img);
+    cv::resize(img_det, img_det, {}, 0.5, 0.5);  // 显示时缩小图片尺寸
+    cv::imshow("reprojection", img_det);
     auto key = cv::waitKey(1);
     if (key == 'q') break;
   }
 
   quit = true;
   if (plan_thread.joinable()) plan_thread.join();
+  if (detect_thread.joinable()) detect_thread.join();
   gimbal.send(false, false, 0, 0, 0, 0, 0, 0);
 
   return 0;

@@ -48,6 +48,8 @@ public:
   bool checkinit();
 
 private:
+  friend class Tracker;  // Tracker 需要访问 virtual_update_count_（前哨站间隙预测逻辑）
+
   double fixed_r_;  // 固定的旋转半径
   int armor_num_;
   int switch_count_;

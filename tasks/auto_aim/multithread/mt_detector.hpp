@@ -20,11 +20,14 @@ class MultiThreadDetector
 public:
   MultiThreadDetector(const std::string & config_path, bool debug = false);
 
-  void push(cv::Mat img, std::chrono::steady_clock::time_point t);
+  /// 返回 false 表示队列已满、该帧被丢弃
+  bool push(cv::Mat img, std::chrono::steady_clock::time_point t);
 
   std::tuple<std::list<Armor>, std::chrono::steady_clock::time_point> pop();  //暂时不支持yolov8
 
   std::tuple<cv::Mat, std::list<Armor>, std::chrono::steady_clock::time_point> debug_pop();
+
+  bool empty() { return queue_.empty(); }
 
 private:
   ov::Core core_;
@@ -34,7 +37,7 @@ private:
 
   tools::ThreadSafeQueue<
     std::tuple<cv::Mat, std::chrono::steady_clock::time_point, ov::InferRequest>>
-    queue_{16, [] { tools::logger()->debug("[MultiThreadDetector] queue is full!"); }};
+    queue_{2, [] { tools::logger()->debug("[MultiThreadDetector] queue is full!"); }};
 };
 
 }  // namespace multithread
