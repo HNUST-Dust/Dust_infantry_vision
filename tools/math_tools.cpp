@@ -112,18 +112,20 @@ Eigen::Vector3d xyz2ypd(const Eigen::Vector3d & xyz)
 Eigen::MatrixXd xyz2ypd_jacobian(const Eigen::Vector3d & xyz)
 {
   auto x = xyz[0], y = xyz[1], z = xyz[2];
+  auto xy2 = std::max(x * x + y * y, 1e-12);
+  auto norm2 = std::max(xy2 + z * z, 1e-12);
 
-  auto dyaw_dx = -y / (x * x + y * y);
-  auto dyaw_dy = x / (x * x + y * y);
+  auto dyaw_dx = -y / xy2;
+  auto dyaw_dy = x / xy2;
   auto dyaw_dz = 0.0;
 
-  auto dpitch_dx = -(x * z) / ((z * z / (x * x + y * y) + 1) * std::pow((x * x + y * y), 1.5));
-  auto dpitch_dy = -(y * z) / ((z * z / (x * x + y * y) + 1) * std::pow((x * x + y * y), 1.5));
-  auto dpitch_dz = 1 / ((z * z / (x * x + y * y) + 1) * std::pow((x * x + y * y), 0.5));
+  auto dpitch_dx = -(x * z) / ((z * z / xy2 + 1) * std::pow(xy2, 1.5));
+  auto dpitch_dy = -(y * z) / ((z * z / xy2 + 1) * std::pow(xy2, 1.5));
+  auto dpitch_dz = 1 / ((z * z / xy2 + 1) * std::sqrt(xy2));
 
-  auto ddistance_dx = x / std::pow((x * x + y * y + z * z), 0.5);
-  auto ddistance_dy = y / std::pow((x * x + y * y + z * z), 0.5);
-  auto ddistance_dz = z / std::pow((x * x + y * y + z * z), 0.5);
+  auto ddistance_dx = x / std::sqrt(norm2);
+  auto ddistance_dy = y / std::sqrt(norm2);
+  auto ddistance_dz = z / std::sqrt(norm2);
 
   // clang-format off
   Eigen::MatrixXd J{
@@ -188,7 +190,8 @@ double get_abs_angle(const Eigen::Vector2d & vec1, const Eigen::Vector2d & vec2)
   if (vec1.norm() == 0. || vec2.norm() == 0.) {
     return 0.;
   }
-  return std::acos(vec1.dot(vec2) / (vec1.norm() * vec2.norm()));
+  auto cosine = vec1.dot(vec2) / (vec1.norm() * vec2.norm());
+  return std::acos(std::clamp(cosine, -1.0, 1.0));
 }
 
 double limit_min_max(double input, double min, double max)

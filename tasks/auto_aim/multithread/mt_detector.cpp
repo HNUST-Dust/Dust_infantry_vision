@@ -65,13 +65,16 @@ bool MultiThreadDetector::push(cv::Mat img, std::chrono::steady_clock::time_poin
 
   infer_request.set_input_tensor(input_tensor);
   infer_request.start_async();
-  queue_.push({img.clone(), t, std::move(infer_request)});
+  if (!queue_.push({img.clone(), input, t, std::move(infer_request)})) {
+    infer_request.wait();
+    return false;
+  }
   return true;
 }
 
 std::tuple<std::list<Armor>, std::chrono::steady_clock::time_point> MultiThreadDetector::pop()
 {
-  auto [img, t, infer_request] = queue_.pop();
+  auto [img, input, t, infer_request] = queue_.pop();
   infer_request.wait();
 
   // postprocess
@@ -89,7 +92,7 @@ std::tuple<std::list<Armor>, std::chrono::steady_clock::time_point> MultiThreadD
 std::tuple<cv::Mat, std::list<Armor>, std::chrono::steady_clock::time_point>
 MultiThreadDetector::debug_pop()
 {
-  auto [img, t, infer_request] = queue_.pop();
+  auto [img, input, t, infer_request] = queue_.pop();
   infer_request.wait();
 
   // postprocess

@@ -5,6 +5,8 @@
 #include "tools/math_tools.hpp"
 #include "tools/yaml.hpp"
 
+#include <stdexcept>
+
 namespace io
 {
 Gimbal::Gimbal(const std::string & config_path)
@@ -12,10 +14,15 @@ Gimbal::Gimbal(const std::string & config_path)
   auto yaml = tools::load(config_path);
   auto com_port = tools::read<std::string>(yaml, "com_port");
   skip_crc_ = false;  // 默认
-  if (yaml["skip_cboard_crc"]) skip_crc_ = tools::read<bool>(yaml, "skip_cboard_crc");
+  if (yaml["skip_gimbal_crc"])
+    skip_crc_ = tools::read<bool>(yaml, "skip_gimbal_crc");
+  else if (yaml["skip_cboard_crc"])
+    skip_crc_ = tools::read<bool>(yaml, "skip_cboard_crc");
 
   try {
     serial_.setPort(com_port);
+    auto timeout = serial::Timeout::simpleTimeout(20);
+    serial_.setTimeout(timeout);
     serial_.open();
   } catch (const std::exception & e) {
     tools::logger()->error("[Gimbal] Failed to open serial: {}", e.what());
@@ -24,13 +31,20 @@ Gimbal::Gimbal(const std::string & config_path)
 
   thread_ = std::thread(&Gimbal::read_thread, this);
 
-  queue_.pop();
+  if (!queue_.wait_pop_for(std::chrono::seconds(5))) {
+    quit_ = true;
+    queue_.close();
+    if (thread_.joinable()) thread_.join();
+    serial_.close();
+    throw std::runtime_error("[Gimbal] Timed out waiting for first quaternion");
+  }
   tools::logger()->info("[Gimbal] First q received.");
 }
 
 Gimbal::~Gimbal()
 {
   quit_ = true;
+  queue_.close();
   if (thread_.joinable()) thread_.join();
   serial_.close();
 }
@@ -61,11 +75,17 @@ std::string Gimbal::str(GimbalMode mode) const
 
 Eigen::Quaterniond Gimbal::q(std::chrono::steady_clock::time_point t)
 {
-  while (true) {
-    auto [q_a, t_a] = queue_.pop();
-    auto [q_b, t_b] = queue_.front();
+  while (!quit_) {
+    auto first = queue_.wait_pop_for(std::chrono::milliseconds(20));
+    if (!first) return Eigen::Quaterniond::Identity();
+    auto second = queue_.wait_front_for(std::chrono::milliseconds(20));
+    if (!second) return std::get<0>(*first).normalized();
+
+    auto [q_a, t_a] = *first;
+    auto [q_b, t_b] = *second;
     auto t_ab = tools::delta_time(t_a, t_b);
     auto t_ac = tools::delta_time(t_a, t);
+    if (t_ab <= 0) return q_b.normalized();
     auto k = t_ac / t_ab;
     Eigen::Quaterniond q_c = q_a.slerp(k, q_b).normalized();
     if (t < t_a) return q_c;
@@ -73,6 +93,8 @@ Eigen::Quaterniond Gimbal::q(std::chrono::steady_clock::time_point t)
 
     return q_c;
   }
+
+  return Eigen::Quaterniond::Identity();
 }
 
 void Gimbal::send(io::VisionToGimbal VisionToGimbal)

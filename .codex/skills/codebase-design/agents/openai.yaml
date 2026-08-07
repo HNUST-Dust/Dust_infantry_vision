@@ -1,0 +1,4 @@
+interface:
+  display_name: "Codebase Design"
+  short_description: "Vocabulary for deep-module design"
+  default_prompt: "Use $codebase-design to design a deeper interface and test seam for this module."

@@ -36,7 +36,7 @@ private:
   YOLO yolo_;
 
   tools::ThreadSafeQueue<
-    std::tuple<cv::Mat, std::chrono::steady_clock::time_point, ov::InferRequest>>
+    std::tuple<cv::Mat, cv::Mat, std::chrono::steady_clock::time_point, ov::InferRequest>>
     queue_{2, [] { tools::logger()->debug("[MultiThreadDetector] queue is full!"); }};
 };
 

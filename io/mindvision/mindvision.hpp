@@ -2,6 +2,7 @@
 #define IO__MINDVISION_HPP
 
 #include <chrono>
+#include <atomic>
 #include <opencv2/opencv.hpp>
 #include <thread>
 
@@ -28,10 +29,10 @@ private:
   double exposure_ms_, gamma_;
   CameraHandle handle_;
   int height_, width_;
-  bool quit_, ok_;
+  std::atomic<bool> quit_, ok_;
   std::thread capture_thread_;
   std::thread daemon_thread_;
-  tools::ThreadSafeQueue<CameraData> queue_;
+  tools::ThreadSafeQueue<CameraData, true> queue_;
   int vid_, pid_;
 
   void open();

@@ -17,12 +17,12 @@ namespace auto_aim
 class Target
 {
 public:
-  ArmorName name;
-  ArmorType armor_type;
-  ArmorPriority priority;
-  bool jumped;
-  int last_id;  // debug only
-  float distance;
+  ArmorName name = ArmorName::not_armor;
+  ArmorType armor_type = ArmorType::small;
+  ArmorPriority priority = ArmorPriority::fifth;
+  bool jumped = false;
+  int last_id = 0;  // debug only
+  float distance = 0.0F;
   Target() = default;
   Target(
     const Armor & armor, std::chrono::steady_clock::time_point t, double radius, int armor_num,
@@ -52,16 +52,17 @@ public:
 private:
   friend class Tracker;  // Tracker 需要访问 virtual_update_count_（前哨站间隙预测逻辑）
 
-  double fixed_r_;  // 固定的旋转半径
-  int armor_num_;
-  int switch_count_;
-  int update_count_;
+  double fixed_r_ = 0.0;  // 固定的旋转半径
+  int armor_num_ = 0;
+  int switch_count_ = 0;
+  int update_count_ = 0;
   int virtual_update_count_ = 0;
   int id_offset_ = 0;         // ID 映射校正偏移量（相对于实际高度排列）
   double avg_z_[3] = {0, 0, 0};  // 每类 ID 对应的观测高度 EMA
   int z_count_[3] = {0, 0, 0};   // 每类 ID 累积帧数
 
-  bool is_switch_, is_converged_;
+  bool is_switch_ = false;
+  bool is_converged_ = false;
 
   tools::ExtendedKalmanFilter ekf_;
   std::chrono::steady_clock::time_point t_;

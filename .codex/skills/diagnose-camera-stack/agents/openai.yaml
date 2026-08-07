@@ -1,0 +1,6 @@
+interface:
+  display_name: "Diagnose Camera Stack"
+  short_description: "Diagnose camera discovery and streaming failures"
+  default_prompt: "Use $diagnose-camera-stack to diagnose a camera that is not streaming."
+policy:
+  allow_implicit_invocation: true

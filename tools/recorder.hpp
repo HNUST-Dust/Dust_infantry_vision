@@ -35,7 +35,7 @@ private:
   cv::VideoWriter video_writer_;
   std::chrono::steady_clock::time_point start_time_;
   std::chrono::steady_clock::time_point last_time_;
-  tools::ThreadSafeQueue<FrameData> queue_;
+  tools::ThreadSafeQueue<FrameData, true> queue_;
   std::thread saving_thread_;  // 负责保存帧数据的线程
   void init(const cv::Mat & img);
   void save_to_file();

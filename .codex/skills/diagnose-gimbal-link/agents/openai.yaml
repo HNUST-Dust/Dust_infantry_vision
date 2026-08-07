@@ -1,0 +1,6 @@
+interface:
+  display_name: "Diagnose Gimbal Link"
+  short_description: "Diagnose serial, CRC, and gimbal timing safely"
+  default_prompt: "Use $diagnose-gimbal-link to diagnose a gimbal serial-link failure without moving hardware."
+policy:
+  allow_implicit_invocation: true

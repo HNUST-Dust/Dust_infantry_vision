@@ -26,8 +26,7 @@ Recorder::Recorder(double fps) : init_(false), fps_(fps), queue_(1), stop_thread
 Recorder::~Recorder()
 {
   stop_thread_ = true;
-  // 退出时给队列中额外推入一个空帧，避免pop一直等待
-  queue_.push({cv::Mat::zeros(0, 0, 0), {0, 0, 0, 0}, std::chrono::steady_clock::now()});
+  queue_.close();
   if (saving_thread_.joinable()) saving_thread_.join();  // 等待视频保存线程结束
 
   if (!init_) return;
@@ -37,19 +36,15 @@ Recorder::~Recorder()
 
 void Recorder::save_to_file()
 {
-  while (!stop_thread_) {
-    FrameData frame;
-    queue_.pop(frame);  // 从队列中取出帧数据
-    if (frame.img.empty()) {
-      tools::logger()->debug("Recorder received empty img. Skip this frame.");
-      continue;
-    }
+  while (true) {
+    auto frame = queue_.wait_pop();
+    if (!frame) break;
     // 写入视频文件
-    video_writer_.write(frame.img);
+    video_writer_.write(frame->img);
 
     // 写入文本文件（输出顺序为wxyz）
-    Eigen::Vector4d xyzw = frame.q.coeffs();
-    auto since_begin = tools::delta_time(frame.timestamp, start_time_);
+    Eigen::Vector4d xyzw = frame->q.coeffs();
+    auto since_begin = tools::delta_time(frame->timestamp, start_time_);
     text_writer_ << fmt::format(
       "{} {} {} {} {}\n", since_begin, xyzw[3], xyzw[0], xyzw[1], xyzw[2]);
   }

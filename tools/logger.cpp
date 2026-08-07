@@ -6,6 +6,7 @@
 #include <spdlog/spdlog.h>
 
 #include <chrono>
+#include <filesystem>
 #include <string>
 
 namespace tools
@@ -14,6 +15,7 @@ std::shared_ptr<spdlog::logger> logger_ = nullptr;
 
 void set_logger()
 {
+  std::filesystem::create_directories("logs");
   auto file_name = fmt::format("logs/{:%Y-%m-%d_%H-%M-%S}.log", std::chrono::system_clock::now());
   auto file_sink = std::make_shared<spdlog::sinks::basic_file_sink_mt>(file_name, true);
   file_sink->set_level(spdlog::level::debug);

@@ -1,0 +1,6 @@
+interface:
+  display_name: "Audit Vision Config"
+  short_description: "Audit YAML, models, and calibration values"
+  default_prompt: "Use $audit-vision-config to audit a vision configuration before deployment."
+policy:
+  allow_implicit_invocation: true

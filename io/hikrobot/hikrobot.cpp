@@ -28,6 +28,8 @@ HikRobot::HikRobot(double exposure_ms, double gain, double frame_rate, const std
     while (!daemon_quit_) {
       std::this_thread::sleep_for(100ms);
 
+      if (daemon_quit_) break;
+
       if (capturing_) continue;
 
       capture_stop();
@@ -44,17 +46,22 @@ HikRobot::HikRobot(double exposure_ms, double gain, double frame_rate, const std
 HikRobot::~HikRobot()
 {
   daemon_quit_ = true;
+  queue_.close();
   if (daemon_thread_.joinable()) daemon_thread_.join();
   tools::logger()->info("HikRobot destructed.");
 }
 
 void HikRobot::read(cv::Mat & img, std::chrono::steady_clock::time_point & timestamp)
 {
-  CameraData data;
-  queue_.pop(data);
+  auto data = queue_.wait_pop();
+  if (!data) {
+    img.release();
+    timestamp = std::chrono::steady_clock::now();
+    return;
+  }
 
-  img = data.img;
-  timestamp = data.timestamp;
+  img = std::move(data->img);
+  timestamp = data->timestamp;
 }
 
 void HikRobot::capture_start()

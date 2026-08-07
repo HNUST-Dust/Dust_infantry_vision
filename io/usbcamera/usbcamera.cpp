@@ -27,6 +27,8 @@ USBCamera::USBCamera(const std::string & open_name, const std::string & config_p
     while (!quit_) {
       std::this_thread::sleep_for(100ms);
 
+      if (quit_) break;
+
       if (ok_) continue;
 
       if (open_count_ > 20) {
@@ -65,6 +67,7 @@ USBCamera::~USBCamera()
     std::lock_guard<std::mutex> lock(cap_mutex_);
     close();
   }
+  queue_.close();
   if (daemon_thread_.joinable()) daemon_thread_.join();
   if (capture_thread_.joinable()) capture_thread_.join();
   tools::logger()->info("USBCamera destructed.");
@@ -83,11 +86,15 @@ cv::Mat USBCamera::read()
 
 void USBCamera::read(cv::Mat & img, std::chrono::steady_clock::time_point & timestamp)
 {
-  CameraData data;
-  queue_.pop(data);
+  auto data = queue_.wait_pop();
+  if (!data) {
+    img.release();
+    timestamp = std::chrono::steady_clock::now();
+    return;
+  }
 
-  img = data.img;
-  timestamp = data.timestamp;
+  img = std::move(data->img);
+  timestamp = data->timestamp;
 }
 
 void USBCamera::open()

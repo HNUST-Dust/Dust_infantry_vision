@@ -25,8 +25,24 @@ Planner::Planner(const std::string & config_path)
   setup_pitch_solver(config_path);
 }
 
+Planner::~Planner()
+{
+  tiny_cleanup(yaw_solver_);
+  tiny_cleanup(pitch_solver_);
+}
+
+Eigen::Vector4d Planner::debug_xyza() const
+{
+  std::lock_guard<std::mutex> lock(debug_mutex_);
+  return debug_xyza_;
+}
+
 Plan Planner::plan(Target target, double bullet_speed, const Eigen::Matrix3d & R_gimbal2world)
 {
+  const double fire_thresh = std::abs(target.ekf_x()[7]) > decision_speed_
+                               ? fire_thresh_high_speed_
+                               : fire_thresh_low_speed_;
+
   // 0. Check bullet speed
   if (bullet_speed < 10 || bullet_speed > 25) {
     bullet_speed = 23;
@@ -43,6 +59,10 @@ Plan Planner::plan(Target target, double bullet_speed, const Eigen::Matrix3d & R
     }
   }
   auto bullet_traj = tools::Trajectory(bullet_speed, min_dist, xyz.z());
+  if (bullet_traj.unsolvable) {
+    tools::logger()->debug("Unsolvable target trajectory");
+    return {false};
+  }
   target.predict(bullet_traj.fly_time);
 
   // 2. Get trajectory
@@ -90,7 +110,7 @@ Plan Planner::plan(Target target, double bullet_speed, const Eigen::Matrix3d & R
     std::hypot(
       traj(0, HALF_HORIZON + shoot_offset_) - yaw_solver_->work->x(0, HALF_HORIZON + shoot_offset_),
       traj(2, HALF_HORIZON + shoot_offset_) -
-        pitch_solver_->work->x(0, HALF_HORIZON + shoot_offset_)) < fire_thresh_;
+        pitch_solver_->work->x(0, HALF_HORIZON + shoot_offset_)) < fire_thresh;
   return plan;
 }
 
@@ -100,9 +120,6 @@ Plan Planner::plan(std::optional<Target> target, double bullet_speed, const Eige
 
   double delay_time =
     std::abs(target->ekf_x()[7]) > decision_speed_ ? high_speed_delay_time_ : low_speed_delay_time_;
-
-  fire_thresh_ =
-    std::abs(target->ekf_x()[7]) > decision_speed_ ? fire_thresh_high_speed_ : fire_thresh_low_speed_;
 
   auto future = std::chrono::steady_clock::now() + std::chrono::microseconds(int(delay_time * 1e6));
 
@@ -172,7 +189,10 @@ Eigen::Matrix<double, 2, 1> Planner::aim(const Target & target, double bullet_sp
       yaw = xyza[3];
     }
   }
-  debug_xyza = Eigen::Vector4d(xyz.x(), xyz.y(), xyz.z(), yaw);
+  {
+    std::lock_guard<std::mutex> lock(debug_mutex_);
+    debug_xyza_ = Eigen::Vector4d(xyz.x(), xyz.y(), xyz.z(), yaw);
+  }
 
   // Convert to gimbal frame before computing azimuth/pitch
   Eigen::Vector3d xyz_in_gimbal = R_gimbal2world.transpose() * xyz;

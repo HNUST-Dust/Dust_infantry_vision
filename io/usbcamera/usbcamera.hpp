@@ -2,6 +2,7 @@
 #define IO__USBCamera_HPP
 
 #include <chrono>
+#include <atomic>
 #include <iostream>
 #include <opencv2/opencv.hpp>
 #include <thread>
@@ -34,10 +35,10 @@ private:
   int open_count_;
   double image_width_, image_height_;
   int usb_gamma_, usb_gain_;
-  bool quit_, ok_;
+  std::atomic<bool> quit_, ok_;
   std::thread capture_thread_;
   std::thread daemon_thread_;
-  tools::ThreadSafeQueue<CameraData> queue_;
+  tools::ThreadSafeQueue<CameraData, true> queue_;
 
   void try_open();
   void open();

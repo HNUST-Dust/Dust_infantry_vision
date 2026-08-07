@@ -10,6 +10,7 @@ extern "C" {
 int tiny_setup(TinySolver** solverp,
                 tinyMatrix Adyn, tinyMatrix Bdyn, tinyMatrix fdyn, tinyMatrix Q, tinyMatrix R, 
                 tinytype rho, int nx, int nu, int N, int verbose);
+void tiny_cleanup(TinySolver *solver);
 int tiny_set_bound_constraints(TinySolver* solver,
                     tinyMatrix x_min, tinyMatrix x_max,
                     tinyMatrix u_min, tinyMatrix u_max);

@@ -62,9 +62,11 @@ int tiny_setup(TinySolver** solverp,
     status |= check_dimension("State input cost (R)", "rows",  R.rows(), nu);
     status |= check_dimension("State input cost (R)", "columns",  R.cols(), nu);
     if (status) {
+        tiny_cleanup(solver);
+        *solverp = nullptr;
         return status;
-    }
-    
+}
+
     work->x = tinyMatrix::Zero(nx, N);
     work->u = tinyMatrix::Zero(nu, N-1);
 
@@ -125,6 +127,8 @@ int tiny_setup(TinySolver** solverp,
     // Initialize cache
     status = tiny_precompute_and_set_cache(cache, Adyn, Bdyn, fdyn, work->Q.asDiagonal(), work->R.asDiagonal(), nx, nu, rho, verbose);
     if (status) {
+        tiny_cleanup(solver);
+        *solverp = nullptr;
         return status;
     }
 
@@ -134,6 +138,15 @@ int tiny_setup(TinySolver** solverp,
     }
 
     return 0;
+}
+
+void tiny_cleanup(TinySolver *solver) {
+    if (!solver) return;
+    delete solver->solution;
+    delete solver->cache;
+    delete solver->settings;
+    delete solver->work;
+    delete solver;
 }
 
 int tiny_set_bound_constraints(TinySolver* solver,
@@ -164,8 +177,8 @@ int tiny_set_bound_constraints(TinySolver* solver,
 }
 
 int tiny_set_cone_constraints(TinySolver* solver,
-                              VectorXi Acx, VectorXi qcx, tinyVector cx,
-                              VectorXi Acu, VectorXi qcu, tinyVector cu) {
+                              VectorXi Acu, VectorXi qcu, tinyVector cu,
+                              VectorXi Acx, VectorXi qcx, tinyVector cx) {
     if (!solver) {
         std::cout << "Error in tiny_set_cone_constraints: solver is nullptr" << std::endl;
         return 1;

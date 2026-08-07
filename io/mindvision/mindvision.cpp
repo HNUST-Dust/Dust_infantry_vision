@@ -30,6 +30,8 @@ MindVision::MindVision(double exposure_ms, double gamma, const std::string & vid
     while (!quit_) {
       std::this_thread::sleep_for(100ms);
 
+      if (quit_) break;
+
       if (ok_) continue;
 
       if (capture_thread_.joinable()) capture_thread_.join();
@@ -44,6 +46,7 @@ MindVision::MindVision(double exposure_ms, double gamma, const std::string & vid
 MindVision::~MindVision()
 {
   quit_ = true;
+  queue_.close();
   if (daemon_thread_.joinable()) daemon_thread_.join();
   if (capture_thread_.joinable()) capture_thread_.join();
   close();
@@ -52,11 +55,15 @@ MindVision::~MindVision()
 
 void MindVision::read(cv::Mat & img, std::chrono::steady_clock::time_point & timestamp)
 {
-  CameraData data;
-  queue_.pop(data);
+  auto data = queue_.wait_pop();
+  if (!data) {
+    img.release();
+    timestamp = std::chrono::steady_clock::now();
+    return;
+  }
 
-  img = data.img;
-  timestamp = data.timestamp;
+  img = std::move(data->img);
+  timestamp = data->timestamp;
 }
 
 void MindVision::open()

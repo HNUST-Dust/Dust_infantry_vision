@@ -1,0 +1,6 @@
+interface:
+  display_name: "Grill with Docs"
+  short_description: "Grill a design and write its docs"
+  default_prompt: "Use $grill-with-docs to stress-test this design and record the resulting decisions."
+policy:
+  allow_implicit_invocation: false

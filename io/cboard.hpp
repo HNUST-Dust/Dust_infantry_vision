@@ -20,7 +20,7 @@
 struct CBoardToVision
 {
   uint8_t head[2] = {'S', 'P'};
-  uint8_t type;  // 0: IMU, 1: Bullet speed
+  uint8_t type;  // 0: Bullet speed, 1: IMU
   float q[4];    // IMU四元数
   float bullet_speed;
   uint8_t mode;
@@ -67,10 +67,10 @@ const std::vector<std::string> SHOOT_MODES = {"left_shoot", "right_shoot", "both
 class CBoard
 {
 public:
-  double bullet_speed;
-  Mode mode;
-  ShootMode shoot_mode;
-  double ft_angle;  //无人机专有
+  std::atomic<double> bullet_speed{0.0};
+  std::atomic<Mode> mode{Mode::idle};
+  std::atomic<ShootMode> shoot_mode{ShootMode::left_shoot};
+  std::atomic<double> ft_angle{0.0};  //无人机专有
 
   CBoard(const std::string & config_path);
 
@@ -87,7 +87,7 @@ private:
     std::chrono::steady_clock::time_point timestamp;
   };
 
-  tools::ThreadSafeQueue<IMUData> queue_;  // 必须在serial_之前初始化，否则存在死锁的可能
+  tools::ThreadSafeQueue<IMUData, true> queue_;  // 必须在serial_之前初始化，否则存在死锁的可能
   serial::Serial serial_;
   IMUData data_ahead_;
   IMUData data_behind_;

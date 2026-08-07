@@ -1,15 +1,30 @@
 cmake_minimum_required(VERSION 3.16.3)
 
-find_program(CCACHE_PROGRAM ccache)
-if(NOT CCACHE_PROGRAM)
-  message(FATAL_ERROR "ccache is required for this project. Install it with: sudo apt-get install ccache")
-endif()
-set(CMAKE_CXX_COMPILER_LAUNCHER "${CCACHE_PROGRAM}" CACHE STRING "C++ compiler launcher")
-
 project(dust-vision)
 
 set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_BUILD_TYPE Release)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON CACHE BOOL "Export compile_commands.json")
+
+if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+  set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
+endif()
+
+option(ENABLE_CCACHE "Use ccache when it is available" ON)
+if(ENABLE_CCACHE)
+  find_program(CCACHE_PROGRAM ccache)
+  if(CCACHE_PROGRAM)
+    set(CMAKE_CXX_COMPILER_LAUNCHER "${CCACHE_PROGRAM}" CACHE STRING "C++ compiler launcher")
+  else()
+    message(STATUS "ccache not found; building without a compiler cache")
+  endif()
+endif()
+
+option(ENABLE_WARNINGS "Enable extra compiler warnings" OFF)
+if(ENABLE_WARNINGS)
+  add_compile_options(-Wall -Wextra -Wpedantic)
+endif()
+
 message(STATUS "--------------------CMAKE_BUILD_TYPE: ${CMAKE_BUILD_TYPE}--------------------")
 
 find_package(OpenCV REQUIRED)
@@ -18,8 +33,8 @@ find_package(Eigen3 REQUIRED)
 find_package(spdlog REQUIRED)
 find_package(yaml-cpp REQUIRED)
 find_package(nlohmann_json REQUIRED)
-set(OpenVINO_DIR "/opt/intel/openvino_2024.6.0/runtime/cmake/")
-find_package(OpenVINO REQUIRED)
+set(OpenVINO_DIR "/opt/intel/openvino_2024.6.0/runtime/cmake/" CACHE PATH "OpenVINO CMake package directory")
+find_package(OpenVINO REQUIRED COMPONENTS Runtime)
 
 include_directories(${EIGEN3_INCLUDE_DIR})
 include_directories(${OpenCV_INCLUDE_DIRS})
@@ -90,3 +105,8 @@ target_link_libraries(planner_test ${OpenCV_LIBS} fmt::fmt yaml-cpp auto_aim too
 
 add_executable(planner_test_offline tests/planner_test_offline.cpp)
 target_link_libraries(planner_test_offline ${OpenCV_LIBS} fmt::fmt yaml-cpp auto_aim tools io)
+
+enable_testing()
+add_executable(offline_regression_test tests/offline_regression_test.cpp)
+target_link_libraries(offline_regression_test ${OpenCV_LIBS} fmt::fmt yaml-cpp auto_aim tools io)
+add_test(NAME offline_regression COMMAND offline_regression_test ${CMAKE_SOURCE_DIR}/configs/standard3.yaml)

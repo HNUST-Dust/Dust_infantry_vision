@@ -67,11 +67,15 @@ const std::vector<std::tuple<Color, ArmorName, ArmorType>> armor_properties = {
 
 struct Lightbar
 {
-  std::size_t id;
-  Color color;
+  std::size_t id = 0;
+  Color color = Color::extinguish;
   cv::Point2f center, top, bottom, top2bottom;
   std::vector<cv::Point2f> points;
-  double angle, angle_error, length, width, ratio;
+  double angle = 0.0;
+  double angle_error = 0.0;
+  double length = 0.0;
+  double width = 0.0;
+  double ratio = 0.0;
   cv::RotatedRect rotated_rect;
 
   Lightbar(const cv::RotatedRect & rotated_rect, std::size_t id);
@@ -80,32 +84,32 @@ struct Lightbar
 
 struct Armor
 {
-  Color color;
+  Color color = Color::extinguish;
   Lightbar left, right;     //used to be const
   cv::Point2f center;       // 不是对角线交点，不能作为实际中心！
   cv::Point2f center_norm;  // 归一化坐标
   std::vector<cv::Point2f> points;
 
-  double ratio;              // 两灯条的中点连线与长灯条的长度之比
-  double side_ratio;         // 长灯条与短灯条的长度之比
-  double rectangular_error;  // 灯条和中点连线所成夹角与π/2的差值
+  double ratio = 0.0;              // 两灯条的中点连线与长灯条的长度之比
+  double side_ratio = 0.0;         // 长灯条与短灯条的长度之比
+  double rectangular_error = 0.0;  // 灯条和中点连线所成夹角与π/2的差值
 
-  ArmorType type;
-  ArmorName name;
-  ArmorPriority priority;
-  int class_id;
+  ArmorType type = ArmorType::small;
+  ArmorName name = ArmorName::not_armor;
+  ArmorPriority priority = ArmorPriority::fifth;
+  int class_id = -1;
   cv::Rect box;
   cv::Mat pattern;
-  double confidence;
-  bool duplicated;
+  double confidence = 0.0;
+  bool duplicated = false;
 
-  Eigen::Vector3d xyz_in_gimbal;  // 单位：m
-  Eigen::Vector3d xyz_in_world;   // 单位：m
-  Eigen::Vector3d ypr_in_gimbal;  // 单位：rad
-  Eigen::Vector3d ypr_in_world;   // 单位：rad
-  Eigen::Vector3d ypd_in_world;   // 球坐标系
+  Eigen::Vector3d xyz_in_gimbal = Eigen::Vector3d::Zero();  // 单位：m
+  Eigen::Vector3d xyz_in_world = Eigen::Vector3d::Zero();   // 单位：m
+  Eigen::Vector3d ypr_in_gimbal = Eigen::Vector3d::Zero();  // 单位：rad
+  Eigen::Vector3d ypr_in_world = Eigen::Vector3d::Zero();   // 单位：rad
+  Eigen::Vector3d ypd_in_world = Eigen::Vector3d::Zero();   // 球坐标系
 
-  double yaw_raw;  // rad
+  double yaw_raw = 0.0;  // rad
 
   Armor(const Lightbar & left, const Lightbar & right);
   Armor(

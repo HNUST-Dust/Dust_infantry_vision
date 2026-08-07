@@ -6,6 +6,9 @@
 
 #include <fmt/format.h>
 
+#include <algorithm>
+#include <limits>
+
 namespace io
 {
 CBoard::CBoard(const std::string & config_path)
@@ -19,12 +22,14 @@ CBoard::CBoard(const std::string & config_path)
   if (yaml["cboard_com_port"]) com_port_ = tools::read<std::string>(yaml, "cboard_com_port");
   baudrate_ = 115200;  // 默认
   if (yaml["cboard_baudrate"]) baudrate_ = tools::read<int>(yaml, "cboard_baudrate");
-  skip_crc_ = true;  // 默认
+  skip_crc_ = false;  // 默认
   if (yaml["skip_cboard_crc"]) skip_crc_ = tools::read<bool>(yaml, "skip_cboard_crc");
 
   try {
     serial_.setPort(com_port_);
     serial_.setBaudrate(baudrate_);
+    auto timeout = serial::Timeout::simpleTimeout(20);
+    serial_.setTimeout(timeout);
     serial_.open();
   } catch (const std::exception & e) {
     ::tools::logger()->error("[CBoard] Failed to open serial: {}", e.what());
@@ -35,8 +40,16 @@ CBoard::CBoard(const std::string & config_path)
 
   if (!skip_crc_) {
     ::tools::logger()->info("[CBoard] Waiting for q...");
-    queue_.pop(data_ahead_);
-    queue_.pop(data_behind_);
+    auto first = queue_.wait_pop_for(std::chrono::seconds(5));
+    auto second = queue_.wait_pop_for(std::chrono::seconds(5));
+    if (first && second) {
+      data_ahead_ = std::move(*first);
+      data_behind_ = std::move(*second);
+    } else {
+      ::tools::logger()->error("[CBoard] Timed out waiting for IMU data");
+      data_ahead_ = {Eigen::Quaterniond::Identity(), std::chrono::steady_clock::now()};
+      data_behind_ = data_ahead_;
+    }
   } else {
     // 跳过CRC时，不等待初始数据，使用默认值
     data_ahead_ = {Eigen::Quaterniond::Identity(), std::chrono::steady_clock::now()};
@@ -48,6 +61,7 @@ CBoard::CBoard(const std::string & config_path)
 CBoard::~CBoard()
 {
   quit_ = true;
+  queue_.close();
   if (thread_.joinable()) thread_.join();
   serial_.close();
 }Eigen::Quaterniond CBoard::imu_at(std::chrono::steady_clock::time_point timestamp)
@@ -85,12 +99,20 @@ CBoard::~CBoard()
 
 void CBoard::send(Command command)
 {
+  auto encode = [](double value) {
+    auto scaled = value * 1e4;
+    scaled = std::clamp(
+      scaled, static_cast<double>(std::numeric_limits<int16_t>::min()),
+      static_cast<double>(std::numeric_limits<int16_t>::max()));
+    return static_cast<int16_t>(scaled);
+  };
+
   VisionToCBoard tx_data;
   tx_data.control = command.control ? 1 : 0;
   tx_data.shoot = command.shoot ? 1 : 0;
-  tx_data.yaw = static_cast<int16_t>(command.yaw * 1e4);
-  tx_data.pitch = static_cast<int16_t>(command.pitch * 1e4);
-  tx_data.horizon_distance = static_cast<int16_t>(command.horizon_distance * 1e4);
+  tx_data.yaw = encode(command.yaw);
+  tx_data.pitch = encode(command.pitch);
+  tx_data.horizon_distance = encode(command.horizon_distance);
   tx_data.crc16 = tools::get_crc16(
     reinterpret_cast<uint8_t *>(&tx_data), sizeof(tx_data) - sizeof(tx_data.crc16));
 
@@ -144,18 +166,29 @@ void CBoard::read_thread()
       // ::tools::logger()->debug("[CBoard] Quaternion: q=[{}, {}, {}, {}]", q.w(), q.x(), q.y(), q.z());
     } else if (rx_data.type == 0) {  // Bullet speed
       bullet_speed = rx_data.bullet_speed;
-      mode = static_cast<Mode>(rx_data.mode);
-      shoot_mode = static_cast<ShootMode>(rx_data.shoot_mode);
+      auto valid_mode = rx_data.mode < MODES.size();
+      auto valid_shoot_mode = rx_data.shoot_mode < SHOOT_MODES.size();
+      mode = valid_mode ? static_cast<Mode>(rx_data.mode) : Mode::idle;
+      shoot_mode = valid_shoot_mode ? static_cast<ShootMode>(rx_data.shoot_mode)
+                                    : ShootMode::left_shoot;
       ft_angle = rx_data.ft_angle;
+
+      if (!valid_mode || !valid_shoot_mode) {
+        ::tools::logger()->warn(
+          "[CBoard] Invalid mode values: mode={}, shoot_mode={}", rx_data.mode,
+          rx_data.shoot_mode);
+        continue;
+      }
 
       // 限制日志输出频率为1Hz
       static auto last_log_time = std::chrono::steady_clock::time_point::min();
       auto now = std::chrono::steady_clock::now();
 
-      if (bullet_speed > 0 && tools::delta_time(now, last_log_time) >= 1.0) {
+      if (rx_data.bullet_speed > 0 && tools::delta_time(now, last_log_time) >= 1.0) {
         ::tools::logger()->info(
           "[CBoard] Bullet speed: {:.2f} m/s, Mode: {}, Shoot mode: {}, FT angle: {:.2f} rad",
-          bullet_speed, MODES[mode], SHOOT_MODES[shoot_mode], ft_angle);
+          rx_data.bullet_speed, MODES[rx_data.mode], SHOOT_MODES[rx_data.shoot_mode],
+          rx_data.ft_angle);
         last_log_time = now;
       }
     }

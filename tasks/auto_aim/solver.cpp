@@ -43,17 +43,23 @@ Solver::Solver(const std::string & config_path) : R_gimbal2world_(Eigen::Matrix3
   cv::eigen2cv(distort_coeffs, distort_coeffs_);
 }
 
-Eigen::Matrix3d Solver::R_gimbal2world() const { return R_gimbal2world_; }
+Eigen::Matrix3d Solver::R_gimbal2world() const
+{
+  std::lock_guard<std::mutex> lock(rotation_mutex_);
+  return R_gimbal2world_;
+}
 
 void Solver::set_R_gimbal2world(const Eigen::Quaterniond & q)
 {
   Eigen::Matrix3d R_imubody2imuabs = q.toRotationMatrix();
+  std::lock_guard<std::mutex> lock(rotation_mutex_);
   R_gimbal2world_ = R_gimbal2imubody_.transpose() * R_imubody2imuabs * R_gimbal2imubody_;
 }
 
 //solvePnP（获得姿态）
 void Solver::solve(Armor & armor) const
 {
+  const auto R_gimbal2world = this->R_gimbal2world();
   const auto & object_points =
     (armor.type == ArmorType::big) ? BIG_ARMOR_POINTS : SMALL_ARMOR_POINTS;
 
@@ -65,14 +71,14 @@ void Solver::solve(Armor & armor) const
   Eigen::Vector3d xyz_in_camera;
   cv::cv2eigen(tvec, xyz_in_camera);
   armor.xyz_in_gimbal = R_camera2gimbal_ * xyz_in_camera + t_camera2gimbal_;
-  armor.xyz_in_world = R_gimbal2world_ * armor.xyz_in_gimbal;
+  armor.xyz_in_world = R_gimbal2world * armor.xyz_in_gimbal;
 
   cv::Mat rmat;
   cv::Rodrigues(rvec, rmat);
   Eigen::Matrix3d R_armor2camera;
   cv::cv2eigen(rmat, R_armor2camera);
   Eigen::Matrix3d R_armor2gimbal = R_camera2gimbal_ * R_armor2camera;
-  Eigen::Matrix3d R_armor2world = R_gimbal2world_ * R_armor2gimbal;
+  Eigen::Matrix3d R_armor2world = R_gimbal2world * R_armor2gimbal;
   armor.ypr_in_gimbal = tools::eulers(R_armor2gimbal, 2, 1, 0);
   armor.ypr_in_world = tools::eulers(R_armor2world, 2, 1, 0);
 
@@ -84,11 +90,18 @@ void Solver::solve(Armor & armor) const
                      armor.name == ArmorName::five);
   if (is_balance) return;
 
-  optimize_yaw(armor);
+  optimize_yaw(armor, R_gimbal2world);
 }
 
 std::vector<cv::Point2f> Solver::reproject_armor(
   const Eigen::Vector3d & xyz_in_world, double yaw, ArmorType type, ArmorName name) const
+{
+  return reproject_armor(xyz_in_world, yaw, type, name, R_gimbal2world());
+}
+
+std::vector<cv::Point2f> Solver::reproject_armor(
+  const Eigen::Vector3d & xyz_in_world, double yaw, ArmorType type, ArmorName name,
+  const Eigen::Matrix3d & R_gimbal2world) const
 {
   auto sin_yaw = std::sin(yaw);
   auto cos_yaw = std::cos(yaw);
@@ -108,9 +121,10 @@ std::vector<cv::Point2f> Solver::reproject_armor(
   // get R_armor2camera t_armor2camera
   const Eigen::Vector3d & t_armor2world = xyz_in_world;
   Eigen::Matrix3d R_armor2camera =
-    R_camera2gimbal_.transpose() * R_gimbal2world_.transpose() * R_armor2world;
+    R_camera2gimbal_.transpose() * R_gimbal2world.transpose() * R_armor2world;
   Eigen::Vector3d t_armor2camera =
-    R_camera2gimbal_.transpose() * (R_gimbal2world_.transpose() * t_armor2world - t_camera2gimbal_);
+    R_camera2gimbal_.transpose() *
+    (R_gimbal2world.transpose() * t_armor2world - t_camera2gimbal_);
 
   // get rvec tvec
   cv::Vec3d rvec;
@@ -128,6 +142,7 @@ std::vector<cv::Point2f> Solver::reproject_armor(
 
 double Solver::oupost_reprojection_error(Armor armor, const double & pitch)
 {
+  const auto R_gimbal2world = this->R_gimbal2world();
   // solve
   const auto & object_points =
     (armor.type == ArmorType::big) ? BIG_ARMOR_POINTS : SMALL_ARMOR_POINTS;
@@ -140,14 +155,14 @@ double Solver::oupost_reprojection_error(Armor armor, const double & pitch)
   Eigen::Vector3d xyz_in_camera;
   cv::cv2eigen(tvec, xyz_in_camera);
   armor.xyz_in_gimbal = R_camera2gimbal_ * xyz_in_camera + t_camera2gimbal_;
-  armor.xyz_in_world = R_gimbal2world_ * armor.xyz_in_gimbal;
+  armor.xyz_in_world = R_gimbal2world * armor.xyz_in_gimbal;
 
   cv::Mat rmat;
   cv::Rodrigues(rvec, rmat);
   Eigen::Matrix3d R_armor2camera;
   cv::cv2eigen(rmat, R_armor2camera);
   Eigen::Matrix3d R_armor2gimbal = R_camera2gimbal_ * R_armor2camera;
-  Eigen::Matrix3d R_armor2world = R_gimbal2world_ * R_armor2gimbal;
+  Eigen::Matrix3d R_armor2world = R_gimbal2world * R_armor2gimbal;
   armor.ypr_in_gimbal = tools::eulers(R_armor2gimbal, 2, 1, 0);
   armor.ypr_in_world = tools::eulers(R_armor2world, 2, 1, 0);
 
@@ -173,9 +188,10 @@ double Solver::oupost_reprojection_error(Armor armor, const double & pitch)
   // get R_armor2camera t_armor2camera
   const Eigen::Vector3d & t_armor2world = xyz_in_world;
   Eigen::Matrix3d _R_armor2camera =
-    R_camera2gimbal_.transpose() * R_gimbal2world_.transpose() * _R_armor2world;
+    R_camera2gimbal_.transpose() * R_gimbal2world.transpose() * _R_armor2world;
   Eigen::Vector3d t_armor2camera =
-    R_camera2gimbal_.transpose() * (R_gimbal2world_.transpose() * t_armor2world - t_camera2gimbal_);
+    R_camera2gimbal_.transpose() *
+    (R_gimbal2world.transpose() * t_armor2world - t_camera2gimbal_);
 
   // get rvec tvec
   cv::Vec3d _rvec;
@@ -193,9 +209,9 @@ double Solver::oupost_reprojection_error(Armor armor, const double & pitch)
   return error;
 }
 
-void Solver::optimize_yaw(Armor & armor) const
+void Solver::optimize_yaw(Armor & armor, const Eigen::Matrix3d & R_gimbal2world) const
 {
-  Eigen::Vector3d gimbal_ypr = tools::eulers(R_gimbal2world_, 2, 1, 0);
+  Eigen::Vector3d gimbal_ypr = tools::eulers(R_gimbal2world, 2, 1, 0);
 
   constexpr double SEARCH_RANGE = 140;  // degree
   auto yaw0 = tools::limit_rad(gimbal_ypr[0] - SEARCH_RANGE / 2 * CV_PI / 180.0);
@@ -205,7 +221,8 @@ void Solver::optimize_yaw(Armor & armor) const
 
   for (int i = 0; i < SEARCH_RANGE; i++) {
     double yaw = tools::limit_rad(yaw0 + i * CV_PI / 180.0);
-    auto error = armor_reprojection_error(armor, yaw, (i - SEARCH_RANGE / 2) * CV_PI / 180.0);
+    auto error = armor_reprojection_error(
+      armor, yaw, (i - SEARCH_RANGE / 2) * CV_PI / 180.0, R_gimbal2world);
 
     if (error < min_error) {
       min_error = error;
@@ -252,9 +269,11 @@ double Solver::SJTU_cost(
 }
 
 double Solver::armor_reprojection_error(
-  const Armor & armor, double yaw, const double & inclined) const
+  const Armor & armor, double yaw, const double & inclined,
+  const Eigen::Matrix3d & R_gimbal2world) const
 {
-  auto image_points = reproject_armor(armor.xyz_in_world, yaw, armor.type, armor.name);
+  auto image_points =
+    reproject_armor(armor.xyz_in_world, yaw, armor.type, armor.name, R_gimbal2world);
   auto error = 0.0;
   for (int i = 0; i < 4; i++) error += cv::norm(armor.points[i] - image_points[i]);
   // auto error = SJTU_cost(image_points, armor.points, inclined);
@@ -265,7 +284,8 @@ double Solver::armor_reprojection_error(
 // 世界坐标到像素坐标的转换
 std::vector<cv::Point2f> Solver::world2pixel(const std::vector<cv::Point3f> & worldPoints)
 {
-  Eigen::Matrix3d R_world2camera = R_camera2gimbal_.transpose() * R_gimbal2world_.transpose();
+  const auto R_gimbal2world = this->R_gimbal2world();
+  Eigen::Matrix3d R_world2camera = R_camera2gimbal_.transpose() * R_gimbal2world.transpose();
   Eigen::Vector3d t_world2camera = -R_camera2gimbal_.transpose() * t_camera2gimbal_;
 
   cv::Mat rvec;

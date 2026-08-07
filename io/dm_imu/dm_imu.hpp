@@ -83,7 +83,7 @@ private:
   serial::Serial serial_;
   std::thread rec_thread_;
 
-  tools::ThreadSafeQueue<IMUData> queue_;
+  tools::ThreadSafeQueue<IMUData, true> queue_;
   IMUData data_ahead_, data_behind_;
 
   std::atomic<bool> stop_thread_{false};

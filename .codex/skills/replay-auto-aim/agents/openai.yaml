@@ -1,0 +1,6 @@
+interface:
+  display_name: "Replay Auto-Aim"
+  short_description: "Reproduce vision issues from recorded video"
+  default_prompt: "Use $replay-auto-aim to investigate an auto-aim issue from the demo replay."
+policy:
+  allow_implicit_invocation: true
