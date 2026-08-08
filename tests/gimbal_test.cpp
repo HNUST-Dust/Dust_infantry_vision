@@ -10,9 +10,9 @@
 #include "tools/plotter.hpp"
 
 const std::string keys =
-  "{help h usage ? | | 输出命令行参数说明}"
-  "{f              | | 是否开火}"
-  "{@config-path   | | yaml配置文件路径 }";
+  "{help h usage ? |                        | 输出命令行参数说明}"
+  "{f              |                        | 是否开火}"
+  "{@config-path   | configs/standard3.yaml | 位置参数，yaml配置文件路径 }";
 
 using namespace std::chrono_literals;
 
@@ -20,8 +20,8 @@ int main(int argc, char * argv[])
 {
   cv::CommandLineParser cli(argc, argv, keys);
   auto test_fire = cli.get<bool>("f");
-  auto config_path = cli.get<std::string>("@config-path");
-  if (cli.has("help") || !cli.has("@config-path")) {
+  auto config_path = cli.get<std::string>(0);
+  if (cli.has("help") || config_path.empty()) {
     cli.printMessage();
     return 0;
   }

@@ -11,19 +11,19 @@
 #include "tools/math_tools.hpp"
 
 const std::string keys =
-  "{help h usage ? |                        | 输出命令行参数说明 }"
-  "{@config-path   | configs/standard3.yaml | yaml配置文件的路径}"
+  "{help h usage ? |                        | 输出命令行参数说明}"
+  "{@config-path   | configs/standard3.yaml | 位置参数，yaml配置文件路径 }"
   "{tradition t    |  false                 | 是否使用传统方法识别}";
 
 int main(int argc, char * argv[])
 {
   // 读取命令行参数
   cv::CommandLineParser cli(argc, argv, keys);
-  if (cli.has("help")) {
+  auto config_path = cli.get<std::string>(0);
+  if (cli.has("help") || config_path.empty()) {
     cli.printMessage();
     return 0;
   }
-  auto config_path = cli.get<std::string>(0);
   auto use_tradition = cli.get<bool>("tradition");
 
   tools::Exiter exiter;

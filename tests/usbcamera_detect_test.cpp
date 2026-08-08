@@ -11,20 +11,20 @@ using namespace std::chrono_literals;
 
 const std::string keys =
   "{help h usage ? |                        | 输出命令行参数说明}"
-  "{name n         |        video0          | 端口名称 }"
   "{@config-path   | configs/standard3.yaml | 位置参数，yaml配置文件路径 }"
+  "{name n         |        video0          | 端口名称 }"
   "{d display      |                        | 显示视频流       }";
 
 int main(int argc, char * argv[])
 {
   cv::CommandLineParser cli(argc, argv, keys);
-  if (cli.has("help")) {
+  auto config_path = cli.get<std::string>(0);
+  if (cli.has("help") || config_path.empty()) {
     cli.printMessage();
     return 0;
   }
   tools::Exiter exiter;
 
-  auto config_path = cli.get<std::string>(0);
   auto device_name = cli.get<std::string>("name");
   auto display = cli.has("display");
 

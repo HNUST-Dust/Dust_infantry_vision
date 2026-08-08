@@ -16,19 +16,19 @@
 #include "tools/thread_safe_queue.hpp"
 
 const std::string keys =
-  "{help h usage ? |                   | 输出命令行参数说明}"
-  "{config-path c  | configs/demo.yaml | yaml配置文件的路径}"
+  "{help h usage ? |                        | 输出命令行参数说明}"
+  "{@config-path   | configs/standard3.yaml | 位置参数，yaml配置文件路径 }"
   "{@input-path    | assets/demo/demo  | avi和txt文件的路径}";
 
 int main(int argc, char * argv[])
 {
   cv::CommandLineParser cli(argc, argv, keys);
-  if (cli.has("help")) {
+  auto config_path = cli.get<std::string>(0);
+  if (cli.has("help") || config_path.empty()) {
     cli.printMessage();
     return 0;
   }
-  auto input_path = cli.get<std::string>(0);
-  auto config_path = cli.get<std::string>("config-path");
+  auto input_path = cli.get<std::string>(1);
 
   tools::Exiter exiter;
 

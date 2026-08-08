@@ -10,8 +10,8 @@
 #include "tools/plotter.hpp"
 
 const std::string keys =
-  "{help h usage ? |                        | 输出命令行参数说明 }"
-  "{config-path c  | configs/standard3.yaml | yaml配置文件的路径}"
+  "{help h usage ? |                        | 输出命令行参数说明}"
+  "{@config-path   | configs/standard3.yaml | 位置参数，yaml配置文件路径 }"
   "{start-index s  | 0                      | 视频起始帧下标    }"
   "{end-index e    | 0                      | 视频结束帧下标    }"
   "{@video_path    |                        | avi路径}"
@@ -21,12 +21,12 @@ int main(int argc, char * argv[])
 {
   // 读取命令行参数
   cv::CommandLineParser cli(argc, argv, keys);
-  if (cli.has("help")) {
+  auto config_path = cli.get<std::string>(0);
+  if (cli.has("help") || config_path.empty()) {
     cli.printMessage();
     return 0;
   }
-  auto video_path = cli.get<std::string>(0);
-  auto config_path = cli.get<std::string>("config-path");
+  auto video_path = cli.get<std::string>(1);
   auto start_index = cli.get<int>("start-index");
   auto end_index = cli.get<int>("end-index");
   auto use_tradition = cli.get<bool>("tradition");

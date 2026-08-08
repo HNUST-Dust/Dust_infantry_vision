@@ -60,7 +60,7 @@ cmake --build build-ninja --target auto_aim_test -j$(nproc)
 用仓库内置视频验证 YOLO、分类器、Tracker 和 Aimer 主链路。此命令会打开 OpenCV 显示窗口，需要桌面环境或远程桌面：
 
 ```bash
-./build-ninja/auto_aim_test assets/demo/demo
+./build-ninja/auto_aim_test configs/standard3.yaml assets/demo/demo
 ```
 
 如果电脑没有 Intel GPU 或 OpenCL，先修改 `configs/standard3.yaml`：
@@ -266,7 +266,8 @@ tests/                    调试和测试程序
 主要组件职责：
 
 - `Detector`：传统方法提取灯条并组合装甲板，可对 YOLO 结果做几何修正。
-- `YOLO`：OpenVINO 推理 YOLOv5、YOLOv8、YOLO11 模型。
+- `YOLO`：通过 `NetDetector` 统一 letterbox、OpenVINO 预处理和 `InferRequest` 池；YOLOv5、YOLOv8、YOLO11 适配器只负责输出解码。
+- `MultiThreadDetector`：采集线程使用有界异步请求入口，推理槽位耗尽时丢弃新帧，消费线程等待完成后继续跟踪。
 - `Classifier`：使用 `assets/tiny_resnet.onnx` 识别装甲板数字。
 - `Solver`：结合相机内参和云台外参，将装甲板从像素坐标解算到云台/世界坐标。
 - `Tracker`：维护 lost/detecting/tracking/temp_lost/switching 状态机，使用 EKF 预测旋转目标。
@@ -290,6 +291,7 @@ tests/                    调试和测试程序
 | 识别 | `yolov5_model_path` / `yolov8_model_path` / `yolo11_model_path` | 对应 OpenVINO IR 模型 |
 | 识别 | `classify_model` | 数字识别 ONNX 模型 |
 | 识别 | `device` | OpenVINO 设备，如 `GPU`、`CPU`、`AUTO` |
+| 识别 | `infer_request_buffer_num` | 可并行复用的 OpenVINO 请求数，默认 `2` |
 | 识别 | `min_confidence` | 目标最低置信度 |
 | 识别 | `use_traditional` | YOLOv5 是否使用传统方法修正角点 |
 | 相机 | `camera_name` | `hikrobot` 或 `mindvision` |
@@ -341,13 +343,13 @@ tests/                    调试和测试程序
 ### 相机内参标定
 
 ```bash
-./build-ninja/calibrate_camera <图片文件夹> configs/calibration.yaml
+./build-ninja/calibrate_camera configs/calibration.yaml <图片文件夹>
 ```
 
 ### 手眼标定
 
 ```bash
-./build-ninja/calibrate_handeye <图片文件夹> configs/calibration.yaml
+./build-ninja/calibrate_handeye configs/calibration.yaml <图片文件夹>
 ```
 
 ## 常见问题

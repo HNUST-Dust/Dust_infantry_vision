@@ -13,12 +13,12 @@
 using namespace std::chrono_literals;
 
 const std::string keys =
-  "{help h usage ? |                     | 输出命令行参数说明}"
+  "{help h usage ? |                        | 输出命令行参数说明}"
+  "{@config-path   | configs/standard3.yaml | 位置参数，yaml配置文件路径 }"
   "{delta-angle a  |          8          | yaw轴delta角}"
   "{circle      c  |         0.2         | delta_angle的切片数}"
   "{signal-mode m  |     triangle_wave   | 发送信号的模式}"
-  "{axis        x  |         yaw         | 发送信号的轴}"
-  "{@config-path   | configs/standard3.yaml | 位置参数，yaml配置文件路径 }";
+  "{axis        x  |         yaw         | 发送信号的轴}";
 
 double yaw_cal(double t)
 {

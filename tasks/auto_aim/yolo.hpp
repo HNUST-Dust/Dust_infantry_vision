@@ -8,16 +8,14 @@
 #include <vector>
 
 #include "armor.hpp"
+#include "net_detector.hpp"
 
 namespace auto_aim
 {
 class YOLOBase
 {
 public:
-  virtual std::list<Armor> detect(const cv::Mat & img, int frame_count) = 0;
-
-  virtual std::list<Armor> postprocess(
-    double scale, cv::Mat & output, const cv::Mat & bgr_img, int frame_count) = 0;
+  virtual std::list<Armor> postprocess(NetDetector::Result & result, int frame_count) = 0;
 };
 
 class YOLO
@@ -27,10 +25,17 @@ public:
 
   std::list<Armor> detect(const cv::Mat & img, int frame_count = -1);
 
-  std::list<Armor> postprocess(
-    double scale, cv::Mat & output, const cv::Mat & bgr_img, int frame_count);
+  // Returns no request when the bounded request pool is busy, so callers can drop stale frames.
+  NetDetector::TicketPtr try_start_async(const cv::Mat & img);
+
+  std::list<Armor> postprocess(const NetDetector::TicketPtr & ticket, int frame_count = -1);
+
+  cv::Mat source(const NetDetector::TicketPtr & ticket) const;
+
+  std::size_t request_capacity() const;
 
 private:
+  NetDetector net_detector_;
   std::unique_ptr<YOLOBase> yolo_;
 };
 

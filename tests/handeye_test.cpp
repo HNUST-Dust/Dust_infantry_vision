@@ -18,8 +18,8 @@
 using namespace std::chrono_literals;
 
 const std::string keys =
-  "{help h usage ? |                     | 输出命令行参数说明}"
-  "{config-path c  | configs/calibration.yaml | yaml配置文件路径 }"
+  "{help h usage ? |                        | 输出命令行参数说明}"
+  "{@config-path   | configs/calibration.yaml | 位置参数，yaml配置文件路径 }"
   "{d display      |                     | 显示视频流       }";
 
 // 世界坐标到像素坐标的转换
@@ -27,14 +27,14 @@ const std::string keys =
 int main(int argc, char * argv[])
 {
   cv::CommandLineParser cli(argc, argv, keys);
-  if (cli.has("help")) {
+  auto config_path = cli.get<std::string>(0);
+  if (cli.has("help") || config_path.empty()) {
     cli.printMessage();
     return 0;
   }
 
   tools::Exiter exiter;
 
-  auto config_path = cli.get<std::string>("config-path");
   auto display = cli.has("display");
   auto yaml = YAML::LoadFile(config_path);
   auto height = yaml["height"].as<double>();

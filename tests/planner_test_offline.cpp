@@ -12,21 +12,21 @@
 using namespace std::chrono_literals;
 
 const std::string keys =
-  "{help h usage ? |     | 输出命令行参数说明    }"
+  "{help h usage ? |                        | 输出命令行参数说明}"
+  "{@config-path   | configs/standard3.yaml | 位置参数，yaml配置文件路径 }"
   "{d              | 3.0 | Target距离(m)       }"
-  "{w              | 5.0 | Target角速度(rad/s) }"
-  "{@config-path   |     | yaml配置文件路径     }";
+  "{w              | 5.0 | Target角速度(rad/s) }";
 
 int main(int argc, char * argv[])
 {
   cv::CommandLineParser cli(argc, argv, keys);
-  auto config_path = cli.get<std::string>("@config-path");
-  auto d = cli.get<double>("d");
-  auto w = cli.get<double>("w");
-  if (cli.has("help") || !cli.has("@config-path")) {
+  auto config_path = cli.get<std::string>(0);
+  if (cli.has("help") || config_path.empty()) {
     cli.printMessage();
     return 0;
   }
+  auto d = cli.get<double>("d");
+  auto w = cli.get<double>("w");
 
   tools::Exiter exiter;
   tools::Plotter plotter;

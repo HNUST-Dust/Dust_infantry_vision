@@ -2,11 +2,11 @@
 #define AUTO_AIM__MT_DETECTOR_HPP
 
 #include <chrono>
+#include <memory>
 #include <opencv2/opencv.hpp>
-#include <openvino/openvino.hpp>
 #include <tuple>
 
-#include "tasks/auto_aim/yolos/yolov5.hpp"
+#include "tasks/auto_aim/yolo.hpp"
 #include "tools/logger.hpp"
 #include "tools/thread_safe_queue.hpp"
 
@@ -27,17 +27,17 @@ public:
 
   std::tuple<cv::Mat, std::list<Armor>, std::chrono::steady_clock::time_point> debug_pop();
 
-  bool empty() { return queue_.empty(); }
+  bool empty() { return queue_->empty(); }
 
 private:
-  ov::Core core_;
-  ov::CompiledModel compiled_model_;
-  std::string device_;
-  YOLO yolo_;
+  struct Pending
+  {
+    NetDetector::TicketPtr ticket;
+    std::chrono::steady_clock::time_point timestamp;
+  };
 
-  tools::ThreadSafeQueue<
-    std::tuple<cv::Mat, cv::Mat, std::chrono::steady_clock::time_point, ov::InferRequest>>
-    queue_{2, [] { tools::logger()->debug("[MultiThreadDetector] queue is full!"); }};
+  YOLO yolo_;
+  std::unique_ptr<tools::ThreadSafeQueue<Pending>> queue_;
 };
 
 }  // namespace multithread

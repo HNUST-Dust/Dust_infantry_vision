@@ -16,107 +16,17 @@ YOLOV5::YOLOV5(const std::string & config_path, bool debug)
 {
   auto yaml = YAML::LoadFile(config_path);
 
-  model_path_ = yaml["yolov5_model_path"].as<std::string>();
-  device_ = yaml["device"].as<std::string>();
   binary_threshold_ = yaml["threshold"].as<double>();
   min_confidence_ = yaml["min_confidence"].as<double>();
-  int x = 0, y = 0, width = 0, height = 0;
-  x = yaml["roi"]["x"].as<int>();
-  y = yaml["roi"]["y"].as<int>();
-  width = yaml["roi"]["width"].as<int>();
-  height = yaml["roi"]["height"].as<int>();
-  use_roi_ = yaml["use_roi"].as<bool>();
   use_traditional_ = yaml["use_traditional"].as<bool>();
-  roi_ = cv::Rect(x, y, width, height);
-  offset_ = cv::Point2f(x, y);
 
   save_path_ = "imgs";
   std::filesystem::create_directory(save_path_);
-  auto model = core_.read_model(model_path_);
-  ov::preprocess::PrePostProcessor ppp(model);
-  auto & input = ppp.input();
-
-  input.tensor()
-    .set_element_type(ov::element::u8)
-    .set_shape({1, 640, 640, 3})
-    .set_layout("NHWC")
-    .set_color_format(ov::preprocess::ColorFormat::BGR);
-
-  input.model().set_layout("NCHW");
-
-  input.preprocess()
-    .convert_element_type(ov::element::f32)
-    .convert_color(ov::preprocess::ColorFormat::RGB)
-    .scale(255.0);
-
-  // TODO: ov::hint::performance_mode(ov::hint::PerformanceMode::LATENCY)
-  model = ppp.build();
-  compiled_model_ = core_.compile_model(
-    model, device_, ov::hint::performance_mode(ov::hint::PerformanceMode::LATENCY));
-}
-
-std::list<Armor> YOLOV5::detect(const cv::Mat & raw_img, int frame_count)
-{
-  if (raw_img.empty()) {
-    tools::logger()->warn("Empty img!, camera drop!");
-    return std::list<Armor>();
-  }
-
-  cv::Mat bgr_img;
-  if (use_roi_) {
-    if (roi_.width == -1) {  // -1 表示该维度不裁切
-      roi_.width = raw_img.cols;
-    }
-    if (roi_.height == -1) {  // -1 表示该维度不裁切
-      roi_.height = raw_img.rows;
-    }
-    bgr_img = raw_img(roi_);
-  } else {
-    bgr_img = raw_img;
-  }
-
-  auto x_scale = static_cast<double>(640) / bgr_img.rows;
-  auto y_scale = static_cast<double>(640) / bgr_img.cols;
-  auto scale = std::min(x_scale, y_scale);
-  auto h = static_cast<int>(bgr_img.rows * scale);
-  auto w = static_cast<int>(bgr_img.cols * scale);
-
-  // preproces
-  auto input = cv::Mat(640, 640, CV_8UC3, cv::Scalar(0, 0, 0));
-  auto roi = cv::Rect(0, 0, w, h);
-  cv::resize(bgr_img, input(roi), {w, h});
-  ov::Tensor input_tensor(ov::element::u8, {1, 640, 640, 3}, input.data);
-
-  // infer
-  static int frame_count_fps = 0;
-  static auto last_time = std::chrono::steady_clock::now();
-  auto infer_request = compiled_model_.create_infer_request();
-  infer_request.set_input_tensor(input_tensor);
-  auto infer_start = std::chrono::steady_clock::now();
-  infer_request.infer();
-  auto infer_end = std::chrono::steady_clock::now();
-  double infer_ms = std::chrono::duration<double, std::milli>(infer_end - infer_start).count();
-
-  frame_count_fps++;
-  auto now = std::chrono::steady_clock::now();
-  double elapsed = std::chrono::duration<double>(now - last_time).count();
-  if (elapsed >= 1.0) {
-    double fps = frame_count_fps / elapsed;
-    tools::logger()->info("[YOLO] FPS: {:.1f}, Infer time: {:.2f} ms", fps, infer_ms);
-    frame_count_fps = 0;
-    last_time = now;
-  }
-
-  // postprocess
-  auto output_tensor = infer_request.get_output_tensor();
-  auto output_shape = output_tensor.get_shape();
-  cv::Mat output(output_shape[1], output_shape[2], CV_32F, output_tensor.data());
-
-  return parse(scale, output, raw_img, frame_count);
 }
 
 std::list<Armor> YOLOV5::parse(
-  double scale, cv::Mat & output, const cv::Mat & bgr_img, int frame_count)
+  double scale, cv::Mat & output, const cv::Mat & bgr_img, int frame_count,
+  const cv::Point2f & offset, bool has_roi, const cv::Rect & roi)
 {
   // for each row: xywh + classess
   std::vector<int> color_ids, num_ids;
@@ -177,9 +87,9 @@ std::list<Armor> YOLOV5::parse(
 
   std::list<Armor> armors;
   for (const auto & i : indices) {
-    if (use_roi_) {
+    if (has_roi) {
       armors.emplace_back(
-        color_ids[i], num_ids[i], confidences[i], boxes[i], armors_key_points[i], offset_);
+        color_ids[i], num_ids[i], confidences[i], boxes[i], armors_key_points[i], offset);
     } else {
       armors.emplace_back(color_ids[i], num_ids[i], confidences[i], boxes[i], armors_key_points[i]);
     }
@@ -203,7 +113,7 @@ std::list<Armor> YOLOV5::parse(
     ++it;
   }
 
-  if (debug_) draw_detections(bgr_img, armors, frame_count);
+  if (debug_) draw_detections(bgr_img, armors, frame_count, has_roi, roi);
 
   return armors;
 }
@@ -240,7 +150,8 @@ cv::Point2f YOLOV5::get_center_norm(const cv::Mat & bgr_img, const cv::Point2f &
 }
 
 void YOLOV5::draw_detections(
-  const cv::Mat & img, const std::list<Armor> & armors, int frame_count) const
+  const cv::Mat & img, const std::list<Armor> & armors, int frame_count, bool has_roi,
+  const cv::Rect & roi) const
 {
   auto detection = img.clone();
   tools::draw_text(detection, fmt::format("[{}]", frame_count), {10, 30}, {255, 255, 255});
@@ -252,9 +163,9 @@ void YOLOV5::draw_detections(
     tools::draw_text(detection, info, armor.center, {0, 255, 0});
   }
 
-  if (use_roi_) {
+  if (has_roi) {
     cv::Scalar green(0, 255, 0);
-    cv::rectangle(detection, roi_, green, 2);
+    cv::rectangle(detection, roi, green, 2);
   }
   cv::resize(detection, detection, {}, 0.5, 0.5);  // 显示时缩小图片尺寸
   // cv::imshow("detection", detection);
@@ -275,10 +186,12 @@ double YOLOV5::sigmoid(double x)
     return exp(x) / (1.0 + exp(x));
 }
 
-std::list<Armor> YOLOV5::postprocess(
-  double scale, cv::Mat & output, const cv::Mat & bgr_img, int frame_count)
+std::list<Armor> YOLOV5::postprocess(NetDetector::Result & result, int frame_count)
 {
-  return parse(scale, output, bgr_img, frame_count);
+  auto output = result.output;
+  return parse(
+    result.scale, output, result.source, frame_count, cv::Point2f(result.roi.x, result.roi.y),
+    result.has_roi, result.roi);
 }
 
 }  // namespace auto_aim

@@ -17,18 +17,18 @@ const std::string keys =
 int main(int argc, char * argv[])
 {
   cv::CommandLineParser cli(argc, argv, keys);
-  if (cli.has("help")) {
+  auto config_path = cli.get<std::string>(0);
+  if (cli.has("help") || config_path.empty()) {
     cli.printMessage();
     return 0;
   }
   tools::Exiter exiter;
 
-  auto config_path = cli.get<std::string>(0);
   auto display = cli.has("display");
 
   io::USBCamera usbcam1("video0", config_path);
   io::USBCamera usbcam2("video2", config_path);
-  io::Camera camera("configs/standard3.yaml");
+  io::Camera camera(config_path);
 
   cv::Mat img1, img2, img3;
   std::chrono::steady_clock::time_point timestamp;

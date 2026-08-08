@@ -9,6 +9,17 @@
 namespace auto_aim
 {
 YOLO::YOLO(const std::string & config_path, bool debug)
+: net_detector_([&config_path] {
+    auto yaml = YAML::LoadFile(config_path);
+    const auto yolo_name = yaml["yolo_name"].as<std::string>();
+    const int input_size = yolo_name == "yolov8" ? 416 : 640;
+    const auto roi = yaml["roi"];
+    return NetDetector::Config {
+      yaml[yolo_name + "_model_path"].as<std::string>(), yaml["device"].as<std::string>(), input_size,
+      input_size, yaml["infer_request_buffer_num"] ? yaml["infer_request_buffer_num"].as<int>() : 2,
+      yaml["use_roi"].as<bool>(),
+      {roi["x"].as<int>(), roi["y"].as<int>(), roi["width"].as<int>(), roi["height"].as<int>()}};
+  }())
 {
   auto yaml = YAML::LoadFile(config_path);
   auto yolo_name = yaml["yolo_name"].as<std::string>();
@@ -32,13 +43,32 @@ YOLO::YOLO(const std::string & config_path, bool debug)
 
 std::list<Armor> YOLO::detect(const cv::Mat & img, int frame_count)
 {
-  return yolo_->detect(img, frame_count);
+  if (img.empty()) {
+    return {};
+  }
+  auto ticket = net_detector_.start(img);
+  return postprocess(ticket, frame_count);
 }
 
-std::list<Armor> YOLO::postprocess(
-  double scale, cv::Mat & output, const cv::Mat & bgr_img, int frame_count)
+NetDetector::TicketPtr YOLO::try_start_async(const cv::Mat & img)
 {
-  return yolo_->postprocess(scale, output, bgr_img, frame_count);
+  return net_detector_.try_start_async(img, true);
+}
+
+std::list<Armor> YOLO::postprocess(const NetDetector::TicketPtr & ticket, int frame_count)
+{
+  auto result = net_detector_.wait(ticket);
+  return yolo_->postprocess(result, frame_count);
+}
+
+cv::Mat YOLO::source(const NetDetector::TicketPtr & ticket) const
+{
+  return net_detector_.wait(ticket).source;
+}
+
+std::size_t YOLO::request_capacity() const
+{
+  return net_detector_.request_capacity();
 }
 
 }  // namespace auto_aim

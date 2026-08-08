@@ -110,3 +110,9 @@ enable_testing()
 add_executable(offline_regression_test tests/offline_regression_test.cpp)
 target_link_libraries(offline_regression_test ${OpenCV_LIBS} fmt::fmt yaml-cpp auto_aim tools io)
 add_test(NAME offline_regression COMMAND offline_regression_test ${CMAKE_SOURCE_DIR}/configs/standard3.yaml)
+
+add_executable(async_detector_test tests/async_detector_test.cpp)
+target_link_libraries(async_detector_test ${OpenCV_LIBS} fmt::fmt yaml-cpp auto_aim tools io)
+
+add_executable(openvino_benchmark_test tests/openvino_benchmark_test.cpp)
+target_link_libraries(openvino_benchmark_test ${OpenCV_LIBS} fmt::fmt yaml-cpp auto_aim tools io)
