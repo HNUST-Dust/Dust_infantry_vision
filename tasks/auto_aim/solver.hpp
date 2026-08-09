@@ -17,12 +17,18 @@ public:
 
   Eigen::Matrix3d R_gimbal2world() const;
 
+  Eigen::Matrix3d R_gimbal2world(const Eigen::Quaterniond & q) const;
+
   void set_R_gimbal2world(const Eigen::Quaterniond & q);
 
   void solve(Armor & armor) const;
 
   std::vector<cv::Point2f> reproject_armor(
     const Eigen::Vector3d & xyz_in_world, double yaw, ArmorType type, ArmorName name) const;
+
+  std::vector<cv::Point2f> reproject_armor(
+    const Eigen::Vector3d & xyz_in_world, double yaw, ArmorType type, ArmorName name,
+    const Eigen::Matrix3d & R_gimbal2world) const;
 
   double oupost_reprojection_error(Armor armor, const double & picth);
 
@@ -36,10 +42,6 @@ private:
   Eigen::Vector3d t_camera2gimbal_;
   Eigen::Matrix3d R_gimbal2world_;
   mutable std::mutex rotation_mutex_;
-
-  std::vector<cv::Point2f> reproject_armor(
-    const Eigen::Vector3d & xyz_in_world, double yaw, ArmorType type, ArmorName name,
-    const Eigen::Matrix3d & R_gimbal2world) const;
 
   void optimize_yaw(Armor & armor, const Eigen::Matrix3d & R_gimbal2world) const;
 

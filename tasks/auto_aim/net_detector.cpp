@@ -37,10 +37,13 @@ struct NetDetector::Impl
       .set_layout("NHWC")
       .set_color_format(ov::preprocess::ColorFormat::BGR);
     input.model().set_layout("NCHW");
-    input.preprocess()
-      .convert_element_type(ov::element::f32)
-      .convert_color(ov::preprocess::ColorFormat::RGB)
-      .scale(255.0);
+    input.preprocess().convert_element_type(ov::element::f32);
+    if (config_.model_color_format == ColorFormat::rgb) {
+      input.preprocess().convert_color(ov::preprocess::ColorFormat::RGB);
+    }
+    if (config_.normalize) {
+      input.preprocess().scale(255.0);
+    }
     for (std::size_t i = 0; i < model->outputs().size(); ++i) {
       ppp.output(i).tensor().set_element_type(ov::element::f32);
     }
@@ -63,8 +66,16 @@ struct NetDetector::Impl
       config_.device, config_.input_width, config_.input_height, config_.infer_request_buffer_num);
   }
 
-  cv::Rect resolve_roi(const cv::Mat & image) const
+  cv::Rect resolve_roi(const cv::Mat & image, std::optional<cv::Rect> roi_override) const
   {
+    if (roi_override) {
+      const auto bounds = cv::Rect(0, 0, image.cols, image.rows);
+      if ((*roi_override & bounds) != *roi_override || roi_override->width <= 0 ||
+          roi_override->height <= 0) {
+        throw std::runtime_error("Dynamic ROI is outside the input image");
+      }
+      return *roi_override;
+    }
     if (!config_.use_roi) return {0, 0, image.cols, image.rows};
 
     const int width = config_.roi.width == -1 ? image.cols - config_.roi.x : config_.roi.width;
@@ -96,9 +107,9 @@ struct NetDetector::Impl
 };
 
 NetDetector::Ticket::Ticket(std::shared_ptr<Impl> impl, std::size_t slot_index, cv::Mat source,
-  double scale, cv::Rect roi, bool has_roi)
+  double scale, cv::Rect roi, bool has_roi, cv::Point2f padding)
 : impl_(std::move(impl)), slot_index_(slot_index), source_(std::move(source)), scale_(scale), roi_(roi),
-  has_roi_(has_roi)
+  has_roi_(has_roi), padding_(padding)
 {
 }
 
@@ -124,18 +135,19 @@ NetDetector::NetDetector(Config config)
 {
 }
 
-NetDetector::TicketPtr NetDetector::try_start_async(const cv::Mat & image, bool clone_source)
+NetDetector::TicketPtr NetDetector::try_start_async(
+  const cv::Mat & image, bool clone_source, std::optional<cv::Rect> roi_override)
 {
-  return start_impl(image, clone_source, false);
+  return start_impl(image, clone_source, false, roi_override);
 }
 
-NetDetector::TicketPtr NetDetector::start(const cv::Mat & image)
+NetDetector::TicketPtr NetDetector::start(const cv::Mat & image, std::optional<cv::Rect> roi_override)
 {
-  return start_impl(image, false, true);
+  return start_impl(image, false, true, roi_override);
 }
 
 NetDetector::TicketPtr NetDetector::start_impl(
-  const cv::Mat & image, bool clone_source, bool wait_for_slot)
+  const cv::Mat & image, bool clone_source, bool wait_for_slot, std::optional<cv::Rect> roi_override)
 {
   if (image.empty()) return nullptr;
 
@@ -153,16 +165,22 @@ NetDetector::TicketPtr NetDetector::start_impl(
 
   try {
     cv::Mat source = clone_source ? image.clone() : image;
-    const cv::Rect roi = impl_->resolve_roi(source);
+    const cv::Rect roi = impl_->resolve_roi(source, roi_override);
     const double scale = std::min(
       static_cast<double>(impl_->config_.input_width) / roi.width,
       static_cast<double>(impl_->config_.input_height) / roi.height);
     const int resized_width = std::max(1, static_cast<int>(roi.width * scale));
     const int resized_height = std::max(1, static_cast<int>(roi.height * scale));
 
+    const int pad_x = impl_->config_.center_letterbox
+                        ? (impl_->config_.input_width - resized_width) / 2
+                        : 0;
+    const int pad_y = impl_->config_.center_letterbox
+                        ? (impl_->config_.input_height - resized_height) / 2
+                        : 0;
     auto & slot = impl_->slots_[slot_index];
     slot.input.setTo(cv::Scalar(0, 0, 0));
-    cv::resize(source(roi), slot.input(cv::Rect(0, 0, resized_width, resized_height)),
+    cv::resize(source(roi), slot.input(cv::Rect(pad_x, pad_y, resized_width, resized_height)),
       {resized_width, resized_height});
     ov::Tensor input_tensor(
       ov::element::u8,
@@ -173,7 +191,8 @@ NetDetector::TicketPtr NetDetector::start_impl(
     slot.infer_request.start_async();
 
     return std::shared_ptr<Ticket>(new Ticket(
-      impl_, slot_index, std::move(source), scale, roi, impl_->config_.use_roi));
+      impl_, slot_index, std::move(source), scale, roi,
+      impl_->config_.use_roi || roi_override.has_value(), cv::Point2f(pad_x, pad_y)));
   } catch (...) {
     impl_->release(slot_index);
     throw;
@@ -196,13 +215,13 @@ NetDetector::Result NetDetector::wait(const TicketPtr & ticket) const
     return {ticket->source_,
       cv::Mat(static_cast<int>(output_shape[0]), static_cast<int>(output_shape[1]), CV_32F,
         output_tensor.data<float>()),
-      ticket->scale_, ticket->roi_, ticket->has_roi_};
+      ticket->scale_, ticket->roi_, ticket->has_roi_, ticket->padding_};
   }
   if (output_shape.size() == 3) {
     return {ticket->source_,
       cv::Mat(static_cast<int>(output_shape[1]), static_cast<int>(output_shape[2]), CV_32F,
         output_tensor.data<float>()),
-      ticket->scale_, ticket->roi_, ticket->has_roi_};
+      ticket->scale_, ticket->roi_, ticket->has_roi_, ticket->padding_};
   }
   throw std::runtime_error("NetDetector supports only 2D or 3D output tensors");
 }

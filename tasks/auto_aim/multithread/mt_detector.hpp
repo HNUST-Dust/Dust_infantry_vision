@@ -3,6 +3,7 @@
 
 #include <chrono>
 #include <memory>
+#include <optional>
 #include <opencv2/opencv.hpp>
 #include <tuple>
 
@@ -21,7 +22,9 @@ public:
   MultiThreadDetector(const std::string & config_path, bool debug = false);
 
   /// 返回 false 表示队列已满、该帧被丢弃
-  bool push(cv::Mat img, std::chrono::steady_clock::time_point t);
+  bool push(
+    cv::Mat img, std::chrono::steady_clock::time_point t,
+    std::optional<cv::Rect> roi_override = std::nullopt);
 
   std::tuple<std::list<Armor>, std::chrono::steady_clock::time_point> pop();  //暂时不支持yolov8
 

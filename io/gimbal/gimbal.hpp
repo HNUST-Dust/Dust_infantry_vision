@@ -65,7 +65,7 @@ struct GimbalState
 class Gimbal
 {
 public:
-  Gimbal(const std::string & config_path);
+  Gimbal(const std::string & config_path, bool simulate = false);
 
   ~Gimbal();
 
@@ -92,6 +92,7 @@ private:
 
   GimbalToVision rx_data_;
   VisionToGimbal tx_data_;
+  bool simulate_ = false;
   bool skip_crc_ = false;
   GimbalMode mode_ = GimbalMode::IDLE;
   GimbalState state_{};

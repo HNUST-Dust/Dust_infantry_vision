@@ -1,5 +1,6 @@
 #include "tracker.hpp"
 
+#include <algorithm>
 #include <numeric>
 
 #include <yaml-cpp/yaml.h>
@@ -19,6 +20,7 @@ Tracker::Tracker(const std::string & config_path, Solver & solver)
   state_{"lost"},
   pre_state_{"lost"},
   last_timestamp_(std::chrono::steady_clock::now()),
+  last_observed_timestamp_(std::chrono::steady_clock::time_point{}),
   omni_target_priority_{ArmorPriority::fifth}
 {
   auto yaml = YAML::LoadFile(config_path);
@@ -27,13 +29,73 @@ Tracker::Tracker(const std::string & config_path, Solver & solver)
   max_temp_lost_count_ = yaml["max_temp_lost_count"].as<int>();
   outpost_max_temp_lost_count_ = yaml["outpost_max_temp_lost_count"].as<int>();
   normal_temp_lost_count_ = max_temp_lost_count_;
+  if (const auto roi_config = yaml["dynamic_roi"]; roi_config) {
+    dynamic_roi_enabled_ = roi_config["enabled"].as<bool>();
+    focus_expand_ratio_ = roi_config["expand_ratio"].as<double>();
+    focus_base_expand_ratio_ = roi_config["base_expand_ratio"].as<double>();
+    focus_lost_time_ = roi_config["lost_time"].as<double>();
+  }
 }
 
-std::string Tracker::state() const { return state_; }
+std::string Tracker::state() const
+{
+  std::lock_guard<std::mutex> lock(mutex_);
+  return state_;
+}
+
+bool Tracker::dynamic_roi_enabled() const
+{
+  return dynamic_roi_enabled_;
+}
+
+cv::Rect Tracker::focus_roi(
+  const cv::Size & image_size, std::chrono::steady_clock::time_point t,
+  const Eigen::Matrix3d & R_gimbal2world) const
+{
+  const cv::Rect full_frame(0, 0, image_size.width, image_size.height);
+  if (!dynamic_roi_enabled_ || image_size.width <= 0 || image_size.height <= 0) return full_frame;
+
+  Target target;
+  std::chrono::steady_clock::time_point last_observed;
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (state_ == "lost" || last_observed_timestamp_ == std::chrono::steady_clock::time_point{}) {
+      return full_frame;
+    }
+    target = target_;
+    last_observed = last_observed_timestamp_;
+  }
+
+  target.predict(t);
+  std::vector<cv::Point2f> points;
+  for (const auto & xyza : target.armor_xyza_list()) {
+    const auto projected = solver_.reproject_armor(
+      xyza.head(3), xyza[3], target.armor_type, target.name, R_gimbal2world);
+    for (const auto & point : projected) {
+      if (std::isfinite(point.x) && std::isfinite(point.y)) points.push_back(point);
+    }
+  }
+  if (points.empty()) return full_frame;
+
+  auto rect = cv::boundingRect(points) & full_frame;
+  if (rect.width <= 0 || rect.height <= 0) return full_frame;
+  const double expand_ratio = target.name == ArmorName::base ? focus_base_expand_ratio_ : focus_expand_ratio_;
+  const auto center = cv::Point2f(rect.x + rect.width / 2.0F, rect.y + rect.height / 2.0F);
+  const int side = std::max(1, static_cast<int>(std::ceil(std::max(rect.width, rect.height) * expand_ratio)));
+  const auto elapsed = std::chrono::duration<double>(t - last_observed).count();
+  const double recovery = std::clamp(elapsed / focus_lost_time_, 0.0, 1.0);
+  const int recovered_side = static_cast<int>(
+    std::round(side + (std::max(image_size.width, image_size.height) - side) * recovery));
+  cv::Rect focus(
+    static_cast<int>(std::round(center.x - recovered_side / 2.0)),
+    static_cast<int>(std::round(center.y - recovered_side / 2.0)), recovered_side, recovered_side);
+  return focus & full_frame;
+}
 
 std::list<Target> Tracker::track(
   std::list<Armor> & armors, std::chrono::steady_clock::time_point t, bool use_enemy_color)
 {
+  std::lock_guard<std::mutex> lock(mutex_);
   auto dt = tools::delta_time(t, last_timestamp_);
   last_timestamp_ = t;
 
@@ -73,6 +135,8 @@ std::list<Target> Tracker::track(
     found = update_target(armors, t);
   }
 
+  if (found) last_observed_timestamp_ = t;
+
   state_machine(found);
 
   // 发散检测
@@ -102,6 +166,7 @@ std::tuple<omniperception::DetectionResult, std::list<Target>> Tracker::track(
   const std::vector<omniperception::DetectionResult> & detection_queue, std::list<Armor> & armors,
   std::chrono::steady_clock::time_point t, bool use_enemy_color)
 {
+  std::lock_guard<std::mutex> lock(mutex_);
   omniperception::DetectionResult switch_target{std::list<Armor>(), t, 0, 0};
   omniperception::DetectionResult temp_target{std::list<Armor>(), t, 0, 0};
   if (!detection_queue.empty()) {
@@ -162,6 +227,8 @@ std::tuple<omniperception::DetectionResult, std::list<Target>> Tracker::track(
   else {
     found = update_target(armors, t);
   }
+
+  if (found) last_observed_timestamp_ = t;
 
   pre_state_ = state_;
   // 更新状态机

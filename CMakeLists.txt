@@ -115,4 +115,6 @@ add_executable(async_detector_test tests/async_detector_test.cpp)
 target_link_libraries(async_detector_test ${OpenCV_LIBS} fmt::fmt yaml-cpp auto_aim tools io)
 
 add_executable(openvino_benchmark_test tests/openvino_benchmark_test.cpp)
+add_executable(awakening_detector_test tests/awakening_detector_test.cpp)
 target_link_libraries(openvino_benchmark_test ${OpenCV_LIBS} fmt::fmt yaml-cpp auto_aim tools io)
+target_link_libraries(awakening_detector_test ${OpenCV_LIBS} fmt::fmt yaml-cpp auto_aim tools io)

@@ -6,6 +6,7 @@
 #include <deque>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <opencv2/core.hpp>
 #include <openvino/openvino.hpp>
 #include <string>
@@ -18,6 +19,12 @@ namespace auto_aim
 class NetDetector
 {
 public:
+  enum class ColorFormat
+  {
+    bgr,
+    rgb
+  };
+
   struct Config
   {
     std::string model_path;
@@ -27,6 +34,9 @@ public:
     int infer_request_buffer_num = 2;
     bool use_roi = false;
     cv::Rect roi;
+    ColorFormat model_color_format = ColorFormat::rgb;
+    bool normalize = true;
+    bool center_letterbox = false;
   };
 
   struct Result
@@ -36,6 +46,7 @@ public:
     double scale = 1.0;
     cv::Rect roi;
     bool has_roi = false;
+    cv::Point2f padding;
   };
 
 private:
@@ -54,7 +65,7 @@ public:
     friend class NetDetector;
 
     Ticket(std::shared_ptr<Impl> impl, std::size_t slot_index, cv::Mat source, double scale,
-      cv::Rect roi, bool has_roi);
+      cv::Rect roi, bool has_roi, cv::Point2f padding);
 
     void release() noexcept;
 
@@ -64,6 +75,7 @@ public:
     double scale_ = 1.0;
     cv::Rect roi_;
     bool has_roi_ = false;
+    cv::Point2f padding_;
     bool completed_ = false;
     bool released_ = false;
   };
@@ -73,17 +85,20 @@ public:
   explicit NetDetector(Config config);
 
   // Returns no ticket when every request is in flight. Suitable for a low-latency capture loop.
-  TicketPtr try_start_async(const cv::Mat & image, bool clone_source);
+  TicketPtr try_start_async(
+    const cv::Mat & image, bool clone_source, std::optional<cv::Rect> roi_override = std::nullopt);
 
   // Waits for a reusable request when synchronous callers need a result.
-  TicketPtr start(const cv::Mat & image);
+  TicketPtr start(const cv::Mat & image, std::optional<cv::Rect> roi_override = std::nullopt);
 
   Result wait(const TicketPtr & ticket) const;
 
   std::size_t request_capacity() const;
 
 private:
-  TicketPtr start_impl(const cv::Mat & image, bool clone_source, bool wait_for_slot);
+  TicketPtr start_impl(
+    const cv::Mat & image, bool clone_source, bool wait_for_slot,
+    std::optional<cv::Rect> roi_override);
 
   std::shared_ptr<Impl> impl_;
 };

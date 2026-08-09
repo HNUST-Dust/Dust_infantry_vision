@@ -2,8 +2,10 @@
 
 #include <atomic>
 #include <chrono>
+#include <cstdint>
 #include <nlohmann/json.hpp>
 #include <opencv2/opencv.hpp>
+#include <optional>
 #include <thread>
 
 #include "io/camera.hpp"
@@ -14,6 +16,7 @@
 #include "tasks/auto_aim/yolo.hpp"
 #include "tools/exiter.hpp"
 #include "tools/img_tools.hpp"
+#include "tools/latency_stats.hpp"
 #include "tools/logger.hpp"
 #include "tools/math_tools.hpp"
 #include "tools/plotter.hpp"
@@ -23,7 +26,32 @@ using namespace std::chrono_literals;
 
 const std::string keys =
   "{help h usage ? |                        | 输出命令行参数说明}"
-  "{@config-path   | configs/standard3.yaml | 位置参数，yaml配置文件路径 }";
+  "{@config-path   | configs/standard3.yaml | 位置参数，yaml配置文件路径 }"
+  "{simulate-gimbal | false                  | 使用虚拟云台姿态和串口输出 }";
+
+namespace
+{
+
+struct TargetUpdate
+{
+  std::optional<auto_aim::Target> target;
+  std::chrono::steady_clock::time_point frame_timestamp;
+  uint64_t sequence = 0;
+};
+
+void add_latency_metrics(
+  nlohmann::json & data, const std::optional<tools::LatencySummary> & latency_summary)
+{
+  if (!latency_summary) return;
+
+  const auto & summary = *latency_summary;
+  data["vision_latency_ms"] = summary.latest_ms;
+  data["vision_latency_p50_ms"] = summary.p50_ms;
+  data["vision_latency_p95_ms"] = summary.p95_ms;
+  data["vision_latency_p99_ms"] = summary.p99_ms;
+}
+
+}  // namespace
 
 int main(int argc, char * argv[])
 {
@@ -37,7 +65,7 @@ int main(int argc, char * argv[])
     return 0;
   }
 
-  io::Gimbal gimbal(config_path);
+  io::Gimbal gimbal(config_path, cli.get<bool>("simulate-gimbal"));
   io::Camera camera(config_path);
 
   auto_aim::YOLO yolo(config_path, true);
@@ -45,8 +73,8 @@ int main(int argc, char * argv[])
   auto_aim::Tracker tracker(config_path, solver);
   auto_aim::Planner planner(config_path);
 
-  tools::ThreadSafeQueue<std::optional<auto_aim::Target>, true> target_queue(1);
-  target_queue.push(std::nullopt);
+  tools::ThreadSafeQueue<TargetUpdate, true> target_queue(1);
+  target_queue.push({std::nullopt, std::chrono::steady_clock::now(), 0});
 
   // 用于线程间共享 Tracker 状态
   std::atomic<int> tracker_state_code{0};  // 0=lost, 1=detecting, 2=tracking, 3=temp_lost, 4=switching
@@ -55,15 +83,25 @@ int main(int argc, char * argv[])
   auto plan_thread = std::thread([&]() {
     auto t0 = std::chrono::steady_clock::now();
     uint16_t last_bullet_count = 0;
+    uint64_t last_latency_sequence = 0;
+    auto last_latency_log = t0;
+    tools::LatencyStats latency_stats;
+    std::optional<tools::LatencySummary> latency_summary;
 
     while (!quit) {
-      auto target = target_queue.front();
+      const auto update = target_queue.front();
       auto gs = gimbal.state();
-  auto plan = planner.plan(target, gs.bullet_speed, solver.R_gimbal2world());
+      auto plan = planner.plan(update.target, gs.bullet_speed, solver.R_gimbal2world());
 
       gimbal.send(
         plan.control, plan.fire, plan.yaw, plan.yaw_vel, plan.yaw_acc, plan.pitch, plan.pitch_vel,
         plan.pitch_acc);
+      const auto sent_at = std::chrono::steady_clock::now();
+      if (update.sequence != 0 && update.sequence != last_latency_sequence) {
+        latency_stats.add(1e3 * tools::delta_time(sent_at, update.frame_timestamp));
+        last_latency_sequence = update.sequence;
+        latency_summary = latency_stats.summary();
+      }
 
       auto fired = gs.bullet_count > last_bullet_count;
       last_bullet_count = gs.bullet_count;
@@ -73,7 +111,7 @@ int main(int argc, char * argv[])
       
       // Tracker 状态
       data["tracker_state"] = tracker_state_code.load();
-      data["has_target"] = target.has_value() ? 1 : 0;
+      data["has_target"] = update.target.has_value() ? 1 : 0;
 
       data["gimbal_yaw"] = gs.yaw;  // radians
       data["gimbal_yaw_vel"] = gs.yaw_vel;
@@ -94,14 +132,14 @@ int main(int argc, char * argv[])
       data["fire"] = plan.fire ? 1 : 0;
       data["fired"] = fired ? 1 : 0;
 
-      if (target.has_value()) {
-        data["target_z"] = target->ekf_x()[4];   //z
-        data["target_vz"] = target->ekf_x()[5];  //vz
+      if (update.target.has_value()) {
+        data["target_z"] = update.target->ekf_x()[4];   //z
+        data["target_vz"] = update.target->ekf_x()[5];  //vz
       }
 
-      if (target.has_value()) {
-        data["w"] = target->ekf_x()[7];
-        data["angle"] = target->ekf_x()[6];  // EKF 角度 a
+      if (update.target.has_value()) {
+        data["w"] = update.target->ekf_x()[7];
+        data["angle"] = update.target->ekf_x()[6];  // EKF 角度 a
       } else {
         data["w"] = 0.0;
       }
@@ -109,7 +147,20 @@ int main(int argc, char * argv[])
       // 计算并添加 mode 信息
       int mode_value = plan.control ? (plan.fire ? 2 : 1) : 0;  // 0=IDLE, 1=AUTO_AIM, 2=FIRE
       data["mode"] = mode_value;
+      add_latency_metrics(data, latency_summary);
       plotter.plot(data);
+
+      if (
+        latency_summary &&
+        tools::delta_time(sent_at, last_latency_log) >= 1.0) {
+        const auto & summary = *latency_summary;
+        tools::logger()->info(
+          "[VisionLatency] samples: {}, latest: {:.2f} ms, p50: {:.2f} ms, p95: {:.2f} ms, "
+          "p99: {:.2f} ms, max: {:.2f} ms",
+          summary.sample_count, summary.latest_ms, summary.p50_ms, summary.p95_ms, summary.p99_ms,
+          summary.max_ms);
+        last_latency_log = sent_at;
+      }
 
       std::this_thread::sleep_for(10ms);
     }
@@ -119,6 +170,7 @@ int main(int argc, char * argv[])
   std::chrono::steady_clock::time_point t;
   auto t0 = std::chrono::steady_clock::now();
   std::string last_state = "lost";
+  uint64_t target_sequence = 0;
 
   while (!exiter.exit()) {
     camera.read(img, t);
@@ -127,8 +179,12 @@ int main(int argc, char * argv[])
 
     solver.set_R_gimbal2world(q);
     
+    const auto roi_override = tracker.dynamic_roi_enabled()
+                                ? std::optional<cv::Rect>(tracker.focus_roi(
+                                    img.size(), t, solver.R_gimbal2world(q)))
+                                : std::nullopt;
     auto t_yolo_start = std::chrono::steady_clock::now();
-    auto armors = yolo.detect(img);
+    auto armors = yolo.detect(img, -1, roi_override);
     auto t_yolo_end = std::chrono::steady_clock::now();
     auto yolo_inference_time = tools::delta_time(t_yolo_end, t_yolo_start);
     
@@ -148,10 +204,9 @@ int main(int argc, char * argv[])
     else if (current_state == "temp_lost") tracker_state_code = 3;
     else if (current_state == "switching") tracker_state_code = 4;
     
-    if (!targets.empty())
-      target_queue.push(targets.front());
-    else
-      target_queue.push(std::nullopt);
+    target_queue.push(
+      {targets.empty() ? std::nullopt : std::optional<auto_aim::Target>(targets.front()), t,
+        ++target_sequence});
 
     if (!targets.empty()) {
       auto target = targets.front();

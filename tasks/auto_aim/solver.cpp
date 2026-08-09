@@ -49,11 +49,16 @@ Eigen::Matrix3d Solver::R_gimbal2world() const
   return R_gimbal2world_;
 }
 
+Eigen::Matrix3d Solver::R_gimbal2world(const Eigen::Quaterniond & q) const
+{
+  const Eigen::Matrix3d R_imubody2imuabs = q.toRotationMatrix();
+  return R_gimbal2imubody_.transpose() * R_imubody2imuabs * R_gimbal2imubody_;
+}
+
 void Solver::set_R_gimbal2world(const Eigen::Quaterniond & q)
 {
-  Eigen::Matrix3d R_imubody2imuabs = q.toRotationMatrix();
   std::lock_guard<std::mutex> lock(rotation_mutex_);
-  R_gimbal2world_ = R_gimbal2imubody_.transpose() * R_imubody2imuabs * R_gimbal2imubody_;
+  R_gimbal2world_ = R_gimbal2world(q);
 }
 
 //solvePnP（获得姿态）

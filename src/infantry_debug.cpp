@@ -2,8 +2,10 @@
 
 #include <atomic>
 #include <chrono>
+#include <cstdint>
 #include <nlohmann/json.hpp>
 #include <opencv2/opencv.hpp>
+#include <optional>
 #include <thread>
 
 #include "io/camera.hpp"
@@ -14,6 +16,7 @@
 #include "tasks/auto_aim/tracker.hpp"
 #include "tools/exiter.hpp"
 #include "tools/img_tools.hpp"
+#include "tools/latency_stats.hpp"
 #include "tools/logger.hpp"
 #include "tools/math_tools.hpp"
 #include "tools/plotter.hpp"
@@ -23,7 +26,33 @@ using namespace std::chrono_literals;
 
 const std::string keys =
   "{help h usage ? |                        | 输出命令行参数说明}"
-  "{@config-path   | configs/standard3.yaml | 位置参数，yaml配置文件路径 }";
+  "{@config-path   | configs/standard3.yaml | 位置参数，yaml配置文件路径 }"
+  "{simulate-gimbal | false                  | 使用虚拟云台姿态和串口输出 }"
+  "{headless        | false                  | 关闭检测可视化和窗口事件 }";
+
+namespace
+{
+
+struct TargetUpdate
+{
+  std::optional<auto_aim::Target> target;
+  std::chrono::steady_clock::time_point frame_timestamp;
+  uint64_t sequence = 0;
+};
+
+void add_latency_metrics(
+  nlohmann::json & data, const std::optional<tools::LatencySummary> & latency_summary)
+{
+  if (!latency_summary) return;
+
+  const auto & summary = *latency_summary;
+  data["vision_latency_ms"] = summary.latest_ms;
+  data["vision_latency_p50_ms"] = summary.p50_ms;
+  data["vision_latency_p95_ms"] = summary.p95_ms;
+  data["vision_latency_p99_ms"] = summary.p99_ms;
+}
+
+}  // namespace
 
 int main(int argc, char * argv[])
 {
@@ -36,17 +65,18 @@ int main(int argc, char * argv[])
     cli.printMessage();
     return 0;
   }
+  const bool headless = cli.get<bool>("headless");
 
-  io::Gimbal gimbal(config_path);
+  io::Gimbal gimbal(config_path, cli.get<bool>("simulate-gimbal"));
   io::Camera camera(config_path);
 
-  auto_aim::multithread::MultiThreadDetector detector(config_path, true);
+  auto_aim::multithread::MultiThreadDetector detector(config_path, !headless);
   auto_aim::Solver solver(config_path);
   auto_aim::Tracker tracker(config_path, solver);
   auto_aim::Planner planner(config_path);
 
-  tools::ThreadSafeQueue<std::optional<auto_aim::Target>, true> target_queue(1);
-  target_queue.push(std::nullopt);
+  tools::ThreadSafeQueue<TargetUpdate, true> target_queue(1);
+  target_queue.push({std::nullopt, std::chrono::steady_clock::now(), 0});
 
   // 用于线程间共享 Tracker 状态
   std::atomic<int> tracker_state_code{0};  // 0=lost, 1=detecting, 2=tracking, 3=temp_lost, 4=switching
@@ -55,11 +85,15 @@ int main(int argc, char * argv[])
   auto plan_thread = std::thread([&]() {
     auto t0 = std::chrono::steady_clock::now();
     uint16_t last_bullet_count = 0;
+    uint64_t last_latency_sequence = 0;
+    auto last_latency_log = t0;
+    tools::LatencyStats latency_stats;
+    std::optional<tools::LatencySummary> latency_summary;
 
     while (!quit) {
-      auto target = target_queue.front();
+      const auto update = target_queue.front();
       auto gs = gimbal.state();
-      auto plan = planner.plan(target, gs.bullet_speed, solver.R_gimbal2world());
+      auto plan = planner.plan(update.target, gs.bullet_speed, solver.R_gimbal2world());
 
       io::VisionToGimbal vtg;
       vtg.mode = plan.control ? (plan.fire ? 2 : 1) : 0;
@@ -69,7 +103,13 @@ int main(int argc, char * argv[])
       vtg.pitch = plan.pitch;
       vtg.pitch_vel = plan.pitch_vel;
       vtg.pitch_acc = plan.pitch_acc;
-      gimbal.send(vtg); 
+      gimbal.send(vtg);
+      const auto sent_at = std::chrono::steady_clock::now();
+      if (update.sequence != 0 && update.sequence != last_latency_sequence) {
+        latency_stats.add(1e3 * tools::delta_time(sent_at, update.frame_timestamp));
+        last_latency_sequence = update.sequence;
+        latency_summary = latency_stats.summary();
+      }
 
       auto fired = gs.bullet_count > last_bullet_count;
       last_bullet_count = gs.bullet_count;
@@ -79,7 +119,7 @@ int main(int argc, char * argv[])
       
       // Tracker 状态
       data["tracker_state"] = tracker_state_code.load();
-      data["has_target"] = target.has_value() ? 1 : 0;
+      data["has_target"] = update.target.has_value() ? 1 : 0;
 
       data["gimbal_yaw"] = gs.yaw;  // radians
       data["gimbal_yaw_vel"] = gs.yaw_vel;
@@ -100,37 +140,68 @@ int main(int argc, char * argv[])
       data["mode"] = vtg.mode;
 
 
-      if (target.has_value()) {
-        data["target_z"] = target->ekf_x()[4];   //z
-        data["target_vz"] = target->ekf_x()[5];  //vz
+      if (update.target.has_value()) {
+        data["target_z"] = update.target->ekf_x()[4];   //z
+        data["target_vz"] = update.target->ekf_x()[5];  //vz
       }
 
-      if (target.has_value()) {
-        data["w"] = target->ekf_x()[7];
-        data["angle"] = target->ekf_x()[6];  // EKF 角度 a
+      if (update.target.has_value()) {
+        data["w"] = update.target->ekf_x()[7];
+        data["angle"] = update.target->ekf_x()[6];  // EKF 角度 a
       } else {
         data["w"] = 0.0;
       }
 
+      add_latency_metrics(data, latency_summary);
       plotter.plot(data);
+
+      if (
+        latency_summary &&
+        tools::delta_time(sent_at, last_latency_log) >= 1.0) {
+        const auto & summary = *latency_summary;
+        tools::logger()->info(
+          "[VisionLatency] samples: {}, latest: {:.2f} ms, p50: {:.2f} ms, p95: {:.2f} ms, "
+          "p99: {:.2f} ms, max: {:.2f} ms",
+          summary.sample_count, summary.latest_ms, summary.p50_ms, summary.p95_ms, summary.p99_ms,
+          summary.max_ms);
+        last_latency_log = sent_at;
+      }
 
       std::this_thread::sleep_for(10ms);
     }
   });
 
   std::string last_state = "lost";
+  uint64_t target_sequence = 0;
 
   auto detect_thread = std::thread([&]() {
     cv::Mat img;
     std::chrono::steady_clock::time_point t;
     while (!exiter.exit()) {
       camera.read(img, t);
-      detector.push(img, t);
+      const auto q = gimbal.q(t);
+      const auto roi_override = tracker.dynamic_roi_enabled()
+                                  ? std::optional<cv::Rect>(tracker.focus_roi(
+                                      img.size(), t, solver.R_gimbal2world(q)))
+                                  : std::nullopt;
+      detector.push(img, t, roi_override);
     }
   });
 
   while (!exiter.exit()) {
-    auto [img_det, armors, t_det] = detector.debug_pop();
+    cv::Mat img_det;
+    std::list<auto_aim::Armor> armors;
+    std::chrono::steady_clock::time_point t_det;
+    if (headless) {
+      auto [detected_armors, detected_timestamp] = detector.pop();
+      armors = std::move(detected_armors);
+      t_det = detected_timestamp;
+    } else {
+      auto [detected_img, detected_armors, detected_timestamp] = detector.debug_pop();
+      img_det = std::move(detected_img);
+      armors = std::move(detected_armors);
+      t_det = detected_timestamp;
+    }
 
     auto q = gimbal.q(t_det);
     solver.set_R_gimbal2world(q);
@@ -150,49 +221,49 @@ int main(int argc, char * argv[])
     else if (current_state == "temp_lost") tracker_state_code = 3;
     else if (current_state == "switching") tracker_state_code = 4;
     
-    if (!targets.empty())
-      target_queue.push(targets.front());
-    else
-      target_queue.push(std::nullopt);
+    target_queue.push(
+      {targets.empty() ? std::nullopt : std::optional<auto_aim::Target>(targets.front()), t_det,
+        ++target_sequence});
 
-    if (!targets.empty()) {
-      auto target = targets.front();
+    if (!headless) {
+      if (!targets.empty()) {
+        auto target = targets.front();
 
-      // 当前帧target更新后
-      std::vector<Eigen::Vector4d> armor_xyza_list = target.armor_xyza_list();
-      for (const Eigen::Vector4d & xyza : armor_xyza_list) {
+        // 当前帧target更新后
+        std::vector<Eigen::Vector4d> armor_xyza_list = target.armor_xyza_list();
+        for (const Eigen::Vector4d & xyza : armor_xyza_list) {
+          auto image_points =
+            solver.reproject_armor(xyza.head(3), xyza[3], target.armor_type, target.name);
+          tools::draw_points(img_det, image_points, {0, 255, 0});
+        }
+        Eigen::Vector4d aim_xyza = planner.debug_xyza();
         auto image_points =
-          solver.reproject_armor(xyza.head(3), xyza[3], target.armor_type, target.name);
-        tools::draw_points(img_det, image_points, {0, 255, 0});
+          solver.reproject_armor(aim_xyza.head(3), aim_xyza[3], target.armor_type, target.name);
+        tools::draw_points(img_det, image_points, {0, 0, 255});
 
+        // 在终端上显示 EKF 状态信息
+        auto ekf_x = target.ekf_x();
+        tools::logger()->info(
+          "[EKF] x={:.4f} vx={:.4f} y={:.4f} vy={:.4f} z={:.4f} vz={:.4f} a={:.4f} w={:.4f} r={:.4f} l={:.4f} h={:.4f}",
+          ekf_x[0], ekf_x[1], ekf_x[2], ekf_x[3], ekf_x[4], ekf_x[5], ekf_x[6], ekf_x[7],
+          ekf_x[8], ekf_x[9], ekf_x[10]);
       }
-      Eigen::Vector4d aim_xyza = planner.debug_xyza();
-      auto image_points =
-        solver.reproject_armor(aim_xyza.head(3), aim_xyza[3], target.armor_type, target.name);
-      tools::draw_points(img_det, image_points, {0, 0, 255});
-      
-      // 在终端上显示 EKF 状态信息
-      auto ekf_x = target.ekf_x();
-      tools::logger()->info(
-        "[EKF] x={:.4f} vx={:.4f} y={:.4f} vy={:.4f} z={:.4f} vz={:.4f} a={:.4f} w={:.4f} r={:.4f} l={:.4f} h={:.4f}",
-        ekf_x[0], ekf_x[1], ekf_x[2], ekf_x[3], ekf_x[4], ekf_x[5], 
-        ekf_x[6], ekf_x[7], ekf_x[8], ekf_x[9], ekf_x[10]);
-    }
-    
-    // 在图像上显示 Tracker 状态
-    cv::Scalar state_color = (current_state == "tracking") ? cv::Scalar(0, 255, 0) : 
-                             (current_state == "detecting") ? cv::Scalar(0, 255, 255) :
-                             (current_state == "temp_lost") ? cv::Scalar(0, 165, 255) :
-                             cv::Scalar(0, 0, 255);  // lost = red
-    cv::putText(img_det, fmt::format("State: {}", current_state), 
-                {10, 30}, cv::FONT_HERSHEY_SIMPLEX, 0.8, state_color, 2);
-    cv::line(img_det, cv::Point(700, 540), cv::Point(740, 540), cv::Scalar(255, 255, 255));
-    cv::line(img_det, cv::Point(720, 520), cv::Point(720, 560), cv::Scalar(255, 255, 255));
 
-    cv::resize(img_det, img_det, {}, 0.5, 0.5);  // 显示时缩小图片尺寸
-    cv::imshow("reprojection", img_det);
-    auto key = cv::waitKey(1);
-    if (key == 'q') break;
+      // 在图像上显示 Tracker 状态
+      cv::Scalar state_color = (current_state == "tracking") ? cv::Scalar(0, 255, 0) :
+                               (current_state == "detecting") ? cv::Scalar(0, 255, 255) :
+                               (current_state == "temp_lost") ? cv::Scalar(0, 165, 255) :
+                               cv::Scalar(0, 0, 255);  // lost = red
+      cv::putText(
+        img_det, fmt::format("State: {}", current_state), {10, 30}, cv::FONT_HERSHEY_SIMPLEX,
+        0.8, state_color, 2);
+      cv::line(img_det, cv::Point(700, 540), cv::Point(740, 540), cv::Scalar(255, 255, 255));
+      cv::line(img_det, cv::Point(720, 520), cv::Point(720, 560), cv::Scalar(255, 255, 255));
+
+      cv::resize(img_det, img_det, {}, 0.5, 0.5);  // 显示时缩小图片尺寸
+      cv::imshow("reprojection", img_det);
+      if (cv::waitKey(1) == 'q') break;
+    }
   }
 
   quit = true;

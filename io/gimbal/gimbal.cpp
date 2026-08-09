@@ -9,7 +9,8 @@
 
 namespace io
 {
-Gimbal::Gimbal(const std::string & config_path)
+Gimbal::Gimbal(const std::string & config_path, bool simulate)
+: simulate_(simulate)
 {
   auto yaml = tools::load(config_path);
   auto com_port = tools::read<std::string>(yaml, "com_port");
@@ -18,6 +19,12 @@ Gimbal::Gimbal(const std::string & config_path)
     skip_crc_ = tools::read<bool>(yaml, "skip_gimbal_crc");
   else if (yaml["skip_cboard_crc"])
     skip_crc_ = tools::read<bool>(yaml, "skip_cboard_crc");
+
+  if (simulate_) {
+    state_.bullet_speed = 23.0F;
+    tools::logger()->warn("[Gimbal] Using simulated feedback and serial output.");
+    return;
+  }
 
   try {
     serial_.setPort(com_port);
@@ -46,7 +53,7 @@ Gimbal::~Gimbal()
   quit_ = true;
   queue_.close();
   if (thread_.joinable()) thread_.join();
-  serial_.close();
+  if (!simulate_) serial_.close();
 }
 
 GimbalMode Gimbal::mode() const
@@ -75,6 +82,8 @@ std::string Gimbal::str(GimbalMode mode) const
 
 Eigen::Quaterniond Gimbal::q(std::chrono::steady_clock::time_point t)
 {
+  if (simulate_) return Eigen::Quaterniond::Identity();
+
   while (!quit_) {
     auto first = queue_.wait_pop_for(std::chrono::milliseconds(20));
     if (!first) return Eigen::Quaterniond::Identity();
@@ -109,6 +118,8 @@ void Gimbal::send(io::VisionToGimbal VisionToGimbal)
   tx_data_.crc16 = tools::get_crc16(
     reinterpret_cast<uint8_t *>(&tx_data_), sizeof(tx_data_) - sizeof(tx_data_.crc16));
 
+  if (simulate_) return;
+
   try {
     serial_.write(reinterpret_cast<uint8_t *>(&tx_data_), sizeof(tx_data_));
   } catch (const std::exception & e) {
@@ -129,6 +140,8 @@ void Gimbal::send(
   tx_data_.pitch_acc = pitch_acc;
   tx_data_.crc16 = tools::get_crc16(
     reinterpret_cast<uint8_t *>(&tx_data_), sizeof(tx_data_) - sizeof(tx_data_.crc16));
+
+  if (simulate_) return;
 
   // // 打印十六进制数据
   // std::string hex_str;

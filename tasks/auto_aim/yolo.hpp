@@ -3,6 +3,7 @@
 
 #include <list>
 #include <memory>
+#include <optional>
 #include <opencv2/core.hpp>
 #include <string>
 #include <vector>
@@ -23,10 +24,13 @@ class YOLO
 public:
   YOLO(const std::string & config_path, bool debug = true);
 
-  std::list<Armor> detect(const cv::Mat & img, int frame_count = -1);
+  std::list<Armor> detect(
+    const cv::Mat & img, int frame_count = -1,
+    std::optional<cv::Rect> roi_override = std::nullopt);
 
   // Returns no request when the bounded request pool is busy, so callers can drop stale frames.
-  NetDetector::TicketPtr try_start_async(const cv::Mat & img);
+  NetDetector::TicketPtr try_start_async(
+    const cv::Mat & img, std::optional<cv::Rect> roi_override = std::nullopt);
 
   std::list<Armor> postprocess(const NetDetector::TicketPtr & ticket, int frame_count = -1);
 

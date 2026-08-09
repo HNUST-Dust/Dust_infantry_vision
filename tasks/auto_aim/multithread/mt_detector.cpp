@@ -15,7 +15,8 @@ MultiThreadDetector::MultiThreadDetector(const std::string & config_path, bool d
     "[MultiThreadDetector] initialized with {} asynchronous requests", yolo_.request_capacity());
 }
 
-bool MultiThreadDetector::push(cv::Mat img, std::chrono::steady_clock::time_point t)
+bool MultiThreadDetector::push(
+  cv::Mat img, std::chrono::steady_clock::time_point t, std::optional<cv::Rect> roi_override)
 {
   // 延迟优先：队列已满时直接丢弃新帧，不要启动推理浪费 GPU 时间
   if (queue_->full()) {
@@ -23,7 +24,7 @@ bool MultiThreadDetector::push(cv::Mat img, std::chrono::steady_clock::time_poin
     return false;
   }
 
-  auto ticket = yolo_.try_start_async(img);
+  auto ticket = yolo_.try_start_async(img, roi_override);
   if (!ticket) {
     tools::logger()->debug("[MultiThreadDetector] request pool is full, drop frame!");
     return false;
