@@ -6,6 +6,7 @@ add_library(auto_aim OBJECT
     armor.cpp
     classifier.cpp 
     detector.cpp
+    dynamic_roi.cpp
     solver.cpp
     aimer.cpp
     target.cpp
@@ -16,8 +17,6 @@ add_library(auto_aim OBJECT
     awakening_detector.cpp
     yolo.cpp
     yolos/yolov5.cpp
-    yolos/yolov8.cpp
-    yolos/yolo11.cpp
     multithread/commandgener.cpp
     multithread/mt_detector.cpp
     planner/planner.cpp

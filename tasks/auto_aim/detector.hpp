@@ -2,6 +2,7 @@
 #define AUTO_AIM__DETECTOR_HPP
 
 #include <list>
+#include <optional>
 #include <opencv2/opencv.hpp>
 #include <string>
 #include <vector>
@@ -19,9 +20,9 @@ public:
 
   std::list<Armor> detect(const cv::Mat & bgr_img, int frame_count = -1);
 
-  bool detect(Armor & armor, const cv::Mat & bgr_img);
-
-  friend class YOLOV8;
+  bool detect(
+    Armor & armor, const cv::Mat & bgr_img,
+    std::optional<cv::Rect> light_roi = std::nullopt);
 
 private:
   Classifier classifier_;

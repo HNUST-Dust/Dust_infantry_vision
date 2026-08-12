@@ -13,6 +13,7 @@ class CameraBase
 public:
   virtual ~CameraBase() = default;
   virtual void read(cv::Mat & img, std::chrono::steady_clock::time_point & timestamp) = 0;
+  virtual void stop() = 0;
 };
 
 class Camera
@@ -20,6 +21,7 @@ class Camera
 public:
   Camera(const std::string & config_path);
   void read(cv::Mat & img, std::chrono::steady_clock::time_point & timestamp);
+  void stop();
 
 private:
   std::unique_ptr<CameraBase> camera_;

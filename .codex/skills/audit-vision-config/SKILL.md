@@ -11,7 +11,7 @@ Use this skill before changing a threshold, model, device, or calibration number
 
 1. Identify the exact YAML file and the executable that consumes it. Run from the repository root because model and demo paths are relative.
 2. Compare the YAML against the actual reads in code, not just the README. Search `tools::read`, `yaml[`, and `tools::load` in the relevant module.
-3. Check file existence and compatibility for `classify_model`, `yolov5_model_path`, `yolov8_model_path`, and `yolo11_model_path`; ensure `yolo_name` selects the intended model and `device` is available.
+3. Check file existence and compatibility for `classify_model` and `yolov5_model_path`; ensure `detector_name` selects the intended detector and `device` is available.
 4. Validate camera fields (`camera_name`, `vid_pid`, exposure, gain/gamma, frame rate) and gimbal fields (`com_port`, optional CRC setting) without opening hardware. Hand hardware failures to `$diagnose-camera-stack` or `$diagnose-gimbal-link`.
 5. Validate calibration structure and units: 3x3 `camera_matrix`, distortion vector, 3x3 rotations, 3-vector translation, and consistent coordinate/frame conventions. Check rotation orthonormality and determinant near `+1`; flag implausible values rather than auto-correcting them.
 6. Check that OpenVINO lookup paths are consistent in root `CMakeLists.txt`, `tasks/auto_aim/CMakeLists.txt`, and `tasks/omniperception/CMakeLists.txt`.

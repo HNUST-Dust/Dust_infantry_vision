@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "armor.hpp"
+#include "dynamic_roi.hpp"
 #include "solver.hpp"
 #include "target.hpp"
 #include "tools/thread_safe_queue.hpp"
@@ -30,7 +31,7 @@ public:
 
   bool dynamic_roi_enabled() const;
 
-  cv::Rect focus_roi(
+  FocusRois focus_rois(
     const cv::Size & image_size, std::chrono::steady_clock::time_point t,
     const Eigen::Matrix3d & R_gimbal2world) const;
 
@@ -57,9 +58,7 @@ private:
   std::chrono::steady_clock::time_point last_observed_timestamp_;
   ArmorPriority omni_target_priority_;
   bool dynamic_roi_enabled_ = false;
-  double focus_expand_ratio_ = 1.4;
-  double focus_base_expand_ratio_ = 3.0;
-  double focus_lost_time_ = 0.5;
+  DynamicRoiConfig dynamic_roi_config_;
   mutable std::mutex mutex_;
 
   void state_machine(bool found);

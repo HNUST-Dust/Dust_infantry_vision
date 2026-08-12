@@ -37,4 +37,9 @@ void Camera::read(cv::Mat & img, std::chrono::steady_clock::time_point & timesta
   camera_->read(img, timestamp);
 }
 
+void Camera::stop()
+{
+  camera_->stop();
+}
+
 }  // namespace io

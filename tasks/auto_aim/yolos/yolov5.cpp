@@ -26,7 +26,8 @@ YOLOV5::YOLOV5(const std::string & config_path, bool debug)
 
 std::list<Armor> YOLOV5::parse(
   double scale, cv::Mat & output, const cv::Mat & bgr_img, int frame_count,
-  const cv::Point2f & offset, bool has_roi, const cv::Rect & roi)
+  const cv::Point2f & offset, bool has_roi, const cv::Rect & roi,
+  std::optional<cv::Rect> light_roi)
 {
   // for each row: xywh + classess
   std::vector<int> color_ids, num_ids;
@@ -107,7 +108,7 @@ std::list<Armor> YOLOV5::parse(
       continue;
     }
     // 使用传统方法二次矫正角点
-    if (use_traditional_) detector_.detect(*it, bgr_img);
+    if (use_traditional_) detector_.detect(*it, bgr_img, light_roi);
 
     it->center_norm = get_center_norm(bgr_img, it->center);
     ++it;
@@ -168,7 +169,7 @@ void YOLOV5::draw_detections(
     cv::rectangle(detection, roi, green, 2);
   }
   cv::resize(detection, detection, {}, 0.5, 0.5);  // 显示时缩小图片尺寸
-  // cv::imshow("detection", detection);
+  cv::imshow("detection", detection);
 }
 
 void YOLOV5::save(const Armor & armor) const
@@ -186,12 +187,13 @@ double YOLOV5::sigmoid(double x)
     return exp(x) / (1.0 + exp(x));
 }
 
-std::list<Armor> YOLOV5::postprocess(NetDetector::Result & result, int frame_count)
+std::list<Armor> YOLOV5::postprocess(
+  NetDetector::Result & result, int frame_count, std::optional<cv::Rect> light_roi)
 {
   auto output = result.output;
   return parse(
     result.scale, output, result.source, frame_count, cv::Point2f(result.roi.x, result.roi.y),
-    result.has_roi, result.roi);
+    result.has_roi, result.roi, light_roi);
 }
 
 }  // namespace auto_aim

@@ -18,6 +18,7 @@ public:
   ~USBCamera();
   cv::Mat read();
   void read(cv::Mat & img, std::chrono::steady_clock::time_point & timestamp);
+  void stop();
   std::string device_name;
 
 private:

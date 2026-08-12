@@ -40,12 +40,13 @@ int main(int argc, char * argv[])
   auto_aim::Shooter shooter(config_path);
 
   auto detect_thread = std::thread([&]() {
-    cv::Mat img;
-    std::chrono::steady_clock::time_point t;
-
     while (!exiter.exit()) {
-      camera.read(img, t);
-      detector.push(img, t);
+      cv::Mat image;
+      std::chrono::steady_clock::time_point timestamp;
+      camera.read(image, timestamp);
+      if (image.empty()) break;
+      detector.submit(
+        image, timestamp, cv::Rect(0, 0, image.cols, image.rows));
     }
   });
 
@@ -53,7 +54,11 @@ int main(int argc, char * argv[])
   nlohmann::json data;
 
   while (!exiter.exit()) {
-    auto [img, armors, t] = detector.debug_pop();
+    auto detection = detector.wait_pop_for(std::chrono::milliseconds(50));
+    if (!detection) continue;
+    auto img = std::move(detection->source);
+    auto armors = std::move(detection->armors);
+    const auto t = detection->timestamp;
 
     Eigen::Quaterniond q = dm_imu.imu_at(t);
 
@@ -91,7 +96,7 @@ int main(int argc, char * argv[])
   data["armor_yaw_raw"] = armor.yaw_raw;
     }
 
-    if (!targets.empty()) {
+    if (!img.empty() && !targets.empty()) {
       auto target = targets.front();
       tools::draw_text(img, fmt::format("[{}]", tracker.state()), {10, 30}, {255, 255, 255});
 
@@ -140,13 +145,17 @@ int main(int argc, char * argv[])
       data["nees_fail"] = target.ekf().data.at("nees_fail");
       data["recent_nis_failures"] = target.ekf().data.at("recent_nis_failures");
     }
-    cv::resize(img, img, {}, 0.5, 0.5);  // 显示时缩小图片尺寸
-    cv::imshow("reprojection", img);
-    auto key = cv::waitKey(1);
-    if (key == 'q') break;
+    if (!img.empty()) {
+      cv::resize(img, img, {}, 0.5, 0.5);  // 显示时缩小图片尺寸
+      cv::imshow("reprojection", img);
+      if (cv::waitKey(1) == 'q') break;
+    }
   }
 
-  detect_thread.join();
+  camera.stop();
+  detector.close();
+  if (detect_thread.joinable()) detect_thread.join();
+  detector.join();
 
   return 0;
 }

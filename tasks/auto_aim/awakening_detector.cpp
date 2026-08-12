@@ -90,7 +90,8 @@ AwakeningArmorDetector::AwakeningArmorDetector(const std::string & config_path, 
   }
 }
 
-std::list<Armor> AwakeningArmorDetector::postprocess(NetDetector::Result & result, int /* frame_count */)
+std::list<Armor> AwakeningArmorDetector::postprocess(
+  NetDetector::Result & result, int /* frame_count */, std::optional<cv::Rect> light_roi)
 {
   if (result.output.empty() || result.output.cols != k_tup_output_columns) {
     return {};
@@ -140,7 +141,7 @@ std::list<Armor> AwakeningArmorDetector::postprocess(NetDetector::Result & resul
     armor.center = (armor.points[0] + armor.points[1] + armor.points[2] + armor.points[3]) / 4.0F;
     armor.center_norm = {armor.center.x / result.source.cols, armor.center.y / result.source.rows};
     if (traditional_detector_) {
-      traditional_detector_->detect(armor, result.source);
+      traditional_detector_->detect(armor, result.source, light_roi);
       armor.center =
         (armor.points[0] + armor.points[1] + armor.points[2] + armor.points[3]) / 4.0F;
       armor.box = clip_rect(cv::boundingRect(armor.points), result.source.size());

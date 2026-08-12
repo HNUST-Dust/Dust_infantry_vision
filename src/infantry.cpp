@@ -13,7 +13,7 @@
 #include "tasks/auto_aim/planner/planner.hpp"
 #include "tasks/auto_aim/solver.hpp"
 #include "tasks/auto_aim/tracker.hpp"
-#include "tasks/auto_aim/yolo.hpp"
+#include "tasks/auto_aim/multithread/mt_detector.hpp"
 #include "tools/exiter.hpp"
 #include "tools/img_tools.hpp"
 #include "tools/latency_stats.hpp"
@@ -68,7 +68,7 @@ int main(int argc, char * argv[])
   io::Gimbal gimbal(config_path, cli.get<bool>("simulate-gimbal"));
   io::Camera camera(config_path);
 
-  auto_aim::YOLO yolo(config_path, true);
+  auto_aim::multithread::MultiThreadDetector detector(config_path, false);
   auto_aim::Solver solver(config_path);
   auto_aim::Tracker tracker(config_path, solver);
   auto_aim::Planner planner(config_path);
@@ -166,27 +166,28 @@ int main(int argc, char * argv[])
     }
   });
 
-  cv::Mat img;
-  std::chrono::steady_clock::time_point t;
-  auto t0 = std::chrono::steady_clock::now();
   std::string last_state = "lost";
-  uint64_t target_sequence = 0;
+  auto capture_thread = std::thread([&] {
+    while (!exiter.exit()) {
+      cv::Mat image;
+      std::chrono::steady_clock::time_point timestamp;
+      camera.read(image, timestamp);
+      if (image.empty()) break;
+      const auto q = gimbal.q(timestamp);
+      const auto rois = tracker.dynamic_roi_enabled()
+                          ? tracker.focus_rois(image.size(), timestamp, solver.R_gimbal2world(q))
+                          : auto_aim::FocusRois{cv::Rect(0, 0, image.cols, image.rows), std::nullopt};
+      detector.submit(image, timestamp, rois.net, rois.light);
+    }
+  });
 
   while (!exiter.exit()) {
-    camera.read(img, t);
-    // cv::flip(img,img,-1);
-    auto q = gimbal.q(t);
-
+    auto detection = detector.wait_pop_for(50ms);
+    if (!detection) continue;
+    const auto q = gimbal.q(detection->timestamp);
     solver.set_R_gimbal2world(q);
-    
-    const auto roi_override = tracker.dynamic_roi_enabled()
-                                ? std::optional<cv::Rect>(tracker.focus_roi(
-                                    img.size(), t, solver.R_gimbal2world(q)))
-                                : std::nullopt;
-    auto t_yolo_start = std::chrono::steady_clock::now();
-    auto armors = yolo.detect(img, -1, roi_override);
-    auto t_yolo_end = std::chrono::steady_clock::now();
-    auto yolo_inference_time = tools::delta_time(t_yolo_end, t_yolo_start);
+    auto armors = std::move(detection->armors);
+    const auto t = detection->timestamp;
     
     auto targets = tracker.track(armors, t);
     
@@ -206,27 +207,10 @@ int main(int argc, char * argv[])
     
     target_queue.push(
       {targets.empty() ? std::nullopt : std::optional<auto_aim::Target>(targets.front()), t,
-        ++target_sequence});
+        detection->sequence});
 
     if (!targets.empty()) {
       auto target = targets.front();
-
-      // 当前帧target更新后
-      std::vector<Eigen::Vector4d> armor_xyza_list = target.armor_xyza_list();
-      for (const Eigen::Vector4d & xyza : armor_xyza_list) {
-        auto image_points =
-          solver.reproject_armor(xyza.head(3), xyza[3], target.armor_type, target.name);
-        tools::draw_points(img, image_points, {0, 255, 0});
-      }
-
-      Eigen::Vector4d aim_xyza = planner.debug_xyza();
-      auto image_points =
-        solver.reproject_armor(aim_xyza.head(3), aim_xyza[3], target.armor_type, target.name);
-      tools::draw_points(img, image_points, {0, 0, 255});
-      cv::line(img, cv::Point(700, 540), cv::Point(740, 540), cv::Scalar(255, 255, 255));
-      cv::line(img, cv::Point(720, 520), cv::Point(720, 560), cv::Scalar(255, 255, 255));
-
-      
       // 在终端上显示 EKF 状态信息
       auto ekf_x = target.ekf_x();
       tools::logger()->info(
@@ -249,6 +233,18 @@ int main(int argc, char * argv[])
     // if (key == 'q') break;
   }
 
+  camera.stop();
+  detector.close();
+  if (capture_thread.joinable()) capture_thread.join();
+  while (auto detection = detector.wait_pop()) {
+    auto armors = std::move(detection->armors);
+    solver.set_R_gimbal2world(gimbal.q(detection->timestamp));
+    auto targets = tracker.track(armors, detection->timestamp);
+    target_queue.push(
+      {targets.empty() ? std::nullopt : std::optional<auto_aim::Target>(targets.front()),
+        detection->timestamp, detection->sequence});
+  }
+  detector.join();
   quit = true;
   if (plan_thread.joinable()) plan_thread.join();
   gimbal.send(false, false, 0, 0, 0, 0, 0, 0);

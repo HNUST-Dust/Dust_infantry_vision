@@ -45,12 +45,17 @@ MindVision::MindVision(double exposure_ms, double gamma, const std::string & vid
 
 MindVision::~MindVision()
 {
-  quit_ = true;
-  queue_.close();
+  stop();
   if (daemon_thread_.joinable()) daemon_thread_.join();
   if (capture_thread_.joinable()) capture_thread_.join();
   close();
   tools::logger()->info("Mindvision destructed.");
+}
+
+void MindVision::stop()
+{
+  quit_ = true;
+  queue_.close();
 }
 
 void MindVision::read(cv::Mat & img, std::chrono::steady_clock::time_point & timestamp)

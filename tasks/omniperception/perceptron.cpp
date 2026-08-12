@@ -62,7 +62,7 @@ std::vector<DetectionResult> Perceptron::get_detection_queue()
 
 // 将并行推理逻辑移动到类成员函数
 void Perceptron::parallel_infer(
-  io::USBCamera * cam, std::shared_ptr<auto_aim::YOLO> & yolov8_parallel)
+  io::USBCamera * cam, std::shared_ptr<auto_aim::YOLO> & yolo_parallel)
 {
   if (!cam) {
     tools::logger()->error("Camera pointer is null!");
@@ -84,7 +84,7 @@ void Perceptron::parallel_infer(
         continue;
       }
 
-      auto armors = yolov8_parallel->detect(usb_img);
+      auto armors = yolo_parallel->detect(usb_img);
       if (!armors.empty()) {
         auto delta_angle = decider_.delta_angle(armors, cam->device_name);
 

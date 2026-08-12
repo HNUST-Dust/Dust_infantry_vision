@@ -31,9 +31,18 @@ Tracker::Tracker(const std::string & config_path, Solver & solver)
   normal_temp_lost_count_ = max_temp_lost_count_;
   if (const auto roi_config = yaml["dynamic_roi"]; roi_config) {
     dynamic_roi_enabled_ = roi_config["enabled"].as<bool>();
-    focus_expand_ratio_ = roi_config["expand_ratio"].as<double>();
-    focus_base_expand_ratio_ = roi_config["base_expand_ratio"].as<double>();
-    focus_lost_time_ = roi_config["lost_time"].as<double>();
+    dynamic_roi_config_.expand_ratio = roi_config["expand_ratio"].as<double>();
+    dynamic_roi_config_.base_expand_ratio = roi_config["base_expand_ratio"].as<double>();
+    dynamic_roi_config_.lost_time = roi_config["lost_time"].as<double>();
+    if (roi_config["net_ratio"]) {
+      dynamic_roi_config_.net_ratio = roi_config["net_ratio"].as<double>();
+    } else {
+      const auto detector_name =
+        yaml["detector_name"] ? yaml["detector_name"].as<std::string>() : "yolo";
+      const double input_width = detector_name == "awakening_tup" ? 416.0 : 640.0;
+      const double input_height = detector_name == "awakening_tup" ? 416.0 : 640.0;
+      dynamic_roi_config_.net_ratio = input_width / input_height;
+    }
   }
 }
 
@@ -48,19 +57,21 @@ bool Tracker::dynamic_roi_enabled() const
   return dynamic_roi_enabled_;
 }
 
-cv::Rect Tracker::focus_roi(
+FocusRois Tracker::focus_rois(
   const cv::Size & image_size, std::chrono::steady_clock::time_point t,
   const Eigen::Matrix3d & R_gimbal2world) const
 {
   const cv::Rect full_frame(0, 0, image_size.width, image_size.height);
-  if (!dynamic_roi_enabled_ || image_size.width <= 0 || image_size.height <= 0) return full_frame;
+  if (!dynamic_roi_enabled_ || image_size.width <= 0 || image_size.height <= 0) {
+    return {full_frame, std::nullopt};
+  }
 
   Target target;
   std::chrono::steady_clock::time_point last_observed;
   {
     std::lock_guard<std::mutex> lock(mutex_);
     if (state_ == "lost" || last_observed_timestamp_ == std::chrono::steady_clock::time_point{}) {
-      return full_frame;
+      return {full_frame, std::nullopt};
     }
     target = target_;
     last_observed = last_observed_timestamp_;
@@ -75,21 +86,10 @@ cv::Rect Tracker::focus_roi(
       if (std::isfinite(point.x) && std::isfinite(point.y)) points.push_back(point);
     }
   }
-  if (points.empty()) return full_frame;
-
-  auto rect = cv::boundingRect(points) & full_frame;
-  if (rect.width <= 0 || rect.height <= 0) return full_frame;
-  const double expand_ratio = target.name == ArmorName::base ? focus_base_expand_ratio_ : focus_expand_ratio_;
-  const auto center = cv::Point2f(rect.x + rect.width / 2.0F, rect.y + rect.height / 2.0F);
-  const int side = std::max(1, static_cast<int>(std::ceil(std::max(rect.width, rect.height) * expand_ratio)));
   const auto elapsed = std::chrono::duration<double>(t - last_observed).count();
-  const double recovery = std::clamp(elapsed / focus_lost_time_, 0.0, 1.0);
-  const int recovered_side = static_cast<int>(
-    std::round(side + (std::max(image_size.width, image_size.height) - side) * recovery));
-  cv::Rect focus(
-    static_cast<int>(std::round(center.x - recovered_side / 2.0)),
-    static_cast<int>(std::round(center.y - recovered_side / 2.0)), recovered_side, recovered_side);
-  return focus & full_frame;
+  return make_focus_rois(
+    image_size, points, target.name == ArmorName::base, std::max(0.0, elapsed),
+    dynamic_roi_config_);
 }
 
 std::list<Target> Tracker::track(

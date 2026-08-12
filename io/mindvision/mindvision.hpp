@@ -18,6 +18,7 @@ public:
   MindVision(double exposure_ms, double gamma, const std::string & vid_pid);
   ~MindVision() override;
   void read(cv::Mat & img, std::chrono::steady_clock::time_point & timestamp) override;
+  void stop() override;
 
 private:
   struct CameraData

@@ -44,9 +44,6 @@ cmake --build build-ninja --target auto_aim_test -j$(nproc)
 - `build-ninja/detector_video_test`
 - `build-ninja/auto_aim_test`
 - `build-ninja/gimbal_test`
-- `build-ninja/cboard_test`
-- `build-ninja/planner_test`
-- `build-ninja/planner_test_offline`
 
 ### 3. 无硬件快速验证
 
@@ -68,14 +65,6 @@ cmake --build build-ninja --target auto_aim_test -j$(nproc)
 ```yaml
 device: CPU
 ```
-
-只验证 Planner 和配置文件解析，不依赖相机、云台或显示窗口：
-
-```bash
-./build-ninja/planner_test_offline configs/standard3.yaml
-```
-
-该程序会持续运行并发送调试数据到 UDP `127.0.0.1:9870`，用 `Ctrl+C` 退出。
 
 ### 4. 实机运行
 
@@ -103,6 +92,72 @@ source /opt/intel/openvino_2024.6.0/setupvars.sh
 ```bash
 ./build-ninja/camera_test configs/standard3.yaml
 ```
+
+## 测试与调试程序
+
+`tests/` 中的程序均作为独立可执行文件构建，主要用于算法回放、性能测量和硬件联调；除非特别说明，它们不会被 `ctest` 自动执行。
+
+### 离线视觉与算法
+
+- `auto_aim_test`：读取 `<input-path>.avi` 和同名 `.txt` 姿态记录，串联 YOLO、解算、跟踪、瞄准与开火判断，显示重投影和调试数据。
+
+  ```bash
+  ./build-ninja/auto_aim_test configs/standard3.yaml assets/demo/demo
+  ```
+
+- `detector_video_test`：对录像运行 YOLO 或传统灯条检测，输出装甲板四角点，适合比较两种检测路径。
+
+  ```bash
+  ./build-ninja/detector_video_test configs/standard3.yaml assets/demo/demo.avi
+  ./build-ninja/detector_video_test configs/standard3.yaml assets/demo/demo.avi --tradition
+  ```
+
+- `awakening_detector_test`：对录像的前 30 帧运行 Awakening TUP 配置，断言检测角点、置信度及坐标范围有效。
+
+  ```bash
+  ./build-ninja/awakening_detector_test configs/awakening_tup.yaml assets/demo/demo.avi
+  ```
+
+### 相机与实时检测
+
+- `camera_test`：验证配置指定的工业相机采集，持续打印相邻帧 FPS；传入 `--display` 显示画面。
+
+  ```bash
+  ./build-ninja/camera_test configs/standard3.yaml --display
+  ```
+
+- `camera_detect_test`：从工业相机实时取流并运行 YOLO 或传统检测，输出检测 FPS。
+
+  ```bash
+  ./build-ninja/camera_detect_test configs/standard3.yaml
+  ./build-ninja/camera_detect_test configs/standard3.yaml --tradition
+  ```
+
+- `camera_thread_test`：创建多个 YOLO 实例并通过线程池并行处理工业相机帧，用于观察多线程检测吞吐与结果顺序。
+- `minimum_vision_system`：硬件在环的小型完整链路，组合工业相机、DM IMU、异步检测、解算、跟踪、瞄准和射击判断；需要相机、DM IMU 和桌面显示环境。
+
+### 异步推理与性能
+
+- `async_detector_test`：验证 OpenVINO 异步请求池的容量耗尽、后处理释放和请求复用。
+
+  ```bash
+  ./build-ninja/async_detector_test configs/standard3.yaml assets/demo/demo.avi
+  ```
+
+- `openvino_benchmark_test`：以录像首帧分别测量同步和异步 YOLO 的 FPS 与每帧耗时。
+
+  ```bash
+  ./build-ninja/openvino_benchmark_test configs/standard3.yaml assets/demo/demo.avi 120
+  ```
+
+### 云台、串口与标定
+
+- `gimbal_test`：验证新版云台串口的姿态、角速度、弹速和弹丸计数读取；`--f` 会周期性发送开火命令，连接实机前必须确认安全条件。
+- `gimbal_response_test`：向 CBoard/云台发送三角波、阶跃或圆周角度命令，并记录命令与 IMU 实际姿态，用于观察跟随和响应。
+- `fire_test`：周期性切换普通控制与开火模式，单独验证发射控制链路；会连接真实云台，须在安全条件下运行。
+- `handeye_test`：结合相机、CBoard 姿态和世界坐标网格进行重投影，用于检查手眼标定与 IMU-相机时间延迟。
+
+上述硬件测试均从 YAML 读取串口和相机配置。运行前请核对设备连接、设备权限和当前配置，按 `q` 或 `Ctrl+C` 退出。
 
 ## 新电脑环境配置
 
@@ -266,7 +321,7 @@ tests/                    调试和测试程序
 主要组件职责：
 
 - `Detector`：传统方法提取灯条并组合装甲板，可对 YOLO 结果做几何修正。
-- `YOLO`：通过 `NetDetector` 统一 letterbox、OpenVINO 预处理和 `InferRequest` 池；YOLOv5、YOLOv8、YOLO11 适配器只负责输出解码。
+- `YOLO`：通过 `NetDetector` 统一 letterbox、OpenVINO 预处理和 `InferRequest` 池；YOLOv5 适配器负责输出解码。
 - `MultiThreadDetector`：采集线程使用有界异步请求入口，推理槽位耗尽时丢弃新帧，消费线程等待完成后继续跟踪。
 - `Classifier`：使用 `assets/tiny_resnet.onnx` 识别装甲板数字。
 - `Solver`：结合相机内参和云台外参，将装甲板从像素坐标解算到云台/世界坐标。
@@ -287,8 +342,7 @@ tests/                    调试和测试程序
 | 分类 | 字段 | 说明 |
 | --- | --- | --- |
 | 识别 | `enemy_color` | `red` 或 `blue` |
-| 识别 | `yolo_name` | `yolov5`、`yolov8` 或 `yolo11` |
-| 识别 | `yolov5_model_path` / `yolov8_model_path` / `yolo11_model_path` | 对应 OpenVINO IR 模型 |
+| 识别 | `yolov5_model_path` | YOLOv5 OpenVINO IR 模型 |
 | 识别 | `classify_model` | 数字识别 ONNX 模型 |
 | 识别 | `device` | OpenVINO 设备，如 `GPU`、`CPU`、`AUTO` |
 | 识别 | `infer_request_buffer_num` | 可并行复用的 OpenVINO 请求数，默认 `2` |
@@ -312,23 +366,24 @@ tests/                    调试和测试程序
 
 标定工具使用的配置，包含标定板规格、相机参数和云台到 IMU 的旋转矩阵。
 
-## 常用测试程序
+## 测试程序速查
+
+详细用途和示例命令见上方“测试与调试程序”。
 
 | 程序 | 用途 | 是否需要硬件 |
 | --- | --- | --- |
-| `infantry` | 生产自瞄主程序 | 需要相机和云台 |
-| `infantry_debug` | 带调试窗口和 EKF 日志的主程序 | 需要相机和云台 |
-| `camera_test` | 相机取流和帧率测试 | 需要相机 |
-| `camera_detect_test` | 相机实时检测测试 | 需要相机 |
-| `detector_video_test` | 视频文件检测测试 | 不需要相机，可播放 AVI |
-| `auto_aim_test` | 内置演示视频自瞄链路测试 | 不需要相机/云台，需要显示环境 |
-| `gimbal_test` | 云台串口收发测试 | 需要云台 |
-| `cboard_test` | 主控板串口测试 | 需要主控板 |
-| `planner_test` | Planner 实机测试 | 需要云台 |
-| `planner_test_offline` | Planner 离线模拟 | 无 |
-| `handeye_test` | 手眼标定结果验证 | 需要相机和主控板 |
-
-测试程序是独立 CMake 可执行文件，没有统一注册到 CTest。每个程序通常支持 `-h` 查看参数。
+| `auto_aim_test` | 演示视频上的完整自瞄算法回放 | 不需要相机或云台，需要显示环境 |
+| `detector_video_test` | 视频中的 YOLO 或传统检测对比 | 不需要相机 |
+| `awakening_detector_test` | Awakening TUP 检测结果有效性检查 | 不需要相机 |
+| `camera_test` | 工业相机取流和帧率测试 | 需要相机 |
+| `camera_detect_test` | 工业相机实时检测 | 需要相机 |
+| `camera_thread_test` | 多 YOLO 实例并行检测 | 需要相机 |
+| `minimum_vision_system` | 相机、DM IMU 与异步自瞄链路联调 | 需要相机和 DM IMU |
+| `async_detector_test` | OpenVINO 异步请求池行为检查 | 不需要相机 |
+| `openvino_benchmark_test` | 同步与异步推理性能对比 | 不需要相机 |
+| `gimbal_test` / `gimbal_response_test` | 云台通信及动态响应测试 | 需要云台/主控板 |
+| `fire_test` | 发射控制链路测试 | 需要云台，涉及开火命令 |
+| `handeye_test` | 手眼标定与时间对齐检查 | 需要相机和主控板 |
 
 ## 标定工具
 

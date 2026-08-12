@@ -45,10 +45,16 @@ HikRobot::HikRobot(double exposure_ms, double gain, double frame_rate, const std
 
 HikRobot::~HikRobot()
 {
-  daemon_quit_ = true;
-  queue_.close();
+  stop();
   if (daemon_thread_.joinable()) daemon_thread_.join();
   tools::logger()->info("HikRobot destructed.");
+}
+
+void HikRobot::stop()
+{
+  daemon_quit_ = true;
+  capture_quit_ = true;
+  queue_.close();
 }
 
 void HikRobot::read(cv::Mat & img, std::chrono::steady_clock::time_point & timestamp)
@@ -173,26 +179,25 @@ void HikRobot::capture_stop()
 {
   capture_quit_ = true;
   if (capture_thread_.joinable()) capture_thread_.join();
+  if (!handle_) return;
 
   unsigned int ret;
 
   ret = MV_CC_StopGrabbing(handle_);
   if (ret != MV_OK) {
     tools::logger()->warn("MV_CC_StopGrabbing failed: {:#x}", ret);
-    return;
   }
 
   ret = MV_CC_CloseDevice(handle_);
   if (ret != MV_OK) {
     tools::logger()->warn("MV_CC_CloseDevice failed: {:#x}", ret);
-    return;
   }
 
   ret = MV_CC_DestroyHandle(handle_);
   if (ret != MV_OK) {
     tools::logger()->warn("MV_CC_DestroyHandle failed: {:#x}", ret);
-    return;
   }
+  handle_ = nullptr;
 }
 
 void HikRobot::set_float_value(const std::string & name, double value)

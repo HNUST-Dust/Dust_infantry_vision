@@ -68,8 +68,7 @@ int main(int argc, char * argv[])
 
   io::Camera camera(config_path);
   int num_yolo_thread = 8;
-  auto yolos = auto_aim::create_yolov8s(config_path, num_yolo_thread, true);
-  // auto yolos = auto_aim::create_yolo11s(config_path, num_yolo_thread, true);
+  auto yolos = auto_aim::create_yolos(config_path, num_yolo_thread, true);
   std::vector<bool> yolo_used(num_yolo_thread, false);
   tools::ThreadPool thread_pool(num_yolo_thread);
 

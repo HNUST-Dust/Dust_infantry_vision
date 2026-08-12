@@ -16,7 +16,10 @@ namespace auto_aim
 class YOLOBase
 {
 public:
-  virtual std::list<Armor> postprocess(NetDetector::Result & result, int frame_count) = 0;
+  virtual ~YOLOBase() = default;
+  virtual std::list<Armor> postprocess(
+    NetDetector::Result & result, int frame_count,
+    std::optional<cv::Rect> light_roi = std::nullopt) = 0;
 };
 
 class YOLO
@@ -26,13 +29,16 @@ public:
 
   std::list<Armor> detect(
     const cv::Mat & img, int frame_count = -1,
-    std::optional<cv::Rect> roi_override = std::nullopt);
+    std::optional<cv::Rect> roi_override = std::nullopt,
+    std::optional<cv::Rect> light_roi = std::nullopt);
 
   // Returns no request when the bounded request pool is busy, so callers can drop stale frames.
   NetDetector::TicketPtr try_start_async(
     const cv::Mat & img, std::optional<cv::Rect> roi_override = std::nullopt);
 
-  std::list<Armor> postprocess(const NetDetector::TicketPtr & ticket, int frame_count = -1);
+  std::list<Armor> postprocess(
+    const NetDetector::TicketPtr & ticket, int frame_count = -1,
+    std::optional<cv::Rect> light_roi = std::nullopt);
 
   cv::Mat source(const NetDetector::TicketPtr & ticket) const;
 
@@ -43,24 +49,13 @@ private:
   std::unique_ptr<YOLOBase> yolo_;
 };
 
-inline std::vector<YOLO> create_yolo11s(
-  const std::string & config_path, int numebr, bool debug)
+inline std::vector<YOLO> create_yolos(const std::string & config_path, int number, bool debug)
 {
-  std::vector<YOLO> yolo11s;
-  for (int i = 0; i < numebr; i++) {
-    yolo11s.push_back(YOLO(config_path, debug));
+  std::vector<YOLO> yolos;
+  for (int i = 0; i < number; i++) {
+    yolos.push_back(YOLO(config_path, debug));
   }
-  return yolo11s;
-}
-
-inline std::vector<YOLO> create_yolov8s(
-  const std::string & config_path, int numebr, bool debug)
-{
-  std::vector<YOLO> yolov8s;
-  for (int i = 0; i < numebr; i++) {
-    yolov8s.push_back(YOLO(config_path, debug));
-  }
-  return yolov8s;
+  return yolos;
 }
 
 }  // namespace auto_aim

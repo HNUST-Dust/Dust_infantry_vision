@@ -62,15 +62,20 @@ USBCamera::USBCamera(const std::string & open_name, const std::string & config_p
 
 USBCamera::~USBCamera()
 {
-  quit_ = true;
+  stop();
   {
     std::lock_guard<std::mutex> lock(cap_mutex_);
     close();
   }
-  queue_.close();
   if (daemon_thread_.joinable()) daemon_thread_.join();
   if (capture_thread_.joinable()) capture_thread_.join();
   tools::logger()->info("USBCamera destructed.");
+}
+
+void USBCamera::stop()
+{
+  quit_ = true;
+  queue_.close();
 }
 
 cv::Mat USBCamera::read()

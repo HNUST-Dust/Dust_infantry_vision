@@ -17,7 +17,9 @@ class YOLOV5 : public YOLOBase
 public:
   YOLOV5(const std::string & config_path, bool debug);
 
-  std::list<Armor> postprocess(NetDetector::Result & result, int frame_count) override;
+  std::list<Armor> postprocess(
+    NetDetector::Result & result, int frame_count,
+    std::optional<cv::Rect> light_roi = std::nullopt) override;
 
 private:
   std::string save_path_, debug_path_;
@@ -37,7 +39,8 @@ private:
   cv::Point2f get_center_norm(const cv::Mat & bgr_img, const cv::Point2f & center) const;
 
   std::list<Armor> parse(double scale, cv::Mat & output, const cv::Mat & bgr_img, int frame_count,
-    const cv::Point2f & offset, bool has_roi, const cv::Rect & roi);
+    const cv::Point2f & offset, bool has_roi, const cv::Rect & roi,
+    std::optional<cv::Rect> light_roi);
 
   void save(const Armor & armor) const;
   void draw_detections(const cv::Mat & img, const std::list<Armor> & armors, int frame_count,

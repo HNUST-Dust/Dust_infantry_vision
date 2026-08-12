@@ -172,36 +172,26 @@ int main(int argc, char * argv[])
   });
 
   std::string last_state = "lost";
-  uint64_t target_sequence = 0;
-
   auto detect_thread = std::thread([&]() {
-    cv::Mat img;
-    std::chrono::steady_clock::time_point t;
     while (!exiter.exit()) {
-      camera.read(img, t);
-      const auto q = gimbal.q(t);
-      const auto roi_override = tracker.dynamic_roi_enabled()
-                                  ? std::optional<cv::Rect>(tracker.focus_roi(
-                                      img.size(), t, solver.R_gimbal2world(q)))
-                                  : std::nullopt;
-      detector.push(img, t, roi_override);
+      cv::Mat image;
+      std::chrono::steady_clock::time_point timestamp;
+      camera.read(image, timestamp);
+      if (image.empty()) break;
+      const auto q = gimbal.q(timestamp);
+      const auto rois = tracker.dynamic_roi_enabled()
+                          ? tracker.focus_rois(image.size(), timestamp, solver.R_gimbal2world(q))
+                          : auto_aim::FocusRois{cv::Rect(0, 0, image.cols, image.rows), std::nullopt};
+      detector.submit(image, timestamp, rois.net, rois.light);
     }
   });
 
   while (!exiter.exit()) {
-    cv::Mat img_det;
-    std::list<auto_aim::Armor> armors;
-    std::chrono::steady_clock::time_point t_det;
-    if (headless) {
-      auto [detected_armors, detected_timestamp] = detector.pop();
-      armors = std::move(detected_armors);
-      t_det = detected_timestamp;
-    } else {
-      auto [detected_img, detected_armors, detected_timestamp] = detector.debug_pop();
-      img_det = std::move(detected_img);
-      armors = std::move(detected_armors);
-      t_det = detected_timestamp;
-    }
+    auto detection = detector.wait_pop_for(50ms);
+    if (!detection) continue;
+    cv::Mat img_det = std::move(detection->source);
+    auto armors = std::move(detection->armors);
+    const auto t_det = detection->timestamp;
 
     auto q = gimbal.q(t_det);
     solver.set_R_gimbal2world(q);
@@ -223,9 +213,12 @@ int main(int argc, char * argv[])
     
     target_queue.push(
       {targets.empty() ? std::nullopt : std::optional<auto_aim::Target>(targets.front()), t_det,
-        ++target_sequence});
+        detection->sequence});
 
-    if (!headless) {
+    if (!headless && detection->inferred && !img_det.empty()) {
+      cv::rectangle(img_det, detection->net_roi, {0, 255, 0}, 2);
+      if (detection->light_roi) cv::rectangle(img_det, *detection->light_roi, {0, 255, 255}, 2);
+      for (const auto & armor : armors) tools::draw_points(img_det, armor.points, {255, 255, 0});
       if (!targets.empty()) {
         auto target = targets.front();
 
@@ -266,9 +259,20 @@ int main(int argc, char * argv[])
     }
   }
 
+  camera.stop();
+  detector.close();
+  if (detect_thread.joinable()) detect_thread.join();
+  while (auto detection = detector.wait_pop()) {
+    auto armors = std::move(detection->armors);
+    solver.set_R_gimbal2world(gimbal.q(detection->timestamp));
+    auto targets = tracker.track(armors, detection->timestamp);
+    target_queue.push(
+      {targets.empty() ? std::nullopt : std::optional<auto_aim::Target>(targets.front()),
+        detection->timestamp, detection->sequence});
+  }
+  detector.join();
   quit = true;
   if (plan_thread.joinable()) plan_thread.join();
-  if (detect_thread.joinable()) detect_thread.join();
   gimbal.send(false, false, 0, 0, 0, 0, 0, 0);
 
   return 0;

@@ -2,10 +2,8 @@
 
 #include <yaml-cpp/yaml.h>
 
-#include "yolos/yolo11.hpp"
-#include "yolos/yolov5.hpp"
-#include "yolos/yolov8.hpp"
 #include "awakening_detector.hpp"
+#include "yolos/yolov5.hpp"
 
 namespace auto_aim
 {
@@ -31,47 +29,33 @@ YOLO::YOLO(const std::string & config_path, bool debug)
       config.center_letterbox = true;
       return config;
     }
-    const auto yolo_name = yaml["yolo_name"].as<std::string>();
-    const int input_size = yolo_name == "yolov8" ? 416 : 640;
-    config.model_path = yaml[yolo_name + "_model_path"].as<std::string>();
-    config.input_width = input_size;
-    config.input_height = input_size;
+    config.model_path = yaml["yolov5_model_path"].as<std::string>();
+    config.input_width = 640;
+    config.input_height = 640;
     return config;
   }())
 {
   auto yaml = YAML::LoadFile(config_path);
   const auto detector_name = yaml["detector_name"] ? yaml["detector_name"].as<std::string>() : "yolo";
-  auto yolo_name = yaml["yolo_name"].as<std::string>();
 
   if (detector_name == "awakening_tup") {
     yolo_ = std::make_unique<AwakeningArmorDetector>(config_path, debug);
   } else if (detector_name != "yolo") {
     throw std::runtime_error("Unknown detector name: " + detector_name + "!");
-  } else if (yolo_name == "yolov8") {
-    yolo_ = std::make_unique<YOLOV8>(config_path, debug);
-  }
-
-  else if (yolo_name == "yolo11") {
-    yolo_ = std::make_unique<YOLO11>(config_path, debug);
-  }
-
-  else if (yolo_name == "yolov5") {
+  } else {
     yolo_ = std::make_unique<YOLOV5>(config_path, debug);
-  }
-
-  else {
-    throw std::runtime_error("Unknown yolo name: " + yolo_name + "!");
   }
 }
 
 std::list<Armor> YOLO::detect(
-  const cv::Mat & img, int frame_count, std::optional<cv::Rect> roi_override)
+  const cv::Mat & img, int frame_count, std::optional<cv::Rect> roi_override,
+  std::optional<cv::Rect> light_roi)
 {
   if (img.empty()) {
     return {};
   }
   auto ticket = net_detector_.start(img, roi_override);
-  return postprocess(ticket, frame_count);
+  return postprocess(ticket, frame_count, light_roi);
 }
 
 NetDetector::TicketPtr YOLO::try_start_async(
@@ -80,10 +64,11 @@ NetDetector::TicketPtr YOLO::try_start_async(
   return net_detector_.try_start_async(img, true, roi_override);
 }
 
-std::list<Armor> YOLO::postprocess(const NetDetector::TicketPtr & ticket, int frame_count)
+std::list<Armor> YOLO::postprocess(
+  const NetDetector::TicketPtr & ticket, int frame_count, std::optional<cv::Rect> light_roi)
 {
   auto result = net_detector_.wait(ticket);
-  return yolo_->postprocess(result, frame_count);
+  return yolo_->postprocess(result, frame_count, light_roi);
 }
 
 cv::Mat YOLO::source(const NetDetector::TicketPtr & ticket) const

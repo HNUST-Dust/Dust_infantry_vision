@@ -18,7 +18,9 @@ class AwakeningArmorDetector : public YOLOBase
 public:
   AwakeningArmorDetector(const std::string & config_path, bool debug);
 
-  std::list<Armor> postprocess(NetDetector::Result & result, int frame_count) override;
+  std::list<Armor> postprocess(
+    NetDetector::Result & result, int frame_count,
+    std::optional<cv::Rect> light_roi = std::nullopt) override;
 
 private:
   double confidence_threshold_ = 0.2;

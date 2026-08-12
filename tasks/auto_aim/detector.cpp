@@ -119,8 +119,11 @@ std::list<Armor> Detector::detect(const cv::Mat & bgr_img, int frame_count)
   return armors;
 }
 
-bool Detector::detect(Armor & armor, const cv::Mat & bgr_img)
+bool Detector::detect(
+  Armor & armor, const cv::Mat & bgr_img, std::optional<cv::Rect> light_roi)
 {
+  if (bgr_img.empty() || armor.points.size() != 4) return false;
+
   // 取得四个角点
   auto tl = armor.points[0];
   auto tr = armor.points[1];
@@ -142,16 +145,12 @@ bool Detector::detect(Armor & armor, const cv::Mat & bgr_img)
   // 构造新的四个角点
   std::vector<cv::Point> points = {tl2, tr2, br2, bl2};
   auto armor_rotaterect = cv::minAreaRect(points);
-  cv::Rect boundingBox = armor_rotaterect.boundingRect();
-  // 检查boundingBox是否超出图像边界
-  if (
-    boundingBox.x < 0 || boundingBox.y < 0 || boundingBox.x + boundingBox.width > bgr_img.cols ||
-    boundingBox.y + boundingBox.height > bgr_img.rows) {
-    return false;
-  }
+  cv::Rect search_roi = armor_rotaterect.boundingRect();
+  if (light_roi) search_roi = *light_roi;
+  search_roi &= cv::Rect(0, 0, bgr_img.cols, bgr_img.rows);
+  if (search_roi.empty()) return false;
 
-  // 在图像上裁剪出这个矩形区域（ROI）
-  cv::Mat armor_roi = bgr_img(boundingBox);
+  cv::Mat armor_roi = bgr_img(search_roi);
   if (armor_roi.empty()) {
     return false;
   }
@@ -175,7 +174,7 @@ bool Detector::detect(Armor & armor, const cv::Mat & bgr_img)
 
     if (!check_geometry(lightbar)) continue;
 
-    lightbar.color = get_color(bgr_img, contour);
+    lightbar.color = get_color(armor_roi, contour);
     // lightbar_points_corrector(lightbar, gray_img); //关闭PCA
     lightbars.emplace_back(lightbar);
     lightbar_id += 1;
@@ -191,17 +190,16 @@ bool Detector::detect(Armor & armor, const cv::Mat & bgr_img)
   Lightbar * closest_right_lightbar = nullptr;
   float min_distance_tl_bl = std::numeric_limits<float>::max();
   float min_distance_br_tr = std::numeric_limits<float>::max();
+  const cv::Point2f offset(search_roi.x, search_roi.y);
   for (auto & lightbar : lightbars) {
     float distance_tl_bl =
-      cv::norm(tl - (lightbar.top + cv::Point2f(boundingBox.x, boundingBox.y))) +
-      cv::norm(bl - (lightbar.bottom + cv::Point2f(boundingBox.x, boundingBox.y)));
+      cv::norm(tl - (lightbar.top + offset)) + cv::norm(bl - (lightbar.bottom + offset));
     if (distance_tl_bl < min_distance_tl_bl) {
       min_distance_tl_bl = distance_tl_bl;
       closest_left_lightbar = &lightbar;
     }
     float distance_br_tr =
-      cv::norm(br - (lightbar.bottom + cv::Point2f(boundingBox.x, boundingBox.y))) +
-      cv::norm(tr - (lightbar.top + cv::Point2f(boundingBox.x, boundingBox.y)));
+      cv::norm(br - (lightbar.bottom + offset)) + cv::norm(tr - (lightbar.top + offset));
     if (distance_br_tr < min_distance_br_tr) {
       min_distance_br_tr = distance_br_tr;
       closest_right_lightbar = &lightbar;
@@ -219,11 +217,23 @@ bool Detector::detect(Armor & armor, const cv::Mat & bgr_img)
   if (
     closest_left_lightbar && closest_right_lightbar &&
     min_distance_br_tr + min_distance_tl_bl < 15) {
-    // 将四个点从armor_roi坐标系转换到原始图像坐标系
-    armor.points[0] = closest_left_lightbar->top + cv::Point2f(boundingBox.x, boundingBox.y);
-    armor.points[1] = closest_right_lightbar->top + cv::Point2f(boundingBox.x, boundingBox.y);
-    armor.points[2] = closest_right_lightbar->bottom + cv::Point2f(boundingBox.x, boundingBox.y);
-    armor.points[3] = closest_left_lightbar->bottom + cv::Point2f(boundingBox.x, boundingBox.y);
+    const auto translate = [&offset](Lightbar lightbar) {
+      lightbar.center += offset;
+      lightbar.top += offset;
+      lightbar.bottom += offset;
+      for (auto & point : lightbar.points) point += offset;
+      lightbar.rotated_rect.center += offset;
+      return lightbar;
+    };
+    armor.left = translate(*closest_left_lightbar);
+    armor.right = translate(*closest_right_lightbar);
+    armor.points[0] = closest_left_lightbar->top + offset;
+    armor.points[1] = closest_right_lightbar->top + offset;
+    armor.points[2] = closest_right_lightbar->bottom + offset;
+    armor.points[3] = closest_left_lightbar->bottom + offset;
+    armor.center =
+      (armor.points[0] + armor.points[1] + armor.points[2] + armor.points[3]) / 4.0F;
+    armor.box = cv::boundingRect(armor.points) & cv::Rect(0, 0, bgr_img.cols, bgr_img.rows);
     return true;
   }
 
