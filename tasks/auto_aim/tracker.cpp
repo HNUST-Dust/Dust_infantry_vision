@@ -37,11 +37,7 @@ Tracker::Tracker(const std::string & config_path, Solver & solver)
     if (roi_config["net_ratio"]) {
       dynamic_roi_config_.net_ratio = roi_config["net_ratio"].as<double>();
     } else {
-      const auto detector_name =
-        yaml["detector_name"] ? yaml["detector_name"].as<std::string>() : "yolo";
-      const double input_width = detector_name == "awakening_tup" ? 416.0 : 640.0;
-      const double input_height = detector_name == "awakening_tup" ? 416.0 : 640.0;
-      dynamic_roi_config_.net_ratio = input_width / input_height;
+      dynamic_roi_config_.net_ratio = 1.0;
     }
   }
 }

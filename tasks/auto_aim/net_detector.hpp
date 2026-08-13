@@ -19,12 +19,6 @@ namespace auto_aim
 class NetDetector
 {
 public:
-  enum class ColorFormat
-  {
-    bgr,
-    rgb
-  };
-
   struct Config
   {
     std::string model_path;
@@ -34,9 +28,6 @@ public:
     int infer_request_buffer_num = 2;
     bool use_roi = false;
     cv::Rect roi;
-    ColorFormat model_color_format = ColorFormat::rgb;
-    bool normalize = true;
-    bool center_letterbox = false;
   };
 
   struct Result
@@ -46,7 +37,6 @@ public:
     double scale = 1.0;
     cv::Rect roi;
     bool has_roi = false;
-    cv::Point2f padding;
   };
 
 private:
@@ -65,7 +55,7 @@ public:
     friend class NetDetector;
 
     Ticket(std::shared_ptr<Impl> impl, std::size_t slot_index, cv::Mat source, double scale,
-      cv::Rect roi, bool has_roi, cv::Point2f padding);
+      cv::Rect roi, bool has_roi);
 
     void release() noexcept;
 
@@ -75,7 +65,6 @@ public:
     double scale_ = 1.0;
     cv::Rect roi_;
     bool has_roi_ = false;
-    cv::Point2f padding_;
     bool completed_ = false;
     bool released_ = false;
   };

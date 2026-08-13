@@ -104,6 +104,4 @@ add_executable(detector_roi_test tests/detector_roi_test.cpp)
 target_link_libraries(detector_roi_test ${OpenCV_LIBS} fmt::fmt yaml-cpp auto_aim tools io)
 
 add_executable(openvino_benchmark_test tests/openvino_benchmark_test.cpp)
-add_executable(awakening_detector_test tests/awakening_detector_test.cpp)
 target_link_libraries(openvino_benchmark_test ${OpenCV_LIBS} fmt::fmt yaml-cpp auto_aim tools io)
-target_link_libraries(awakening_detector_test ${OpenCV_LIBS} fmt::fmt yaml-cpp auto_aim tools io)

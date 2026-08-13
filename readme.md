@@ -1,6 +1,6 @@
 # Dust Infantry Vision
 
-这是一个基于 C++17、OpenCV、OpenVINO 和 Eigen 的步兵视觉系统，包含工业相机取流、YOLO 装甲板检测、数字识别、PnP 空间解算、EKF 目标跟踪、TinyMPC 云台轨迹规划、串口通信以及相机/手眼标定工具。
+这是一个基于 C++17、OpenCV、OpenVINO 和 Eigen 的步兵视觉系统，包含工业相机取流、YOLO 装甲板检测、数字识别、PnP 空间解算、EKF 目标跟踪、TinyMPC 云台轨迹规划、串口通信以及相机/手眼标定工具。自瞄主链路使用带序号的有序异步检测，并按 Tracker 预测动态裁剪网络/灯条 ROI，减少误检并提升目标像素占比。
 
 当前仓库以自瞄主链路为完整可用状态，`tasks/omniperception/` 作为全向感知模块参与构建，但主入口尚未直接启用完整多相机链路。
 
@@ -112,10 +112,24 @@ source /opt/intel/openvino_2024.6.0/setupvars.sh
   ./build-ninja/detector_video_test configs/standard3.yaml assets/demo/demo.avi --tradition
   ```
 
-- `awakening_detector_test`：对录像的前 30 帧运行 Awakening TUP 配置，断言检测角点、置信度及坐标范围有效。
+### 有序交付与动态 ROI
+
+- `ordered_delivery_test`：验证有序事件交付的容量限制、逆序完成、跳帧占位、关闭唤醒和严格序号语义，纯离线运行，无需参数。
 
   ```bash
-  ./build-ninja/awakening_detector_test configs/awakening_tup.yaml assets/demo/demo.avi
+  ./build-ninja/ordered_delivery_test
+  ```
+
+- `dynamic_roi_test`：验证网络 ROI 与灯条 ROI 的目标类型放大、边界裁剪、非法输入回退和丢失恢复。
+
+  ```bash
+  ./build-ninja/dynamic_roi_test
+  ```
+
+- `detector_roi_test`：在局部 ROI 内运行传统检测，验证灯条、角点与中心点回译到全图坐标。
+
+  ```bash
+  ./build-ninja/detector_roi_test configs/standard3.yaml
   ```
 
 ### 相机与实时检测
@@ -138,7 +152,7 @@ source /opt/intel/openvino_2024.6.0/setupvars.sh
 
 ### 异步推理与性能
 
-- `async_detector_test`：验证 OpenVINO 异步请求池的容量耗尽、后处理释放和请求复用。
+- `async_detector_test`：验证 OpenVINO 异步请求池容量耗尽、后处理释放和请求复用，以及 `MultiThreadDetector` 的序号分配、跳帧/错误占位、关闭与有序排空语义。
 
   ```bash
   ./build-ninja/async_detector_test configs/standard3.yaml assets/demo/demo.avi
@@ -278,6 +292,7 @@ src/                      主程序入口
   infantry_debug.cpp      调试运行入口
 tasks/
   auto_aim/               自瞄核心算法
+    dynamic_roi           动态 ROI：网络 ROI 与灯条 ROI
   omniperception/         全向感知模块
 io/                       硬件和通信抽象
   camera.cpp              工业相机统一接口
@@ -294,6 +309,7 @@ tools/                    通用工具
   extended_kalman_filter  EKF 实现
   thread_safe_queue       线程安全队列
   thread_pool             线程池
+  ordered_delivery.hpp    有序事件交付
   logger.cpp              日志封装
   trajectory.cpp          弹道模型
   pid.cpp                 PID
@@ -309,7 +325,8 @@ tests/                    调试和测试程序
 
 ```text
 工业相机取流
-  -> YOLO / 传统灯条检测
+  -> 云台姿态快照与动态 ROI（网络 ROI / 灯条 ROI）
+  -> 有序异步检测（YOLO / 传统灯条）
   -> 数字识别与装甲板分类
   -> 敌我颜色过滤、目标优先级
   -> PnP 求解装甲板空间位姿
@@ -320,15 +337,16 @@ tests/                    调试和测试程序
 
 主要组件职责：
 
-- `Detector`：传统方法提取灯条并组合装甲板，可对 YOLO 结果做几何修正。
-- `YOLO`：通过 `NetDetector` 统一 letterbox、OpenVINO 预处理和 `InferRequest` 池；YOLOv5 适配器负责输出解码。
-- `MultiThreadDetector`：采集线程使用有界异步请求入口，推理槽位耗尽时丢弃新帧，消费线程等待完成后继续跟踪。
+- `Detector`：传统方法提取灯条并组合装甲板，可对 YOLO 结果做几何修正；`detect()` 支持在局部 ROI 内搜索，并把灯条、角点、中心与框回译为全图坐标。
+- `YOLO`：通过 `NetDetector` 统一 letterbox、OpenVINO 预处理和 `InferRequest` 池；YOLOv5 适配器负责输出解码，后处理可携带传统灯条 ROI 用于角点细化。
+- `MultiThreadDetector`：采集线程调用 `submit()` 分配自 1 递增的序号并异步推理，请求池满、空帧或错误时返回对应跳帧占位；`wait_pop()` 按序号有序交付 `Detection`，`close()`/`join()` 拒绝新帧并排空已接受任务。
 - `Classifier`：使用 `assets/tiny_resnet.onnx` 识别装甲板数字。
 - `Solver`：结合相机内参和云台外参，将装甲板从像素坐标解算到云台/世界坐标。
-- `Tracker`：维护 lost/detecting/tracking/temp_lost/switching 状态机，使用 EKF 预测旋转目标。
+- `Tracker`：维护 lost/detecting/tracking/temp_lost/switching 状态机，使用 EKF 预测旋转目标；`focus_rois()` 根据预测四角生成网络 ROI 与灯条 ROI，按目标类型放大并在丢失 `lost_time` 后恢复全图。
 - `Aimer` / `Shooter`：选择瞄准点并判断是否满足射击条件。
 - `Planner`：使用 TinyMPC 求解 yaw/pitch 参考轨迹，输出控制量和射击标志。
 - `Gimbal`：通过串口读取四元数、云台状态和弹速，发送视觉控制帧。
+- `Camera`：统一工业相机取流接口，`stop()` 提供安全的停止与 SDK 清理入口（HikRobot 启动失败时清理流程无操作兜底）。
 - `Plotter`：将 JSON 调试数据发送到 UDP `127.0.0.1:9870`。
 
 ## 配置文件
@@ -345,7 +363,12 @@ tests/                    调试和测试程序
 | 识别 | `yolov5_model_path` | YOLOv5 OpenVINO IR 模型 |
 | 识别 | `classify_model` | 数字识别 ONNX 模型 |
 | 识别 | `device` | OpenVINO 设备，如 `GPU`、`CPU`、`AUTO` |
-| 识别 | `infer_request_buffer_num` | 可并行复用的 OpenVINO 请求数，默认 `2` |
+| 识别 | `infer_request_buffer_num` | 可并行复用的 OpenVINO 请求数，缺省 `2`，当前配置 `5` |
+| 识别 | `dynamic_roi.enabled` | 是否启用基于 Tracker 预测的动态 ROI |
+| 识别 | `dynamic_roi.expand_ratio` | 普通装甲目标的 ROI 放大倍率，默认 `1.4` |
+| 识别 | `dynamic_roi.base_expand_ratio` | 基地/前哨站目标的 ROI 放大倍率，默认 `3.0` |
+| 识别 | `dynamic_roi.net_ratio` | 网络 ROI 宽高比调整系数，默认 `1.0` |
+| 识别 | `dynamic_roi.lost_time` | 目标丢失该秒数后恢复全图搜索，默认 `0.5` |
 | 识别 | `min_confidence` | 目标最低置信度 |
 | 识别 | `use_traditional` | YOLOv5 是否使用传统方法修正角点 |
 | 相机 | `camera_name` | `hikrobot` 或 `mindvision` |
@@ -374,7 +397,9 @@ tests/                    调试和测试程序
 | --- | --- | --- |
 | `auto_aim_test` | 演示视频上的完整自瞄算法回放 | 不需要相机或云台，需要显示环境 |
 | `detector_video_test` | 视频中的 YOLO 或传统检测对比 | 不需要相机 |
-| `awakening_detector_test` | Awakening TUP 检测结果有效性检查 | 不需要相机 |
+| `ordered_delivery_test` | 有序事件交付、跳帧占位与关闭语义 | 不需要硬件 |
+| `dynamic_roi_test` | 动态 ROI 放大、裁剪与丢失恢复 | 不需要硬件 |
+| `detector_roi_test` | 局部 ROI 内传统检测并回译全图坐标 | 不需要相机 |
 | `camera_test` | 工业相机取流和帧率测试 | 需要相机 |
 | `camera_detect_test` | 工业相机实时检测 | 需要相机 |
 | `camera_thread_test` | 多 YOLO 实例并行检测 | 需要相机 |

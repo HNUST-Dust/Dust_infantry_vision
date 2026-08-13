@@ -38,12 +38,8 @@ struct NetDetector::Impl
       .set_color_format(ov::preprocess::ColorFormat::BGR);
     input.model().set_layout("NCHW");
     input.preprocess().convert_element_type(ov::element::f32);
-    if (config_.model_color_format == ColorFormat::rgb) {
-      input.preprocess().convert_color(ov::preprocess::ColorFormat::RGB);
-    }
-    if (config_.normalize) {
-      input.preprocess().scale(255.0);
-    }
+    input.preprocess().convert_color(ov::preprocess::ColorFormat::RGB);
+    input.preprocess().scale(255.0);
     for (std::size_t i = 0; i < model->outputs().size(); ++i) {
       ppp.output(i).tensor().set_element_type(ov::element::f32);
     }
@@ -107,9 +103,9 @@ struct NetDetector::Impl
 };
 
 NetDetector::Ticket::Ticket(std::shared_ptr<Impl> impl, std::size_t slot_index, cv::Mat source,
-  double scale, cv::Rect roi, bool has_roi, cv::Point2f padding)
+  double scale, cv::Rect roi, bool has_roi)
 : impl_(std::move(impl)), slot_index_(slot_index), source_(std::move(source)), scale_(scale), roi_(roi),
-  has_roi_(has_roi), padding_(padding)
+  has_roi_(has_roi)
 {
 }
 
@@ -172,12 +168,8 @@ NetDetector::TicketPtr NetDetector::start_impl(
     const int resized_width = std::max(1, static_cast<int>(roi.width * scale));
     const int resized_height = std::max(1, static_cast<int>(roi.height * scale));
 
-    const int pad_x = impl_->config_.center_letterbox
-                        ? (impl_->config_.input_width - resized_width) / 2
-                        : 0;
-    const int pad_y = impl_->config_.center_letterbox
-                        ? (impl_->config_.input_height - resized_height) / 2
-                        : 0;
+    const int pad_x = 0;
+    const int pad_y = 0;
     auto & slot = impl_->slots_[slot_index];
     slot.input.setTo(cv::Scalar(0, 0, 0));
     cv::resize(source(roi), slot.input(cv::Rect(pad_x, pad_y, resized_width, resized_height)),
@@ -192,7 +184,7 @@ NetDetector::TicketPtr NetDetector::start_impl(
 
     return std::shared_ptr<Ticket>(new Ticket(
       impl_, slot_index, std::move(source), scale, roi,
-      impl_->config_.use_roi || roi_override.has_value(), cv::Point2f(pad_x, pad_y)));
+      impl_->config_.use_roi || roi_override.has_value()));
   } catch (...) {
     impl_->release(slot_index);
     throw;
@@ -215,13 +207,13 @@ NetDetector::Result NetDetector::wait(const TicketPtr & ticket) const
     return {ticket->source_,
       cv::Mat(static_cast<int>(output_shape[0]), static_cast<int>(output_shape[1]), CV_32F,
         output_tensor.data<float>()),
-      ticket->scale_, ticket->roi_, ticket->has_roi_, ticket->padding_};
+      ticket->scale_, ticket->roi_, ticket->has_roi_};
   }
   if (output_shape.size() == 3) {
     return {ticket->source_,
       cv::Mat(static_cast<int>(output_shape[1]), static_cast<int>(output_shape[2]), CV_32F,
         output_tensor.data<float>()),
-      ticket->scale_, ticket->roi_, ticket->has_roi_, ticket->padding_};
+      ticket->scale_, ticket->roi_, ticket->has_roi_};
   }
   throw std::runtime_error("NetDetector supports only 2D or 3D output tensors");
 }
