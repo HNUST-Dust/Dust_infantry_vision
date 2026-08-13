@@ -40,7 +40,6 @@ cmake --build build-ninja --target auto_aim_test -j$(nproc)
 - `build-ninja/infantry`
 - `build-ninja/infantry_debug`
 - `build-ninja/camera_test`
-- `build-ninja/camera_detect_test`
 - `build-ninja/detector_video_test`
 - `build-ninja/auto_aim_test`
 - `build-ninja/gimbal_test`
@@ -138,13 +137,6 @@ source /opt/intel/openvino_2024.6.0/setupvars.sh
 
   ```bash
   ./build-ninja/camera_test configs/standard3.yaml --display
-  ```
-
-- `camera_detect_test`：从工业相机实时取流并运行 YOLO 或传统检测，输出检测 FPS。
-
-  ```bash
-  ./build-ninja/camera_detect_test configs/standard3.yaml
-  ./build-ninja/camera_detect_test configs/standard3.yaml --tradition
   ```
 
 - `camera_thread_test`：创建多个 YOLO 实例并通过线程池并行处理工业相机帧，用于观察多线程检测吞吐与结果顺序。
@@ -401,7 +393,6 @@ tests/                    调试和测试程序
 | `dynamic_roi_test` | 动态 ROI 放大、裁剪与丢失恢复 | 不需要硬件 |
 | `detector_roi_test` | 局部 ROI 内传统检测并回译全图坐标 | 不需要相机 |
 | `camera_test` | 工业相机取流和帧率测试 | 需要相机 |
-| `camera_detect_test` | 工业相机实时检测 | 需要相机 |
 | `camera_thread_test` | 多 YOLO 实例并行检测 | 需要相机 |
 | `minimum_vision_system` | 相机、DM IMU 与异步自瞄链路联调 | 需要相机和 DM IMU |
 | `async_detector_test` | OpenVINO 异步请求池行为检查 | 不需要相机 |
