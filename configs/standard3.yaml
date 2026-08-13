@@ -3,7 +3,7 @@ enemy_color: "blue"
 
 #####-----神经网络参数-----#####
 classify_model: assets/tiny_resnet.onnx
-yolov5_model_path: assets/yolov5.xml
+yolov5_model_path: assets/0708.xml
 device: GPU
 # Number of reusable OpenVINO requests kept in flight by YOLO and MultiThreadDetector.
 infer_request_buffer_num: 5
