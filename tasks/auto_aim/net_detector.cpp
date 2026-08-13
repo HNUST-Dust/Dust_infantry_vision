@@ -147,6 +147,9 @@ NetDetector::TicketPtr NetDetector::start_impl(
 {
   if (image.empty()) return nullptr;
 
+  // Validate input eagerly so invalid ROIs are reported even when the request pool is busy.
+  const cv::Rect roi = impl_->resolve_roi(image, roi_override);
+
   std::size_t slot_index;
   {
     std::unique_lock<std::mutex> lock(impl_->mutex_);
@@ -161,7 +164,6 @@ NetDetector::TicketPtr NetDetector::start_impl(
 
   try {
     cv::Mat source = clone_source ? image.clone() : image;
-    const cv::Rect roi = impl_->resolve_roi(source, roi_override);
     const double scale = std::min(
       static_cast<double>(impl_->config_.input_width) / roi.width,
       static_cast<double>(impl_->config_.input_height) / roi.height);
