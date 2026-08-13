@@ -2,7 +2,7 @@
 
 这是一个基于 C++17、OpenCV、OpenVINO 和 Eigen 的步兵视觉系统，包含工业相机取流、YOLO 装甲板检测、数字识别、PnP 空间解算、EKF 目标跟踪、TinyMPC 云台轨迹规划、串口通信以及相机/手眼标定工具。自瞄主链路使用带序号的有序异步检测，并按 Tracker 预测动态裁剪网络/灯条 ROI，减少误检并提升目标像素占比。
 
-当前仓库以自瞄主链路为完整可用状态，`tasks/omniperception/` 作为全向感知模块参与构建，但主入口尚未直接启用完整多相机链路。
+当前仓库以自瞄主链路为完整可用状态，`tasks/omniperception/` 保留源码、未接入默认构建，主入口尚未直接启用完整多相机链路。
 
 ## 快速开始
 
@@ -156,6 +156,8 @@ source /opt/intel/openvino_2024.6.0/setupvars.sh
   ./build-ninja/openvino_benchmark_test configs/standard3.yaml assets/demo/demo.avi 120
   ```
 
+  `YOLO::detect()` 是同步便利接口（提交到 `NetDetector` 后立即 `wait()`），仅用于离线测试与对比：`openvino_benchmark_test` 用它做同步基准，`detector_video_test -t` 用它与传统模式对比；生产链路必须走 `MultiThreadDetector`。
+
 ### 云台、串口与标定
 
 - `gimbal_test`：验证新版云台串口的姿态、角速度、弹速和弹丸计数读取；`--f` 会周期性发送开火命令，连接实机前必须确认安全条件。
@@ -233,11 +235,12 @@ sudo ln -sfn \
 source /opt/intel/openvino_2024.6.0/setupvars.sh
 ```
 
-也可以把这一行加入 `~/.bashrc`。如果 OpenVINO 安装在其他目录且无法软链接到 `/opt/intel/openvino_2024.6.0`，需要同步修改三处 CMake 文件中的 `OpenVINO_DIR`：
+也可以把这一行加入 `~/.bashrc`。如果 OpenVINO 安装在其他目录且无法软链接到 `/opt/intel/openvino_2024.6.0`，需要同步修改两处 CMake 文件中的 `OpenVINO_DIR`：
 
 - `CMakeLists.txt`
 - `tasks/auto_aim/CMakeLists.txt`
-- `tasks/omniperception/CMakeLists.txt`
+
+（`tasks/omniperception/` 未接入默认构建，其 `CMakeLists.txt` 仅在重新启用该模块时才有影响。）
 
 ### 相机 SDK 依赖
 

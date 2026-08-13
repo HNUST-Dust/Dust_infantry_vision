@@ -30,6 +30,8 @@ std::list<Armor> YOLO::detect(
   const cv::Mat & img, int frame_count, std::optional<cv::Rect> roi_override,
   std::optional<cv::Rect> light_roi)
 {
+  // Synchronous convenience path for offline/test use: submit and immediately wait.
+  // MultiThreadDetector is the production async pipeline.
   if (img.empty()) {
     return {};
   }

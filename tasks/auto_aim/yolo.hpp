@@ -27,6 +27,9 @@ class YOLO
 public:
   YOLO(const std::string & config_path, bool debug = true);
 
+  // Offline/test-only synchronous convenience interface: submits to NetDetector and
+  // immediately waits for the result. Production pipelines must use
+  // MultiThreadDetector (or try_start_async + postprocess) for real async throughput.
   std::list<Armor> detect(
     const cv::Mat & img, int frame_count = -1,
     std::optional<cv::Rect> roi_override = std::nullopt,

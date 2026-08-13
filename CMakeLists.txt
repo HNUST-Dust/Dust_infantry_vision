@@ -44,7 +44,6 @@ include_directories(${PROJECT_SOURCE_DIR})
 add_subdirectory(tools)
 add_subdirectory(io)
 add_subdirectory(tasks/auto_aim)
-add_subdirectory(tasks/omniperception)
 
 ###################src###################
 add_executable(infantry_debug src/infantry_debug.cpp)
