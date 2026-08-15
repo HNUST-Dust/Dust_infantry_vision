@@ -1,6 +1,8 @@
 #include "tracker.hpp"
 
 #include <algorithm>
+#include <cmath>
+#include <limits>
 #include <numeric>
 
 #include <yaml-cpp/yaml.h>
@@ -29,6 +31,27 @@ Tracker::Tracker(const std::string & config_path, Solver & solver)
   max_temp_lost_count_ = yaml["max_temp_lost_count"].as<int>();
   outpost_max_temp_lost_count_ = yaml["outpost_max_temp_lost_count"].as<int>();
   normal_temp_lost_count_ = max_temp_lost_count_;
+  if (const auto association = yaml["armor_association"]; association) {
+    if (association["enabled"])
+      armor_association_config_.enabled = association["enabled"].as<bool>();
+    if (association["center_gate_px"])
+      armor_association_config_.center_gate_px = association["center_gate_px"].as<double>();
+    if (association["corner_gate_px"])
+      armor_association_config_.corner_gate_px = association["corner_gate_px"].as<double>();
+    if (association["angle_gate_rad"])
+      armor_association_config_.angle_gate_rad = association["angle_gate_rad"].as<double>();
+    if (association["perimeter_ratio_gate"])
+      armor_association_config_.perimeter_ratio_gate =
+        association["perimeter_ratio_gate"].as<double>();
+    if (const auto image_observation = association["image_observation"]; image_observation) {
+      if (image_observation["enabled"])
+        armor_association_config_.image_observation_enabled =
+          image_observation["enabled"].as<bool>();
+      if (image_observation["point_sigma_px"])
+        armor_association_config_.image_point_sigma_px =
+          image_observation["point_sigma_px"].as<double>();
+    }
+  }
   if (const auto roi_config = yaml["dynamic_roi"]; roi_config) {
     dynamic_roi_enabled_ = roi_config["enabled"].as<bool>();
     dynamic_roi_config_.expand_ratio = roi_config["expand_ratio"].as<double>();
@@ -352,19 +375,116 @@ bool Tracker::update_target(std::list<Armor> & armors, std::chrono::steady_clock
     return false;
   }
 
-  for (auto & armor : armors) {
-    if (
-      armor.name != target_.name || armor.type != target_.armor_type
-      //  || armor.center.x != min_x
-    )
-      continue;
-
-    solver_.solve(armor);
-
-    target_.update(armor);
+  if (!armor_association_config_.enabled) {
+    for (auto & armor : armors) {
+      if (armor.name != target_.name || armor.type != target_.armor_type) continue;
+      solver_.solve(armor);
+      target_.update(armor);
+    }
+    return true;
   }
 
-  return true;
+  struct Match {
+    Armor * armor;
+    int predicted_id;
+    double cost;
+  };
+  constexpr double k_invalid_cost = std::numeric_limits<double>::infinity();
+  const auto quad_cost = [&](const std::vector<cv::Point2f> & predicted,
+                             const std::vector<cv::Point2f> & measured) {
+    if (predicted.size() != 4 || measured.size() != 4) return k_invalid_cost;
+
+    cv::Point2f predicted_center(0, 0), measured_center(0, 0);
+    double predicted_perimeter = 0;
+    double measured_perimeter = 0;
+    double corner_error = 0;
+    double angle_error = 0;
+    for (int i = 0; i < 4; ++i) {
+      const auto & p = predicted[i];
+      const auto & m = measured[i];
+      if (!std::isfinite(p.x) || !std::isfinite(p.y) || !std::isfinite(m.x)
+          || !std::isfinite(m.y))
+        return k_invalid_cost;
+      predicted_center += p;
+      measured_center += m;
+      corner_error += cv::norm(p - m);
+      const int next = (i + 1) % 4;
+      const auto predicted_edge = predicted[next] - p;
+      const auto measured_edge = measured[next] - m;
+      predicted_perimeter += cv::norm(predicted_edge);
+      measured_perimeter += cv::norm(measured_edge);
+      angle_error += std::abs(tools::limit_rad(
+        std::atan2(predicted_edge.y, predicted_edge.x)
+        - std::atan2(measured_edge.y, measured_edge.x)));
+    }
+    if (predicted_perimeter <= std::numeric_limits<double>::epsilon()) return k_invalid_cost;
+
+    predicted_center *= 0.25F;
+    measured_center *= 0.25F;
+    corner_error *= 0.25;
+    const double center_error = cv::norm(predicted_center - measured_center);
+    const double perimeter_ratio_error =
+      std::abs(predicted_perimeter - measured_perimeter) / predicted_perimeter;
+    if (center_error > armor_association_config_.center_gate_px
+        || corner_error > armor_association_config_.corner_gate_px
+        || angle_error > armor_association_config_.angle_gate_rad
+        || perimeter_ratio_error > armor_association_config_.perimeter_ratio_gate)
+      return k_invalid_cost;
+
+    return center_error / armor_association_config_.center_gate_px
+      + corner_error / armor_association_config_.corner_gate_px
+      + angle_error / armor_association_config_.angle_gate_rad
+      + perimeter_ratio_error / armor_association_config_.perimeter_ratio_gate;
+  };
+
+  std::vector<Armor *> candidates;
+  for (auto & armor : armors) {
+    if (armor.name == target_.name && armor.type == target_.armor_type) {
+      candidates.push_back(&armor);
+    }
+  }
+
+  const auto predicted_armors = target_.armor_xyza_list();
+  std::vector<std::vector<double>> costs(
+    candidates.size(), std::vector<double>(predicted_armors.size(), k_invalid_cost));
+  for (std::size_t obs = 0; obs < candidates.size(); ++obs) {
+    for (std::size_t id = 0; id < predicted_armors.size(); ++id) {
+      const auto & xyza = predicted_armors[id];
+      const auto projected = solver_.reproject_armor(
+        xyza.head(3), xyza[3], target_.armor_type, target_.name);
+      costs[obs][id] = quad_cost(projected, candidates[obs]->points);
+    }
+  }
+
+  std::vector<bool> used_observation(candidates.size(), false);
+  std::vector<bool> used_prediction(predicted_armors.size(), false);
+  std::vector<Match> matches;
+  while (true) {
+    Match best { nullptr, -1, k_invalid_cost };
+    for (std::size_t obs = 0; obs < candidates.size(); ++obs) {
+      if (used_observation[obs]) continue;
+      for (std::size_t id = 0; id < predicted_armors.size(); ++id) {
+        if (!used_prediction[id] && costs[obs][id] < best.cost) {
+          best = { candidates[obs], static_cast<int>(id), costs[obs][id] };
+        }
+      }
+    }
+    if (!best.armor) break;
+    const auto obs = static_cast<std::size_t>(
+      std::find(candidates.begin(), candidates.end(), best.armor) - candidates.begin());
+    used_observation[obs] = true;
+    used_prediction[best.predicted_id] = true;
+    matches.push_back(best);
+  }
+
+  for (const auto & match : matches) {
+    solver_.solve(*match.armor);
+    target_.update(
+      *match.armor, match.predicted_id,
+      armor_association_config_.image_observation_enabled ? &solver_ : nullptr,
+      armor_association_config_.image_point_sigma_px);
+  }
+  return !matches.empty();
 }
 
 }  // namespace auto_aim

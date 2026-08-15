@@ -1,8 +1,12 @@
 #include "target.hpp"
 
 #include <algorithm>
+#include <array>
+#include <cmath>
+#include <limits>
 #include <numeric>
 
+#include "solver.hpp"
 #include "tools/logger.hpp"
 #include "tools/math_tools.hpp"
 
@@ -157,73 +161,77 @@ void Target::predict(double dt)
   ekf_.predict(F, Q, f);
 }
 
-void Target::update(const Armor & armor)
+void Target::update(
+  const Armor & armor, int matched_id, const Solver * solver, double image_point_sigma_px)
 {
   // 装甲板匹配
-  int id;
+  int id = matched_id;
   auto min_total_error = 1e10;
-  const std::vector<Eigen::Vector4d> & xyza_list = armor_xyza_list();
+  if (matched_id < 0 || matched_id >= armor_num_) {
+    const std::vector<Eigen::Vector4d> & xyza_list = armor_xyza_list();
 
-  if (this->name == ArmorName::outpost && armor_num_ == 3) {
-    tools::logger()->debug(
-      "[Target] xyza z: {:.3f} {:.3f} {:.3f}",
-      xyza_list[0][2], xyza_list[1][2], xyza_list[2][2]);
-  }
-
-  std::vector<std::pair<Eigen::Vector4d, int>> xyza_i_list;
-  for (int i = 0; i < armor_num_; i++) {
-    xyza_i_list.push_back({xyza_list[i], i});
-  }
-
-  std::sort(
-    xyza_i_list.begin(), xyza_i_list.end(),
-    [](const std::pair<Eigen::Vector4d, int> & a, const std::pair<Eigen::Vector4d, int> & b) {
-      Eigen::Vector3d ypd1 = tools::xyz2ypd(a.first.head(3));
-      Eigen::Vector3d ypd2 = tools::xyz2ypd(b.first.head(3));
-      return ypd1[2] < ypd2[2];
-    });
-
-  // 前哨站3装甲板：利用高度差辅助判断 id
-  // id=0: 最低, id=1: 中等, id=2: 最高
-  // 高度差固定为 102mm（相邻装甲板）
-  constexpr double SENTRY_HEIGHT_DIFF = 0.102;
-  bool is_sentry_outpost = (this->name == ArmorName::outpost && armor_num_ == 3);
-
-  // 取前3个distance最小的装甲板
-  for (int i = 0; i < 3; i++) {
-    const auto & xyza = xyza_i_list[i].first;
-    Eigen::Vector3d ypd = tools::xyz2ypd(xyza.head(3));
-
-    // 角度误差（法向 yaw + 位置 yaw）
-    auto angle_error = std::abs(tools::limit_rad(armor.ypr_in_world[0] - xyza[3])) +
-                       std::abs(tools::limit_rad(armor.ypd_in_world[0] - ypd[0]));
-
-    double total_error;
-    if (is_sentry_outpost) {
-      // 前哨站：法向 yaw + 高度差联合匹配
-      // 法向 yaw 提供帧间稳定性，高度差通过 id_offset_ 校正系统性偏移
-      double norm_yaw_error = std::abs(tools::limit_rad(armor.ypr_in_world[0] - xyza[3]));
-      int predicted_id = xyza_i_list[i].second;
-      double h_off = (predicted_id == 0) ? -SENTRY_HEIGHT_DIFF : (predicted_id == 1) ? SENTRY_HEIGHT_DIFF : 0.0;
-      double predicted_z = ekf_.x[4] + h_off;
-      double height_error = std::abs(armor.xyz_in_world[2] - predicted_z);
-      total_error = norm_yaw_error + 5.0 * height_error;
+    if (this->name == ArmorName::outpost && armor_num_ == 3) {
       tools::logger()->debug(
-        "[Match] i={} pred_id={} total_err={:.4f} norm_yaw_err={:.4f} height_err={:.4f} "
-        "obs_z={:.3f} pred_z={:.3f} head_yaw={:.3f} pred_angle={:.3f}",
-        i, predicted_id, total_error, norm_yaw_error, height_error,
-        armor.xyz_in_world[2], predicted_z, armor.ypr_in_world[0], xyza[3]);
-    } else {
-      total_error = angle_error;
+        "[Target] xyza z: {:.3f} {:.3f} {:.3f}",
+        xyza_list[0][2], xyza_list[1][2], xyza_list[2][2]);
     }
 
-    if (total_error < min_total_error) {
-      id = xyza_i_list[i].second;
-      min_total_error = total_error;
+    std::vector<std::pair<Eigen::Vector4d, int>> xyza_i_list;
+    for (int i = 0; i < armor_num_; i++) {
+      xyza_i_list.push_back({xyza_list[i], i});
+    }
+
+    std::sort(
+      xyza_i_list.begin(), xyza_i_list.end(),
+      [](const std::pair<Eigen::Vector4d, int> & a, const std::pair<Eigen::Vector4d, int> & b) {
+        Eigen::Vector3d ypd1 = tools::xyz2ypd(a.first.head(3));
+        Eigen::Vector3d ypd2 = tools::xyz2ypd(b.first.head(3));
+        return ypd1[2] < ypd2[2];
+      });
+
+    // 前哨站3装甲板：利用高度差辅助判断 id
+    // id=0: 最低, id=1: 中等, id=2: 最高
+    // 高度差固定为 102mm（相邻装甲板）
+    constexpr double SENTRY_HEIGHT_DIFF = 0.102;
+    bool is_sentry_outpost = (this->name == ArmorName::outpost && armor_num_ == 3);
+
+    // 取前3个distance最小的装甲板
+    const int match_count = std::min(3, armor_num_);
+    for (int i = 0; i < match_count; i++) {
+      const auto & xyza = xyza_i_list[i].first;
+      Eigen::Vector3d ypd = tools::xyz2ypd(xyza.head(3));
+
+      // 角度误差（法向 yaw + 位置 yaw）
+      auto angle_error = std::abs(tools::limit_rad(armor.ypr_in_world[0] - xyza[3])) +
+                         std::abs(tools::limit_rad(armor.ypd_in_world[0] - ypd[0]));
+
+      double total_error;
+      if (is_sentry_outpost) {
+        // 前哨站：法向 yaw + 高度差联合匹配
+        // 法向 yaw 提供帧间稳定性，高度差通过 id_offset_ 校正系统性偏移
+        double norm_yaw_error = std::abs(tools::limit_rad(armor.ypr_in_world[0] - xyza[3]));
+        int predicted_id = xyza_i_list[i].second;
+        double h_off = (predicted_id == 0) ? -SENTRY_HEIGHT_DIFF : (predicted_id == 1) ? SENTRY_HEIGHT_DIFF : 0.0;
+        double predicted_z = ekf_.x[4] + h_off;
+        double height_error = std::abs(armor.xyz_in_world[2] - predicted_z);
+        total_error = norm_yaw_error + 5.0 * height_error;
+        tools::logger()->debug(
+          "[Match] i={} pred_id={} total_err={:.4f} norm_yaw_err={:.4f} height_err={:.4f} "
+          "obs_z={:.3f} pred_z={:.3f} head_yaw={:.3f} pred_angle={:.3f}",
+          i, predicted_id, total_error, norm_yaw_error, height_error,
+          armor.xyz_in_world[2], predicted_z, armor.ypr_in_world[0], xyza[3]);
+      } else {
+        total_error = angle_error;
+      }
+
+      if (total_error < min_total_error) {
+        id = xyza_i_list[i].second;
+        min_total_error = total_error;
+      }
     }
   }
 
-  if (is_sentry_outpost) {
+  if (this->name == ArmorName::outpost && armor_num_ == 3 && matched_id < 0) {
     tools::logger()->debug(
       "[Match] selected id: {}, min_err={:.4f}, ekf_angle={:.3f}, obs_ypd0={:.3f}, obs_head_yaw={:.3f}",
       id, min_total_error, ekf_.x[6], armor.ypd_in_world[0], armor.ypr_in_world[0]);
@@ -245,7 +253,11 @@ void Target::update(const Armor & armor)
     "[Target] tracking id: {}, name: {}, dist: {:.3f}", id, ARMOR_NAMES[this->name], distance);
   update_count_++;
 
-  update_ypda(armor, id);
+  const bool image_updated =
+    solver && image_point_sigma_px > 0
+    && update_image_points(armor, id, *solver, image_point_sigma_px);
+  if (!image_updated) update_ypda(armor, id);
+  if (image_updated) apply_state_limits(id);
 
   // 前哨站 ID 映射校正：累积每类 ID 的 obs_z，检测高度排列是否正确
   if (this->name == ArmorName::outpost && armor_num_ == 3) {
@@ -322,7 +334,80 @@ void Target::update_ypda(const Armor & armor, int id)
       armor.ypr_in_world[0], tools::limit_rad(ekf_.x[6] + id * 2 * CV_PI / armor_num_));
   }
 
-  distance = std::sqrt(tools::square(armor.xyz_in_world[0]) + tools::square(armor.xyz_in_world[1]));
+  apply_state_limits(id, &armor);
+}
+
+bool Target::update_image_points(
+  const Armor & armor, int id, const Solver & solver, double point_sigma_px)
+{
+  constexpr int point_count = 4;
+  constexpr int measurement_size = point_count * 2;
+  constexpr double position_step_m = 1e-3;
+  constexpr double angle_step_rad = 1e-3;
+  if (armor.points.size() != point_count || !std::isfinite(point_sigma_px)) return false;
+
+  Eigen::VectorXd z(measurement_size);
+  for (int i = 0; i < point_count; ++i) {
+    if (!std::isfinite(armor.points[i].x) || !std::isfinite(armor.points[i].y)) return false;
+    z[2 * i] = armor.points[i].x;
+    z[2 * i + 1] = armor.points[i].y;
+  }
+
+  const auto h = [&](const Eigen::VectorXd & x) {
+    Eigen::VectorXd projected(measurement_size);
+    const Eigen::Vector3d xyz = h_armor_xyz(x, id);
+    const double yaw = tools::limit_rad(x[6] + id * 2 * CV_PI / armor_num_);
+    const auto points = solver.reproject_armor(xyz, yaw, armor_type, name);
+    if (points.size() != point_count) {
+      projected.setConstant(std::numeric_limits<double>::quiet_NaN());
+      return projected;
+    }
+    for (int i = 0; i < point_count; ++i) {
+      if (!std::isfinite(points[i].x) || !std::isfinite(points[i].y)) {
+        projected.setConstant(std::numeric_limits<double>::quiet_NaN());
+        return projected;
+      }
+      projected[2 * i] = points[i].x;
+      projected[2 * i + 1] = points[i].y;
+    }
+    return projected;
+  };
+
+  const Eigen::VectorXd z_pred = h(ekf_.x);
+  if (!z_pred.allFinite()) return false;
+  Eigen::MatrixXd H = Eigen::MatrixXd::Zero(measurement_size, ekf_.x.size());
+  constexpr std::array<int, 7> observed_state_indices = {0, 2, 4, 6, 8, 9, 10};
+  for (const int state_index : observed_state_indices) {
+    const double step = state_index == 6 ? angle_step_rad : position_step_m;
+    Eigen::VectorXd x_plus = ekf_.x;
+    Eigen::VectorXd x_minus = ekf_.x;
+    x_plus[state_index] += step;
+    x_minus[state_index] -= step;
+    if (state_index == 6) {
+      x_plus[state_index] = tools::limit_rad(x_plus[state_index]);
+      x_minus[state_index] = tools::limit_rad(x_minus[state_index]);
+    }
+    const Eigen::VectorXd z_plus = h(x_plus);
+    const Eigen::VectorXd z_minus = h(x_minus);
+    if (!z_plus.allFinite() || !z_minus.allFinite()) return false;
+    H.col(state_index) = (z_plus - z_minus) / (2.0 * step);
+  }
+
+  const Eigen::MatrixXd R =
+    Eigen::MatrixXd::Identity(measurement_size, measurement_size) * tools::square(point_sigma_px);
+  ekf_.update(z, H, R, h);
+  return ekf_.x.allFinite() && ekf_.P.allFinite();
+}
+
+void Target::apply_state_limits(int id, const Armor * armor)
+{
+  if (armor) {
+    distance = std::sqrt(
+      tools::square(armor->xyz_in_world[0]) + tools::square(armor->xyz_in_world[1]));
+  } else {
+    const Eigen::Vector3d armor_xyz = h_armor_xyz(ekf_.x, id);
+    distance = std::sqrt(tools::square(armor_xyz[0]) + tools::square(armor_xyz[1]));
+  }
 
   // 仅4装甲板目标：将 r 和 r+l 约束在绝对物理范围内
   if (armor_num_ == 4) {

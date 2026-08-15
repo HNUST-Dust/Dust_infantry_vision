@@ -41,6 +41,15 @@ max_rectangular_error: 25 # degree
 min_detect_count: 5
 max_temp_lost_count: 25
 outpost_max_temp_lost_count: 75
+armor_association:
+  enabled: true
+  center_gate_px: 100.0
+  corner_gate_px: 140.0
+  angle_gate_rad: 0.8
+  perimeter_ratio_gate: 0.6
+  image_observation:
+    enabled: true
+    point_sigma_px: 8.0
 
 #####-----aimer参数-----#####
 yaw_offset: -5.0 # degree -2.5  向右为负

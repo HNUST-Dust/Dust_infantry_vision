@@ -104,8 +104,8 @@ Eigen::VectorXd ExtendedKalmanFilter::update(
     if (nees_solution.allFinite()) nees = state_delta.dot(nees_solution);
   }
 
-  // 卡方检验阈值（自由度=4，取置信水平95%）
-  constexpr double nis_threshold = 9.4877;
+  // 卡方检验阈值（自由度 4 或 8，取置信水平 95%）
+  const double nis_threshold = residual.size() == 8 ? 15.5073 : 9.4877;
   constexpr double nees_threshold = 19.675;
 
   data["nis_fail"] = 0.0;

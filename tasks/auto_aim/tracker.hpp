@@ -44,6 +44,17 @@ public:
     std::chrono::steady_clock::time_point t, bool use_enemy_color = true);
 
 private:
+  struct ArmorAssociationConfig
+  {
+    bool enabled = true;
+    double center_gate_px = 100.0;
+    double corner_gate_px = 140.0;
+    double angle_gate_rad = 0.8;
+    double perimeter_ratio_gate = 0.6;
+    bool image_observation_enabled = true;
+    double image_point_sigma_px = 8.0;
+  };
+
   Solver & solver_;
   Color enemy_color_;
   int min_detect_count_;
@@ -59,6 +70,7 @@ private:
   ArmorPriority omni_target_priority_;
   bool dynamic_roi_enabled_ = false;
   DynamicRoiConfig dynamic_roi_config_;
+  ArmorAssociationConfig armor_association_config_;
   mutable std::mutex mutex_;
 
   void state_machine(bool found);

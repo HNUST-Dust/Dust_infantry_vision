@@ -13,6 +13,7 @@
 
 namespace auto_aim
 {
+class Solver;
 
 class Target
 {
@@ -31,7 +32,10 @@ public:
 
   void predict(std::chrono::steady_clock::time_point t);
   void predict(double dt);
-  void update(const Armor & armor);
+  // matched_id comes from image-space association. A negative value keeps legacy yaw matching.
+  void update(
+    const Armor & armor, int matched_id = -1, const Solver * solver = nullptr,
+    double image_point_sigma_px = 0.0);
 
   Eigen::VectorXd ekf_x() const;
   const tools::ExtendedKalmanFilter & ekf() const;
@@ -68,6 +72,9 @@ private:
   std::chrono::steady_clock::time_point t_;
 
   void update_ypda(const Armor & armor, int id);  // yaw pitch distance angle
+  bool update_image_points(
+    const Armor & armor, int id, const Solver & solver, double point_sigma_px);
+  void apply_state_limits(int id, const Armor * armor = nullptr);
 
   Eigen::Vector3d h_armor_xyz(const Eigen::VectorXd & x, int id) const;
   Eigen::MatrixXd h_jacobian(const Eigen::VectorXd & x, int id) const;
