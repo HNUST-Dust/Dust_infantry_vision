@@ -86,7 +86,12 @@ R_camera2gimbal: [0.026937008699372988, -0.018830116998824867, 0.999459766201792
 t_camera2gimbal: [0.28154374088604311, 0.24670979582321115, 0.067270501450574019]
 
 #####-----gimbal参数-----#####
-com_port: "/dev/gimbal"
+gimbal_transport: "usb_interrupt"
+usb_vid: 0x34b7
+usb_pid: 0xffff
+usb_interface: 0
+usb_ep_in: 0x81
+usb_ep_out: 0x01
 
 #####-----planner-----#####
 fire_thresh_high_speed: 1e-3   # 高速旋转时使用较宽松的阈值

@@ -5,11 +5,12 @@
 #include <atomic>
 #include <chrono>
 #include <mutex>
+#include <memory>
 #include <string>
 #include <thread>
 #include <tuple>
 
-#include "serial/serial.h"
+#include "usb_interrupt_transport.hpp"
 #include "tools/thread_safe_queue.hpp"
 
 namespace io
@@ -28,7 +29,7 @@ struct __attribute__((packed)) GimbalToVision
   uint16_t crc16;
 };
 
-static_assert(sizeof(GimbalToVision) <= 64);
+static_assert(sizeof(GimbalToVision) == 43);
 
 struct __attribute__((packed)) VisionToGimbal
 {
@@ -43,7 +44,7 @@ struct __attribute__((packed)) VisionToGimbal
   uint16_t crc16;
 };
 
-static_assert(sizeof(VisionToGimbal) <= 64);
+static_assert(sizeof(VisionToGimbal) == 29);
 
 enum class GimbalMode
 {
@@ -84,11 +85,12 @@ public:
   void send(io::VisionToGimbal VisionToGimbal);
 
 private:
-  serial::Serial serial_;
+  std::unique_ptr<UsbInterruptTransport> usb_;
 
   std::thread thread_;
   std::atomic<bool> quit_ = false;
   mutable std::mutex mutex_;
+  std::mutex send_mutex_;
 
   GimbalToVision rx_data_;
   VisionToGimbal tx_data_;
@@ -99,9 +101,8 @@ private:
   tools::ThreadSafeQueue<std::tuple<Eigen::Quaterniond, std::chrono::steady_clock::time_point>>
     queue_{1000};
 
-  bool read(uint8_t * buffer, size_t size);
   void read_thread();
-  void reconnect();
+  bool reconnect();
 };
 
 }  // namespace io
