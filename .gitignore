@@ -50,3 +50,6 @@ __pycache__/
 *.mp4
 *.mkv
 *.mov
+
+.cache/
+.codex/
