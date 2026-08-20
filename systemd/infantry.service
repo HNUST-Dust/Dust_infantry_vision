@@ -1,0 +1,20 @@
+[Unit]
+Description=Dust Infantry Vision
+After=local-fs.target
+
+[Service]
+Type=exec
+WorkingDirectory=/home/j/Dust_infantry_vision
+Environment="LD_LIBRARY_PATH=/opt/MVS/lib/64:/opt/MVS/lib/32"
+Environment="MVCAM_SDK_PATH=/opt/MVS"
+Environment="MVCAM_COMMON_RUNENV=/opt/MVS/lib"
+Environment="MVCAM_SOFTWARE_LIBENV=/opt/MVS/lib"
+Environment="MVCAM_GENICAM_CLPROTOCOL=/opt/MVS/lib/CLProtocol"
+Environment="ALLUSERSPROFILE=/opt/MVS/MVFG"
+ExecStart=/home/j/Dust_infantry_vision/build-ninja/infantry /home/j/Dust_infantry_vision/configs/standard3.yaml --simulate-gimbal
+KillSignal=SIGINT
+TimeoutStopSec=10
+Restart=no
+
+[Install]
+WantedBy=multi-user.target
