@@ -50,3 +50,9 @@ __pycache__/
 *.mp4
 *.mkv
 *.mov
+
+# Local private Codex memory (never commit)
+.codex/memory.md
+.codex/current.md
+.codex/current.json
+.codex/sessions/
