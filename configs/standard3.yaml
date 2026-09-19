@@ -4,14 +4,14 @@ enemy_color: "blue"
 #####-----神经网络参数-----#####
 classify_model: assets/tiny_resnet.onnx
 yolov5_model_path: assets/0708.xml
-device: GPU
+device: CPU
 # Number of reusable OpenVINO requests kept in flight by YOLO and MultiThreadDetector.
 infer_request_buffer_num: 5
 min_confidence: 0.0
 use_traditional: false
 
 dynamic_roi:
-  enabled: true
+  enabled: false
   expand_ratio: 1.4
   base_expand_ratio: 3.0
   net_ratio: 1.0
@@ -42,18 +42,18 @@ min_detect_count: 5
 max_temp_lost_count: 25
 outpost_max_temp_lost_count: 75
 armor_association:
-  enabled: true
+  enabled: false
   center_gate_px: 100.0
   corner_gate_px: 140.0
   angle_gate_rad: 0.8
   perimeter_ratio_gate: 0.6
   image_observation:
-    enabled: true
+    enabled: false
     point_sigma_px: 8.0
 
 #####-----aimer参数-----#####
-yaw_offset: -5.0 # degree -2.5  向右为负
-pitch_offset: 1.8 # degree 2  向上为正
+yaw_offset: -9.0 # degree -2.5  向右为负
+pitch_offset: 1.0 # degree 2  向上为正
 comming_angle: 55 # degree
 leaving_angle: 20 # degree
 decision_speed: 8 # rad/s

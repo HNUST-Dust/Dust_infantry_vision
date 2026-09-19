@@ -34,4 +34,15 @@ Recent history uses short, direct commit summaries, often in Chinese, without st
 Do not commit machine-specific secrets, absolute device IDs, or large generated logs. Keep reusable configuration in `configs/` and document robot-specific deviations. OpenVINO is pinned to `/opt/intel/openvino_2024.6.0/runtime/cmake` in `CMakeLists.txt`, `tasks/auto_aim/CMakeLists.txt`, and `tasks/omniperception/CMakeLists.txt`; update all three together when changing the SDK path.
 
 ## AI Memory Workflow
-Use `.codex/memory.md` as local private memory for AI sessions in this repository. At the start of each new conversation or task, read it before planning or editing. At the end of each meaningful conversation, update it with a concise summary of goals, decisions, files touched, commands/tests run, and unresolved next steps. Keep at most 10 recent conversation entries; newer entries should be more detailed, while older entries should be compressed or promoted into long-term preferences/project facts before removal. Do not store secrets, private device IDs, full logs, or raw chat transcripts.
+The files below are local private memory and are ignored by Git:
+
+- `.codex/memory.md`: stable project facts and durable decisions only; keep it concise.
+- `.codex/current.md`: the active task, current state, files involved, validation, blockers, and exact next steps.
+- `.codex/current.json`: a small machine-readable copy of the active task state.
+- `.codex/sessions/YYYY-MM-DD-topic.md`: one retrospective summary for each meaningful task or conversation.
+
+At the start of a conversation or task, read `.codex/memory.md` and `.codex/current.md` before planning or editing. Read only the relevant files under `.codex/sessions/` when historical reasoning is needed; do not load the complete archive by default.
+
+Update `.codex/current.md` and `.codex/current.json` while work is in progress, especially after a material decision, completed phase, or newly discovered blocker. At the end of a meaningful task, write or update its session summary with the goal, decisions, files touched, commands or tests run, outcome, and unresolved next steps. Promote only information that will remain useful across multiple future tasks into `.codex/memory.md`; replace or remove stale facts rather than appending conflicting statements.
+
+Do not store secrets, credentials, private device identifiers, complete logs, generated artifacts, or raw chat transcripts. Keep memory summaries factual and compact. Never force-add or commit these ignored memory files.

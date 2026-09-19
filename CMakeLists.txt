@@ -25,6 +25,12 @@ if(ENABLE_WARNINGS)
   add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
 
+option(
+  ENABLE_FOXGLOVE_CALIBRATION
+  "Enable the native Foxglove WebSocket preview and services in capture"
+  OFF
+)
+
 message(STATUS "--------------------CMAKE_BUILD_TYPE: ${CMAKE_BUILD_TYPE}--------------------")
 
 find_package(OpenCV REQUIRED)
@@ -65,6 +71,36 @@ target_link_libraries(calibrate_handeye ${OpenCV_LIBS} fmt::fmt yaml-cpp tools)
 target_link_libraries(calibrate_robotworld_handeye ${OpenCV_LIBS} fmt::fmt yaml-cpp tools)
 target_link_libraries(split_video ${OpenCV_LIBS} fmt::fmt tools)
 
+if(ENABLE_FOXGLOVE_CALIBRATION)
+  include(FetchContent)
+  FetchContent_Declare(
+    foxglove_sdk_dist
+    URL "https://github.com/foxglove/foxglove-sdk/releases/download/sdk%2Fv0.27.0/foxglove-v0.27.0-cpp-x86_64-unknown-linux-gnu.zip"
+    URL_HASH SHA256=4790dad26adaced1a5f81530ed406bab7b60aa202a868eb78cfc04976b9ce6d7
+  )
+  FetchContent_GetProperties(foxglove_sdk_dist)
+  if(NOT foxglove_sdk_dist_POPULATED)
+    FetchContent_Populate(foxglove_sdk_dist)
+  endif()
+
+  find_package(
+    foxglove-sdk CONFIG REQUIRED
+    HINTS "${foxglove_sdk_dist_SOURCE_DIR}"
+  )
+  foxglove_sdk_add_cpp_library(dust_foxglove_cpp TYPE STATIC REMOTE_ACCESS OFF)
+  add_library(calibration_foxglove STATIC calibration/foxglove_calibration.cpp)
+  target_link_libraries(
+    calibration_foxglove
+    PUBLIC ${OpenCV_LIBS} Eigen3::Eigen nlohmann_json::nlohmann_json dust_foxglove_cpp
+  )
+
+  target_compile_definitions(capture PRIVATE DUST_ENABLE_FOXGLOVE)
+  target_link_libraries(capture calibration_foxglove)
+
+  add_executable(foxglove_calibration_test tests/foxglove_calibration_test.cpp)
+  target_link_libraries(foxglove_calibration_test calibration_foxglove)
+endif()
+
 #################tests##################
 add_executable(auto_aim_test tests/auto_aim_test.cpp)
 add_executable(camera_test tests/camera_test.cpp)
@@ -102,3 +138,15 @@ target_link_libraries(detector_roi_test ${OpenCV_LIBS} fmt::fmt yaml-cpp auto_ai
 
 add_executable(openvino_benchmark_test tests/openvino_benchmark_test.cpp)
 target_link_libraries(openvino_benchmark_test ${OpenCV_LIBS} fmt::fmt yaml-cpp auto_aim tools io)
+
+if(ENABLE_FOXGLOVE_CALIBRATION)
+  find_package(Python3 REQUIRED COMPONENTS Interpreter)
+  add_test(
+    NAME foxglove_calibration_protocol
+    COMMAND
+      ${Python3_EXECUTABLE}
+      ${PROJECT_SOURCE_DIR}/tests/foxglove_calibration_protocol_test.py
+      $<TARGET_FILE:foxglove_calibration_test>
+  )
+  set_tests_properties(foxglove_calibration_protocol PROPERTIES TIMEOUT 20)
+endif()

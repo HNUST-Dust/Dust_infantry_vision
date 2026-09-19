@@ -181,7 +181,7 @@ source /opt/intel/openvino_2024.6.0/setupvars.sh
 - libusb-1.0
 - ccache
 
-仓库的相机 SDK 目录包含 `amd64` 和 `arm64` 两个架构的库，但项目主要在 Ubuntu 22.04 x86_64 上验证。
+仓库的相机 SDK 目录包含 `amd64` 和 `arm64` 两个架构的回退库，但项目主要在 Ubuntu 22.04 x86_64 上验证。HikRobot USB 相机应安装完整 MVS SDK，避免控制库与 USB3 Vision 传输层版本不匹配。
 
 ### 安装系统依赖
 
@@ -244,11 +244,13 @@ source /opt/intel/openvino_2024.6.0/setupvars.sh
 
 ### 相机 SDK 依赖
 
-- HikRobot 相机：仓库 `io/hikrobot/lib/<arch>/libMvCameraControl.so` 可用于编译链接，但 USB 相机的运行时传输层通常还需要 HikRobot MVS SDK。建议在目标电脑安装 MVS SDK 到 `/opt/MVS`，并设置：
+- HikRobot 相机：USB 相机的运行时传输层需要完整 HikRobot MVS SDK。默认安装到 `/opt/MVS` 后，CMake 会自动使用其中匹配的头文件、控制库和运行时路径，无需手工设置 `LD_LIBRARY_PATH`。若安装在其他目录，配置时指定：
 
 ```bash
-export LD_LIBRARY_PATH=/opt/MVS/lib/64:$LD_LIBRARY_PATH
+cmake -B build-ninja -G Ninja -DHIKROBOT_MVS_ROOT=/path/to/MVS
 ```
+
+若配置输出提示回退到仓库内的 `libMvCameraControl.so`，项目仍可完成无硬件构建，但 USB 相机可能因缺少匹配的 USB3 Vision 传输层而枚举失败。
 
 - MindVision 相机：`io/mindvision/lib/<arch>/libMVSDK.so` 已随仓库提供，不需要额外安装系统级 SDK。
 
@@ -413,6 +415,31 @@ tests/                    调试和测试程序
 ```
 
 程序会显示相机画面，按 `s` 保存图片和当前云台四元数，按 `q` 退出。输出目录默认是 `assets/img_with_q`。
+
+远程标定时可以启用原生 Foxglove WebSocket，避免通过远程桌面传输整个桌面。首次配置会下载并校验官方 Foxglove C++ SDK 0.27.0：
+
+```bash
+cmake -B build-ninja -G Ninja -DENABLE_FOXGLOVE_CALIBRATION=ON
+cmake --build build-ninja --target capture --parallel 4
+./build-ninja/capture configs/calibration.yaml \
+  --output-folder=assets/img_with_q \
+  --foxglove --headless
+```
+
+服务默认只监听远端 `127.0.0.1:8765`。在操作电脑建立 SSH 隧道：
+
+```bash
+ssh -N -L 127.0.0.1:18765:127.0.0.1:8765 edge-108
+```
+
+Foxglove Studio 选择 **Open connection → Foxglove WebSocket**，连接 `ws://127.0.0.1:18765`：
+
+- Image 面板选择 `/calibration/image/compressed`。
+- Raw Messages 面板选择 `/calibration/status`，查看圆点识别、姿态和保存状态。
+- Service Call 面板调用 `/calibration/save` 保存下一张圆点识别成功的原图和对应四元数。
+- Service Call 面板调用 `/calibration/quit` 安全退出。
+
+预览默认是 10 FPS、JPEG 质量 80，保存的仍是相机原始分辨率图片。可通过 `--foxglove-fps`、`--jpeg-quality`、`--foxglove-host` 和 `--foxglove-port` 调整。输出目录已有连续编号的 JPG/TXT 时会从末尾续写；文件不成对或编号有缺口时程序会拒绝启动，避免覆盖已有标定数据。
 
 ### 相机内参标定
 

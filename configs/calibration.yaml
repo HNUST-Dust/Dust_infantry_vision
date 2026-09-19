@@ -4,6 +4,9 @@ center_distance_mm: 40
 
 R_gimbal2imubody: [1, 0, 0, 0, 1, 0, 0, 0, 1]
 
+#####-----gimbal参数-----#####
+com_port: "/dev/gimbal"
+
 camera_name: "hikrobot"
 exposure_ms: 10
 gain: 10.0
