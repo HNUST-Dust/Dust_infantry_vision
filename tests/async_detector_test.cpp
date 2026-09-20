@@ -40,16 +40,26 @@ int main(int argc, char * argv[])
   const cv::Rect full(0, 0, image.cols, image.rows);
   std::vector<auto_aim::multithread::SubmitResult> submissions;
   const std::size_t count = detector.request_capacity() + 2;
+  const auto capture_start = std::chrono::steady_clock::now();
+  auto timestamp_for = [&](uint64_t sequence) {
+    return capture_start + std::chrono::milliseconds(sequence);
+  };
+  auto pose_for = [](uint64_t sequence) {
+    return Eigen::Quaterniond(Eigen::AngleAxisd(0.01 * sequence, Eigen::Vector3d::UnitY()));
+  };
   for (std::size_t i = 0; i < count; ++i) {
-    submissions.push_back(detector.submit(image, std::chrono::steady_clock::now(), full));
+    submissions.push_back(detector.submit(
+      image, timestamp_for(i + 1), full, std::nullopt, pose_for(i + 1)));
     assert(submissions.back().sequence == i + 1);
   }
   const auto error = detector.submit(
-    image, std::chrono::steady_clock::now(), cv::Rect(-1, 0, image.cols, image.rows));
+    image, timestamp_for(count + 1), cv::Rect(-1, 0, image.cols, image.rows),
+    std::nullopt, pose_for(count + 1));
   assert(error.status == auto_aim::multithread::SubmitStatus::skipped_error);
   assert(error.sequence == count + 1);
 
-  const auto empty = detector.submit({}, std::chrono::steady_clock::now(), full);
+  const auto empty = detector.submit(
+    {}, timestamp_for(count + 2), full, std::nullopt, pose_for(count + 2));
   assert(empty.status == auto_aim::multithread::SubmitStatus::skipped_empty);
   assert(empty.sequence == count + 2);
 
@@ -62,6 +72,11 @@ int main(int argc, char * argv[])
   std::size_t delivered = 0;
   while (auto detection = detector.wait_pop()) {
     assert(detection->sequence == expected_sequence++);
+    // Each delayed result, including skip/error events and shutdown draining,
+    // must retain its own capture timestamp and quaternion.
+    assert(detection->timestamp == timestamp_for(detection->sequence));
+    assert(detection->q);
+    assert(detection->q->angularDistance(pose_for(detection->sequence)) < 1e-12);
     ++delivered;
   }
   detector.join();

@@ -5,6 +5,8 @@
 #include <filesystem>
 #include <fstream>
 #include <memory>
+#include <limits>
+#include <nlohmann/json.hpp>
 #include <set>
 #include <stdexcept>
 #include <opencv2/opencv.hpp>
@@ -37,6 +39,25 @@ void write_q(const std::string q_path, const Eigen::Quaterniond & q)
   // 输出顺序为wxyz
   q_file << fmt::format("{} {} {} {}", xyzw[3], xyzw[0], xyzw[1], xyzw[2]);
   q_file.close();
+  if (!q_file) throw std::runtime_error(fmt::format("Failed to write {}", q_path));
+}
+
+void write_timing(
+  const std::string & path, std::chrono::steady_clock::time_point image_timestamp,
+  const tools::QuaternionSample & orientation)
+{
+  auto ns = [](auto t) {
+    return std::chrono::duration_cast<std::chrono::nanoseconds>(t.time_since_epoch()).count();
+  };
+  nlohmann::json data{
+    {"clock", "host_steady_clock"},
+    {"image_timestamp_ns", ns(image_timestamp)},
+    {"orientation_before_ns", ns(orientation.before)},
+    {"orientation_after_ns", ns(orientation.after)}};
+  std::ofstream file(path);
+  file << data.dump(2) << '\n';
+  file.close();
+  if (!file) throw std::runtime_error(fmt::format("Failed to write {}", path));
 }
 
 int existing_sample_count(const std::string & output_folder)
@@ -103,16 +124,22 @@ void capture_loop(
   tools::logger()->info("[Calibration] Continuing after {} existing samples", count);
   while (true) {
     camera.read(img, timestamp);
+    if (img.empty()) break;
     // cv::flip(img,img,-1);
     // 使用云台回传的四元数，并按时间戳做 slerp 插值，与图像对齐
-    Eigen::Quaterniond q = gimbal.q(timestamp);
+    const auto orientation = gimbal.orientation_at(timestamp);
 
     // 在图像上显示欧拉角，用来判断imuabs系的xyz正方向，同时判断imu是否存在零漂
     auto img_with_ypr = img.clone();
-    Eigen::Vector3d zyx = tools::eulers(q, 2, 1, 0) * 57.3;  // degree
-    tools::draw_text(img_with_ypr, fmt::format("Z {:.2f}", zyx[0]), {40, 40}, {0, 0, 255});
-    tools::draw_text(img_with_ypr, fmt::format("Y {:.2f}", zyx[1]), {40, 80}, {0, 0, 255});
-    tools::draw_text(img_with_ypr, fmt::format("X {:.2f}", zyx[2]), {40, 120}, {0, 0, 255});
+    Eigen::Vector3d zyx = Eigen::Vector3d::Constant(std::numeric_limits<double>::quiet_NaN());
+    if (orientation) {
+      zyx = tools::eulers(orientation->q, 2, 1, 0) * 180.0 / M_PI;  // degree
+      tools::draw_text(img_with_ypr, fmt::format("Z {:.2f}", zyx[0]), {40, 40}, {0, 0, 255});
+      tools::draw_text(img_with_ypr, fmt::format("Y {:.2f}", zyx[1]), {40, 80}, {0, 0, 255});
+      tools::draw_text(img_with_ypr, fmt::format("X {:.2f}", zyx[2]), {40, 120}, {0, 0, 255});
+    } else {
+      tools::draw_text(img_with_ypr, "Pose unavailable - cannot save", {40, 40}, {0, 0, 255});
+    }
 
     std::vector<cv::Point2f> centers_2d;
     auto success = cv::findCirclesGrid(img, cv::Size(10, 7), centers_2d);  // 默认是对称圆点图案
@@ -136,7 +163,10 @@ void capture_loop(
 #endif
 
     if (save_requested) {
-      if (!success) {
+      if (!orientation) {
+        last_event = "save_rejected_pose_unavailable";
+        tools::logger()->warn("[Calibration] Save rejected: no synchronized gimbal pose");
+      } else if (!success) {
         last_event = "save_rejected_grid_not_detected";
         tools::logger()->warn("[Calibration] Save rejected: circle grid is not detected");
       } else {
@@ -145,7 +175,8 @@ void capture_loop(
         auto q_path = fmt::format("{}/{}.txt", output_folder, count);
         if (!cv::imwrite(img_path, img))
           throw std::runtime_error(fmt::format("Failed to write {}", img_path));
-        write_q(q_path, q);
+        write_q(q_path, orientation->q);
+        write_timing(fmt::format("{}/{}.json", output_folder, count), timestamp, *orientation);
         last_event = fmt::format("saved_{}", count);
         tools::logger()->info("[{}] Saved in {}", count, output_folder);
       }

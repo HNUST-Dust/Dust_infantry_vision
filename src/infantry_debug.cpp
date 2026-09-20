@@ -81,6 +81,7 @@ int main(int argc, char * argv[])
   // 用于线程间共享 Tracker 状态
   std::atomic<int> tracker_state_code{0};  // 0=lost, 1=detecting, 2=tracking, 3=temp_lost, 4=switching
 
+  std::atomic<bool> orientation_valid{false};
   std::atomic<bool> quit = false;
   auto plan_thread = std::thread([&]() {
     auto t0 = std::chrono::steady_clock::now();
@@ -93,7 +94,9 @@ int main(int argc, char * argv[])
     while (!quit) {
       const auto update = target_queue.front();
       auto gs = gimbal.state();
-      auto plan = planner.plan(update.target, gs.bullet_speed, solver.R_gimbal2world());
+      auto plan = planner.plan(
+        orientation_valid.load() ? update.target : std::nullopt,
+        gs.bullet_speed, solver.R_gimbal2world());
 
       io::VisionToGimbal vtg;
       vtg.mode = plan.control ? (plan.fire ? 2 : 1) : 0;
@@ -178,22 +181,28 @@ int main(int argc, char * argv[])
       std::chrono::steady_clock::time_point timestamp;
       camera.read(image, timestamp);
       if (image.empty()) break;
-      const auto q = gimbal.q(timestamp);
+      const auto orientation = gimbal.orientation_at(timestamp);
+      const bool was_valid = orientation_valid.exchange(orientation.has_value());
+      if (!orientation) {
+        if (was_valid) tools::logger()->warn("[Gimbal] No synchronized pose; skipping images");
+        continue;
+      }
+      const auto & q = orientation->q;
       const auto rois = tracker.dynamic_roi_enabled()
                           ? tracker.focus_rois(image.size(), timestamp, solver.R_gimbal2world(q))
                           : auto_aim::FocusRois{cv::Rect(0, 0, image.cols, image.rows), std::nullopt};
-      detector.submit(image, timestamp, rois.net, rois.light);
+      detector.submit(image, timestamp, rois.net, rois.light, q);
     }
   });
 
   while (!exiter.exit()) {
     auto detection = detector.wait_pop_for(50ms);
-    if (!detection) continue;
+    if (!detection || !detection->q) continue;
     cv::Mat img_det = std::move(detection->source);
     auto armors = std::move(detection->armors);
     const auto t_det = detection->timestamp;
 
-    auto q = gimbal.q(t_det);
+    const auto & q = *detection->q;
     solver.set_R_gimbal2world(q);
     auto targets = tracker.track(armors, t_det);
     
@@ -264,7 +273,8 @@ int main(int argc, char * argv[])
   if (detect_thread.joinable()) detect_thread.join();
   while (auto detection = detector.wait_pop()) {
     auto armors = std::move(detection->armors);
-    solver.set_R_gimbal2world(gimbal.q(detection->timestamp));
+    if (!detection->q) continue;
+    solver.set_R_gimbal2world(*detection->q);
     auto targets = tracker.track(armors, detection->timestamp);
     target_queue.push(
       {targets.empty() ? std::nullopt : std::optional<auto_aim::Target>(targets.front()),

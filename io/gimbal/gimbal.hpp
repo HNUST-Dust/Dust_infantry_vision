@@ -7,10 +7,10 @@
 #include <mutex>
 #include <string>
 #include <thread>
-#include <tuple>
+#include <optional>
 
 #include "serial/serial.h"
-#include "tools/thread_safe_queue.hpp"
+#include "tools/quaternion_buffer.hpp"
 
 namespace io
 {
@@ -72,7 +72,8 @@ public:
   GimbalMode mode() const;
   GimbalState state() const;
   std::string str(GimbalMode mode) const;
-  Eigen::Quaterniond q(std::chrono::steady_clock::time_point t);
+  // Returns no sample if the image timestamp cannot be bracketed by valid telemetry.
+  std::optional<tools::QuaternionSample> orientation_at(std::chrono::steady_clock::time_point t);
 
   void send(
     bool control, bool fire, float yaw, float yaw_vel, float yaw_acc, float pitch, float pitch_vel,
@@ -96,8 +97,7 @@ private:
   bool skip_crc_ = false;
   GimbalMode mode_ = GimbalMode::IDLE;
   GimbalState state_{};
-  tools::ThreadSafeQueue<std::tuple<Eigen::Quaterniond, std::chrono::steady_clock::time_point>>
-    queue_{1000};
+  tools::QuaternionBuffer orientations_{1000};
 
   bool read(uint8_t * buffer, size_t size);
   void read_thread();

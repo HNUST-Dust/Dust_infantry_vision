@@ -4,6 +4,7 @@
 #include <chrono>
 #include <cstdint>
 #include <iostream>
+#include <limits>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -45,7 +46,9 @@ int main(int argc, char * argv[])
       saved_count++;
       last_event = "saved_" + std::to_string(saved_count);
     }
-    foxglove.publish(image, true, Eigen::Vector3d(12.5, -3.25, 1.75), saved_count, last_event);
+    Eigen::Vector3d angles(12.5, -3.25, 1.75);
+    if (saved_count == 0) angles.setConstant(std::numeric_limits<double>::quiet_NaN());
+    foxglove.publish(image, true, angles, saved_count, last_event);
     if (foxglove.quit_requested()) {
       std::cout << "FOXGLOVE_TEST_QUIT saved_count=" << saved_count << std::endl;
       return saved_count == 1 ? 0 : 3;

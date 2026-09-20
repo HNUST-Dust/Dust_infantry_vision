@@ -130,6 +130,11 @@ target_link_libraries(async_detector_test ${OpenCV_LIBS} fmt::fmt yaml-cpp auto_
 
 add_executable(ordered_delivery_test tests/ordered_delivery_test.cpp)
 
+find_package(Threads REQUIRED)
+add_executable(quaternion_buffer_test tests/quaternion_buffer_test.cpp)
+target_link_libraries(quaternion_buffer_test Eigen3::Eigen Threads::Threads)
+add_test(NAME quaternion_buffer COMMAND quaternion_buffer_test)
+
 add_executable(dynamic_roi_test tests/dynamic_roi_test.cpp)
 target_link_libraries(dynamic_roi_test ${OpenCV_LIBS} fmt::fmt auto_aim tools io)
 

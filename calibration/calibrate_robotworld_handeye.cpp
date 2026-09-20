@@ -6,7 +6,6 @@
 #include <opencv2/core/eigen.hpp>
 #include <opencv2/opencv.hpp>
 
-#include "tools/img_tools.hpp"
 #include "tools/math_tools.hpp"
 
 const std::string keys =
@@ -66,27 +65,13 @@ void load(
     Eigen::Quaterniond q = read_q(q_path);
     if (img.empty()) break;
 
-    // 计算云台的欧拉角
+    // 计算云台旋转矩阵
     Eigen::Matrix3d R_imubody2imuabs = q.toRotationMatrix();
     Eigen::Matrix3d R_gimbal2world =
       R_gimbal2imubody.transpose() * R_imubody2imuabs * R_gimbal2imubody;
-    Eigen::Vector3d ypr = tools::eulers(R_gimbal2world, 2, 1, 0) * 57.3;  // degree
-
-    // 在图片上显示云台的欧拉角，用来检验R_gimbal2imubody是否正确
-    auto drawing = img.clone();
-    tools::draw_text(drawing, fmt::format("yaw   {:.2f}", ypr[0]), {40, 40}, {0, 0, 255});
-    tools::draw_text(drawing, fmt::format("pitch {:.2f}", ypr[1]), {40, 80}, {0, 0, 255});
-    tools::draw_text(drawing, fmt::format("roll  {:.2f}", ypr[2]), {40, 120}, {0, 0, 255});
-
     // 识别标定板
     std::vector<cv::Point2f> centers_2d;
     auto success = cv::findCirclesGrid(img, pattern_size, centers_2d);  // 默认是对称圆点图案
-
-    // 显示识别结果
-    cv::drawChessboardCorners(drawing, pattern_size, centers_2d, success);
-    cv::resize(drawing, drawing, {}, 0.5, 0.5);  // 显示时缩小图片尺寸
-    cv::imshow("Press any to continue", drawing);
-    cv::waitKey(0);
 
     // 输出识别结果
     fmt::print("[{}] {}\n", success ? "success" : "failure", img_path);

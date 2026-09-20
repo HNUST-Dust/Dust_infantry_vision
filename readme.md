@@ -160,6 +160,12 @@ source /opt/intel/openvino_2024.6.0/setupvars.sh
 
 ### 云台、串口与标定
 
+- `quaternion_buffer_test`：无硬件回归，覆盖姿态插值、历史重复查询、缓存淘汰、无效四元数、通信间断和退出唤醒。
+
+  ```bash
+  ./build-ninja/quaternion_buffer_test
+  ```
+
 - `gimbal_test`：验证新版云台串口的姿态、角速度、弹速和弹丸计数读取；`--f` 会周期性发送开火命令，连接实机前必须确认安全条件。
 - `gimbal_response_test`：向 CBoard/云台发送三角波、阶跃或圆周角度命令，并记录命令与 IMU 实际姿态，用于观察跟随和响应。
 - `fire_test`：周期性切换普通控制与开火模式，单独验证发射控制链路；会连接真实云台，须在安全条件下运行。
@@ -414,7 +420,19 @@ tests/                    调试和测试程序
 ./build-ninja/capture configs/calibration.yaml
 ```
 
-程序会显示相机画面，按 `s` 保存图片和当前云台四元数，按 `q` 退出。输出目录默认是 `assets/img_with_q`。
+程序会显示相机画面，按 `s` 保存图片和与该帧时间戳对齐的云台四元数，按 `q` 退出。输出目录默认是 `assets/img_with_q`。只有圆点识别成功、姿态对齐有效时才允许保存。
+
+姿态缓存保留最近 1000 个有效样本，查询不消费历史；最多等待 20 ms，且只在相邻姿态间隔不超过 20 ms 时插值。不覆盖图像时间戳、过期或通信中断时，预览显示 `Pose unavailable`，保存请求返回状态 `save_rejected_pose_unavailable`。`infantry` / `infantry_debug` 将采集姿态随帧送入异步检测，处理结果及退出排空时复用该姿态；姿态不可用时跳过图像并暂停目标控制。
+
+每组数据新增同编号 `.json`，记录图像及插值前后姿态的主机单调时钟时间戳（纳秒）；原有 JPG/TXT 格式不变。这些时间戳用于检查软件配对，尚未补偿相机曝光/传输和下位机通信延迟。
+
+修复同步后应重新采集手眼数据，并使用新目录，避免混入旧样本：
+
+```bash
+./build-ninja/capture configs/calibration.yaml --output-folder=assets/img_with_q_synced
+```
+
+内参和手眼建议分别采集。内参采集时固定焦距、对焦和分辨率，增加标定板在画面中的大小，覆盖中心与边缘，并改变距离及两个方向的倾角。手眼采集时固定标定板和底盘，仅转动云台，在多个 yaw/pitch 姿态稳定后保存；实际圆心间距必须与 `center_distance_mm` 一致。用未参与求解的姿态验证固定板的世界坐标是否稳定，不能只看参与拟合的重投影误差。
 
 远程标定时可以启用原生 Foxglove WebSocket，避免通过远程桌面传输整个桌面。首次配置会下载并校验官方 Foxglove C++ SDK 0.27.0：
 
@@ -435,7 +453,7 @@ ssh -N -L 127.0.0.1:18765:127.0.0.1:8765 edge-108
 Foxglove Studio 选择 **Open connection → Foxglove WebSocket**，连接 `ws://127.0.0.1:18765`：
 
 - Image 面板选择 `/calibration/image/compressed`。
-- Raw Messages 面板选择 `/calibration/status`，查看圆点识别、姿态和保存状态。
+- Raw Messages 面板选择 `/calibration/status`，查看圆点识别、`orientation_valid`、姿态和保存状态；姿态无效时角度为 `null`。
 - Service Call 面板调用 `/calibration/save` 保存下一张圆点识别成功的原图和对应四元数。
 - Service Call 面板调用 `/calibration/quit` 安全退出。
 

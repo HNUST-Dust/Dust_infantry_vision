@@ -1,6 +1,8 @@
 #ifndef AUTO_AIM__MT_DETECTOR_HPP
 #define AUTO_AIM__MT_DETECTOR_HPP
 
+#include <Eigen/Geometry>
+
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -45,6 +47,8 @@ struct Detection
   std::optional<cv::Rect> light_roi;
   bool inferred = false;
   cv::Mat source;
+  // Pose sampled at capture time; retained for inferred and skipped frames alike.
+  std::optional<Eigen::Quaterniond> q;
 };
 
 class MultiThreadDetector
@@ -58,7 +62,8 @@ public:
 
   SubmitResult submit(
     cv::Mat image, std::chrono::steady_clock::time_point timestamp, const cv::Rect & net_roi,
-    std::optional<cv::Rect> light_roi = std::nullopt);
+    std::optional<cv::Rect> light_roi = std::nullopt,
+    std::optional<Eigen::Quaterniond> q = std::nullopt);
 
   std::optional<Detection> wait_pop();
   std::optional<Detection> wait_pop_for(std::chrono::milliseconds timeout);
@@ -75,11 +80,12 @@ private:
     std::chrono::steady_clock::time_point timestamp;
     cv::Rect net_roi;
     std::optional<cv::Rect> light_roi;
+    std::optional<Eigen::Quaterniond> q;
   };
 
   Detection skipped_detection(
     uint64_t sequence, std::chrono::steady_clock::time_point timestamp, const cv::Rect & net_roi,
-    std::optional<cv::Rect> light_roi) const;
+    std::optional<cv::Rect> light_roi, std::optional<Eigen::Quaterniond> q) const;
   void worker_loop();
 
   YOLO yolo_;

@@ -38,9 +38,9 @@ Gimbal::Gimbal(const std::string & config_path, bool simulate)
 
   thread_ = std::thread(&Gimbal::read_thread, this);
 
-  if (!queue_.wait_pop_for(std::chrono::seconds(5))) {
+  if (!orientations_.wait_first(std::chrono::seconds(5))) {
     quit_ = true;
-    queue_.close();
+    orientations_.close();
     if (thread_.joinable()) thread_.join();
     serial_.close();
     throw std::runtime_error("[Gimbal] Timed out waiting for first quaternion");
@@ -51,7 +51,7 @@ Gimbal::Gimbal(const std::string & config_path, bool simulate)
 Gimbal::~Gimbal()
 {
   quit_ = true;
-  queue_.close();
+  orientations_.close();
   if (thread_.joinable()) thread_.join();
   if (!simulate_) serial_.close();
 }
@@ -80,30 +80,10 @@ std::string Gimbal::str(GimbalMode mode) const
   }
 }
 
-Eigen::Quaterniond Gimbal::q(std::chrono::steady_clock::time_point t)
+std::optional<tools::QuaternionSample> Gimbal::orientation_at(std::chrono::steady_clock::time_point t)
 {
-  if (simulate_) return Eigen::Quaterniond::Identity();
-
-  while (!quit_) {
-    auto first = queue_.wait_pop_for(std::chrono::milliseconds(20));
-    if (!first) return Eigen::Quaterniond::Identity();
-    auto second = queue_.wait_front_for(std::chrono::milliseconds(20));
-    if (!second) return std::get<0>(*first).normalized();
-
-    auto [q_a, t_a] = *first;
-    auto [q_b, t_b] = *second;
-    auto t_ab = tools::delta_time(t_a, t_b);
-    auto t_ac = tools::delta_time(t_a, t);
-    if (t_ab <= 0) return q_b.normalized();
-    auto k = t_ac / t_ab;
-    Eigen::Quaterniond q_c = q_a.slerp(k, q_b).normalized();
-    if (t < t_a) return q_c;
-    if (!(t_a < t && t <= t_b)) continue;
-
-    return q_c;
-  }
-
-  return Eigen::Quaterniond::Identity();
+  if (simulate_) return tools::QuaternionSample{Eigen::Quaterniond::Identity(), t, t};
+  return orientations_.at(t);
 }
 
 void Gimbal::send(io::VisionToGimbal VisionToGimbal)
@@ -219,18 +199,19 @@ void Gimbal::read_thread()
 
     error_count = 0;
     Eigen::Quaterniond q(rx_data_.q[0], rx_data_.q[1], rx_data_.q[2], rx_data_.q[3]);
-    queue_.push({q, t});
+    if (!orientations_.push(q, t)) continue;
+    q.normalize();
     // 按一般情况解算欧拉角：ZYX（Yaw-Pitch-Roll）
     Eigen::Vector3d ypr = q.toRotationMatrix().eulerAngles(2, 1, 0);
     double yaw_angle   = ypr[0];  // Z
     double pitch_angle = ypr[1];  // Y
     double roll_angle  = ypr[2];  // X
 
-    // tools::logger()->info(
-    //   "[Gimbal] Euler from q (ZYX) -> Yaw(Z): {:.4f} rad ({:.2f} deg), Pitch(Y): {:.4f} rad ({:.2f} deg), Roll(X): {:.4f} rad ({:.2f} deg)",
-    //   yaw_angle, yaw_angle * 180.0 / M_PI,
-    //   pitch_angle, pitch_angle * 180.0 / M_PI,
-    //   roll_angle, roll_angle * 180.0 / M_PI);
+    tools::logger()->info(
+      "[Gimbal] Euler from q (ZYX) -> Yaw(Z): {:.4f} rad ({:.2f} deg), Pitch(Y): {:.4f} rad ({:.2f} deg), Roll(X): {:.4f} rad ({:.2f} deg)",
+      yaw_angle, yaw_angle * 180.0 / M_PI,
+      pitch_angle, pitch_angle * 180.0 / M_PI,
+      roll_angle, roll_angle * 180.0 / M_PI);
     // 打印原始数据
     std::string raw_hex;
     for (size_t i = 0; i < sizeof(rx_data_); ++i) {
@@ -282,7 +263,7 @@ void Gimbal::reconnect()
 
     try {
       serial_.open();  // 尝试重新打开
-      queue_.clear();
+      orientations_.clear();
       tools::logger()->info("[Gimbal] Reconnected serial successfully.");
       break;
     } catch (const std::exception & e) {

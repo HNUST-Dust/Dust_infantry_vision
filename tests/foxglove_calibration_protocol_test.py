@@ -190,7 +190,14 @@ def run(binary: str) -> None:
                     },
                 )
                 subscribed = True
-            if not save_called and required_services <= services.keys():
+            if (
+                not save_called
+                and required_services <= services.keys()
+                and latest_status.get("orientation_valid") is False
+            ):
+                assert latest_status["yaw_degree"] is None
+                assert latest_status["pitch_degree"] is None
+                assert latest_status["roll_degree"] is None
                 assert "services" in capabilities
                 call_service(sock, services["/calibration/save"], 101)
                 save_called = True
@@ -203,6 +210,7 @@ def run(binary: str) -> None:
                 and not quit_called
             ):
                 assert latest_status["grid_detected"] is True
+                assert latest_status["orientation_valid"] is True
                 assert latest_status["yaw_degree"] == 12.5
                 call_service(sock, services["/calibration/quit"], 102)
                 quit_called = True

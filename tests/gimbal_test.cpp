@@ -50,8 +50,12 @@ int main(int argc, char * argv[])
 
     auto t = std::chrono::steady_clock::now();
     auto state = gimbal.state();
-    auto q = gimbal.q(t);
-    auto ypr = tools::eulers(q, 2, 1, 0);
+    auto orientation = gimbal.orientation_at(t);
+    if (!orientation) {
+      gimbal.send(false, false, 0, 0, 0, 0, 0, 0);
+      continue;
+    }
+    auto ypr = tools::eulers(orientation->q, 2, 1, 0);
 
     auto fired = state.bullet_count > last_bullet_count;
     last_bullet_count = state.bullet_count;

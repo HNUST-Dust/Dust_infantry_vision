@@ -154,6 +154,7 @@ public:
     if (status_channel_->hasSinks()) {
       nlohmann::json status{
         {"grid_detected", grid_detected},
+        {"orientation_valid", zyx_degree.allFinite()},
         {"save_pending", save_requested_.load()},
         {"saved_count", saved_count},
         {"last_event", last_event},

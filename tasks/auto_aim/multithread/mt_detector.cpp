@@ -27,7 +27,7 @@ MultiThreadDetector::~MultiThreadDetector()
 
 SubmitResult MultiThreadDetector::submit(
   cv::Mat image, std::chrono::steady_clock::time_point timestamp, const cv::Rect & net_roi,
-  std::optional<cv::Rect> light_roi)
+  std::optional<cv::Rect> light_roi, std::optional<Eigen::Quaterniond> q)
 {
   if (!accepting_.load()) return {SubmitStatus::closed, 0};
 
@@ -35,24 +35,24 @@ SubmitResult MultiThreadDetector::submit(
   if (!delivery_.wait_reserve(sequence)) return {SubmitStatus::closed, 0};
 
   if (image.empty()) {
-    delivery_.skip(sequence, skipped_detection(sequence, timestamp, net_roi, light_roi));
+    delivery_.skip(sequence, skipped_detection(sequence, timestamp, net_roi, light_roi, q));
     return {SubmitStatus::skipped_empty, sequence};
   }
 
   try {
     auto ticket = yolo_.try_start_async(image, net_roi);
     if (!ticket) {
-      delivery_.skip(sequence, skipped_detection(sequence, timestamp, net_roi, light_roi));
+      delivery_.skip(sequence, skipped_detection(sequence, timestamp, net_roi, light_roi, q));
       return {SubmitStatus::skipped_busy, sequence};
     }
 
     {
       std::lock_guard<std::mutex> lock(pending_mutex_);
       if (pending_closed_) {
-        delivery_.skip(sequence, skipped_detection(sequence, timestamp, net_roi, light_roi));
+        delivery_.skip(sequence, skipped_detection(sequence, timestamp, net_roi, light_roi, q));
         return {SubmitStatus::closed, sequence};
       }
-      pending_.push_back({sequence, std::move(ticket), timestamp, net_roi, light_roi});
+      pending_.push_back({sequence, std::move(ticket), timestamp, net_roi, light_roi, q});
     }
     pending_ready_.notify_one();
     return {SubmitStatus::accepted, sequence};
@@ -62,7 +62,7 @@ SubmitResult MultiThreadDetector::submit(
     tools::logger()->warn("[MultiThreadDetector] submit failed with unknown exception");
   }
 
-  delivery_.skip(sequence, skipped_detection(sequence, timestamp, net_roi, light_roi));
+  delivery_.skip(sequence, skipped_detection(sequence, timestamp, net_roi, light_roi, q));
   return {SubmitStatus::skipped_error, sequence};
 }
 
@@ -103,9 +103,9 @@ std::size_t MultiThreadDetector::request_capacity() const
 
 Detection MultiThreadDetector::skipped_detection(
   uint64_t sequence, std::chrono::steady_clock::time_point timestamp, const cv::Rect & net_roi,
-  std::optional<cv::Rect> light_roi) const
+  std::optional<cv::Rect> light_roi, std::optional<Eigen::Quaterniond> q) const
 {
-  return {sequence, timestamp, {}, net_roi, light_roi, false, {}};
+  return {sequence, timestamp, {}, net_roi, light_roi, false, {}, q};
 }
 
 void MultiThreadDetector::worker_loop()
@@ -124,7 +124,7 @@ void MultiThreadDetector::worker_loop()
     }
 
     Detection detection{
-      pending.sequence, pending.timestamp, {}, pending.net_roi, pending.light_roi, true, {}};
+      pending.sequence, pending.timestamp, {}, pending.net_roi, pending.light_roi, true, {}, pending.q};
     try {
       detection.armors = yolo_.postprocess(pending.ticket, -1, pending.light_roi);
       if (keep_source_) detection.source = yolo_.source(pending.ticket);
