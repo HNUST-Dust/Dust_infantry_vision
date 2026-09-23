@@ -1,5 +1,3 @@
-cmake_minimum_required(VERSION 3.16)
-
 find_package(yaml-cpp REQUIRED)
 
 add_subdirectory(serial)
@@ -23,7 +21,7 @@ elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64")
   set(HIKROBOT_BUNDLED_LIBRARY_DIR "${CMAKE_CURRENT_SOURCE_DIR}/hikrobot/lib/arm64")
   set(HIKROBOT_MVS_LIBRARY_DIR "${HIKROBOT_MVS_ROOT}/lib/64")
 else()
-  message(FATAL_ERROR "Unsupported architecture: ${CMAKE_HOST_SYSTEM_PROCESSOR}!")
+  message(FATAL_ERROR "Unsupported architecture: ${CMAKE_SYSTEM_PROCESSOR}!")
 endif()
 
 set(HIKROBOT_MVS_LIBRARY "${HIKROBOT_MVS_LIBRARY_DIR}/libMvCameraControl.so")
@@ -51,7 +49,7 @@ if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64")
 elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64")
   target_link_directories(io PUBLIC mindvision/lib/arm64)
 else()
-  message(FATAL_ERROR "Unsupported architecture: ${CMAKE_HOST_SYSTEM_PROCESSOR}!")
+  message(FATAL_ERROR "Unsupported architecture: ${CMAKE_SYSTEM_PROCESSOR}!")
 endif()
 
 target_link_libraries(io PUBLIC MVSDK usb-1.0 yaml-cpp serial)
