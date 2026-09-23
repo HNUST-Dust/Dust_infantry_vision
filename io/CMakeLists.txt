@@ -66,6 +66,10 @@ target_link_libraries(io
     serial
     ${OpenCV_LIBS}
   PRIVATE
+    # io 的源文件与 PCH 都经 tools/logger.hpp 包含 spdlog，而 io 并不链接 tools，
+    # 必须自己声明一次：spdlog 是 header-only 内联（SPDLOG_INLINE inline），
+    # 两个翻译单元若拿到不同的 SPDLOG_FMT_EXTERNAL 定义即构成 ODR 违规。
+    spdlog::spdlog_header_only
     Threads::Threads
 )
 

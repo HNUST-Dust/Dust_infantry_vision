@@ -16,6 +16,8 @@ add_library(tools OBJECT
 # thread_pool.hpp 含 Eigen；logger.hpp 含 <spdlog/spdlog.h>（全仓 31 处包含它）；
 # yaml.hpp 含 <yaml-cpp/yaml.h>；plotter.hpp 含 <nlohmann/json.hpp>。
 # dust::include 也是 PUBLIC：recorder.hpp 等用 #include "tools/thread_safe_queue.hpp" 根相对路径。
+# logger.hpp 用 spdlog/spdlog.h 并以 header-only 方式内联实现，故 spdlog 必须是 PUBLIC：
+# 所有包含 logger.hpp 的翻译单元都要拿到同一份定义（含 SPDLOG_FMT_EXTERNAL），否则是 ODR 违规。
 # fmt 与 Threads 只出现在实现文件里（recorder.cpp / thread_pool.cpp），故 PRIVATE。
 target_link_libraries(tools
   PUBLIC
@@ -23,6 +25,7 @@ target_link_libraries(tools
     Eigen3::Eigen
     nlohmann_json::nlohmann_json
     yaml-cpp
+    spdlog::spdlog_header_only
     ${OpenCV_LIBS}
   PRIVATE
     fmt::fmt
