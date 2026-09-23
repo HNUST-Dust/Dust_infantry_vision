@@ -17,8 +17,6 @@ Gimbal::Gimbal(const std::string & config_path, bool simulate)
   skip_crc_ = false;  // 默认
   if (yaml["skip_gimbal_crc"])
     skip_crc_ = tools::read<bool>(yaml, "skip_gimbal_crc");
-  else if (yaml["skip_cboard_crc"])
-    skip_crc_ = tools::read<bool>(yaml, "skip_cboard_crc");
 
   if (simulate_) {
     state_.bullet_speed = 23.0F;

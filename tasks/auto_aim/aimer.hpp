@@ -5,7 +5,6 @@
 #include <chrono>
 #include <list>
 
-#include "io/cboard.hpp"
 #include "io/command.hpp"
 #include "target.hpp"
 
@@ -32,19 +31,8 @@ public:
     std::list<Target> targets, std::chrono::steady_clock::time_point timestamp, double bullet_speed,
     bool to_now);
 
-  io::Command aim(
-    std::list<Target> targets, std::chrono::steady_clock::time_point timestamp, double bullet_speed,
-    io::ShootMode shoot_mode, const Eigen::Matrix3d & R_gimbal2world = Eigen::Matrix3d::Identity(),
-    bool to_now = true);
-
-  // Backwards compatible overload without R_gimbal2world
-  io::Command aim(
-    std::list<Target> targets, std::chrono::steady_clock::time_point timestamp, double bullet_speed,
-    io::ShootMode shoot_mode, bool to_now);
-
 private:
   double yaw_offset_;
-  std::optional<double> left_yaw_offset_, right_yaw_offset_;
   double pitch_offset_;
   double comming_angle_;
   double leaving_angle_;

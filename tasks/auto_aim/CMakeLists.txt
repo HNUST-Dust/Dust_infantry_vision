@@ -16,7 +16,6 @@ add_library(auto_aim OBJECT
     net_detector.cpp
     yolo.cpp
     yolos/yolov5.cpp
-    multithread/commandgener.cpp
     multithread/mt_detector.cpp
     planner/planner.cpp
 )

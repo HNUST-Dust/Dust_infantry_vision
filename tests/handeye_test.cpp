@@ -9,7 +9,7 @@
 #include <opencv2/core/eigen.hpp>
 
 #include "io/camera.hpp"
-#include "io/cboard.hpp"
+#include "io/gimbal/gimbal.hpp"
 #include "tasks/auto_aim/solver.hpp"
 #include "tools/exiter.hpp"
 #include "tools/img_tools.hpp"
@@ -41,12 +41,11 @@ int main(int argc, char * argv[])
   auto grid_num = yaml["grid_num"].as<int>();
   auto grid_size = yaml["grid_size"].as<double>();
   auto delay = yaml["delay"].as<int>();
-  io::CBoard cboard(config_path);
+  io::Gimbal gimbal(config_path);
   io::Camera camera(config_path);
   auto_aim::Solver solver(config_path);
 
   cv::Mat img;
-  Eigen::Quaterniond q;
   std::chrono::steady_clock::time_point t;
   std::vector<cv::Point3f> points;
   for (int x = 0; x < grid_num; x++) {
@@ -57,8 +56,17 @@ int main(int argc, char * argv[])
   }
   while (!exiter.exit()) {
     camera.read(img, t);
-    q = cboard.imu_at(t - 1ms * delay);
-    solver.set_R_gimbal2world(q);
+    if (img.empty()) break;
+    const auto orientation = gimbal.orientation_at(t - 1ms * delay);
+    if (!orientation) {
+      if (display) {
+        tools::draw_text(img, "Pose unavailable", {40, 40}, {0, 0, 255});
+        cv::imshow("result", img);
+        if (cv::waitKey(1) == 'q') break;
+      }
+      continue;
+    }
+    solver.set_R_gimbal2world(orientation->q);
     cv::Mat result = img.clone();
     std::vector<cv::Point2f> projectedPoints = solver.world2pixel(points);
     for (const auto & point : projectedPoints) {

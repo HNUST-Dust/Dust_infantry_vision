@@ -27,8 +27,8 @@ else
   test -w "$port" && report "write permission: yes" || { report "write permission: no"; failures=$((failures + 1)); }
 fi
 
-if rg -q '^skip_cboard_crc:[[:space:]]*true' "$config"; then
-  report "WARNING: skip_cboard_crc=true; CRC is disabled"
+if rg -q '^skip_gimbal_crc:[[:space:]]*true' "$config"; then
+  report "WARNING: skip_gimbal_crc=true; CRC is disabled"
 fi
 
 for target in gimbal_test gimbal_response_test; do
