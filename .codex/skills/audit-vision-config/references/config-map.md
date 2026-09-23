@@ -11,7 +11,7 @@
 | Consumer | Required or conditional keys |
 | --- | --- |
 | `io::Camera` | `camera_name`, `exposure_ms`, `vid_pid`; HikRobot requires `gain` and optionally `frame_rate`; MindVision requires `gamma` |
-| `io::Gimbal` | `com_port`; optional `skip_cboard_crc` |
+| `io::Gimbal` | `com_port`; optional `skip_gimbal_crc` |
 | YOLO factory | `yolov5_model_path`, `device`, `min_confidence` |
 | Classifier | `classify_model` |
 | Traditional detector | threshold, light-bar/armor geometry limits, ROI fields when enabled |
