@@ -4,7 +4,11 @@ project(dust-vision)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_EXPORT_COMPILE_COMMANDS ON CACHE BOOL "Export compile_commands.json")
+# CMAKE_EXPORT_COMPILE_COMMANDS 必须用普通变量赋值：本仓 build-ninja 的缓存中已存在同名
+# 空值项（CMAKE_EXPORT_COMPILE_COMMANDS:BOOL=），而 set(... CACHE ...) 不会覆盖已存在的
+# 缓存项，原写法因此静默失效、从未生成 compile_commands.json。普通变量会遮蔽缓存项，
+# 保证 clangd/IDE 能拿到编译数据库。如需关闭：注释掉本行。
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
   set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
