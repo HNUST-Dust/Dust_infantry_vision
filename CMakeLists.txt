@@ -42,7 +42,10 @@ option(
 
 message(STATUS "--------------------CMAKE_BUILD_TYPE: ${CMAKE_BUILD_TYPE}--------------------")
 
-find_package(OpenCV REQUIRED)
+find_package(
+  OpenCV REQUIRED
+  COMPONENTS core imgproc imgcodecs videoio highgui calib3d dnn features2d flann
+)
 find_package(fmt REQUIRED)
 find_package(Eigen3 REQUIRED)
 find_package(spdlog REQUIRED)
