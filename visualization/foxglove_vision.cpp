@@ -1,4 +1,4 @@
-#include "foxglove_vision.hpp"
+#include "visualization/foxglove_vision.hpp"
 
 #include <foxglove/channel.hpp>
 #include <foxglove/context.hpp>

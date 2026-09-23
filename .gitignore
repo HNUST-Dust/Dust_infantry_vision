@@ -56,3 +56,6 @@ __pycache__/
 .codex/current.md
 .codex/current.json
 .codex/sessions/
+
+# Codex memory backups
+.codex/*.bak-*

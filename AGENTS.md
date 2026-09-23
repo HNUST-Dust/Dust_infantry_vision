@@ -1,7 +1,7 @@
 # Repository Guidelines
 
 ## Project Structure & Module Organization
-This is a C++17 vision stack built with CMake. Application entry points live in `src/` (`infantry.cpp`, `infantry_debug.cpp`). Core feature modules are under `tasks/`: `auto_aim/` and `omniperception/`. Hardware and communication abstractions are in `io/`: camera drivers (`hikrobot/`, `mindvision/`, `usbcamera/`), gimbal, DM IMU, serial, and SocketCAN. Shared utilities are in `tools/`, calibration programs in `calibration/`, and runnable test programs in `tests/`. Robot and camera parameters are YAML files in `configs/`; model weights and demo data are in `assets/`. Treat `build-ninja/`, `build/`, `install/`, and `logs/` as generated output.
+This is a C++17 vision stack built with CMake. Application entry points live in `src/` (`infantry.cpp`, `infantry_debug.cpp`). Core feature modules are under `tasks/`: `auto_aim/` and `omniperception/`. Hardware and communication abstractions are in `io/`: camera drivers (`hikrobot/`, `mindvision/`, `usbcamera/`), gimbal, DM IMU, and serial. Shared utilities are in `tools/`, calibration programs in `calibration/`, and runnable test programs in `tests/`. Robot and camera parameters are YAML files in `configs/`; model weights and demo data are in `assets/`. Treat `build-ninja/`, `build/`, `install/`, and `logs/` as generated output.
 
 ## Build, Test, and Development Commands
 Install the SDKs and libraries described in `readme.md` first, including OpenCV, OpenVINO, Eigen, fmt, spdlog, yaml-cpp, nlohmann-json, ccache, and Ninja. Build from the repository root:
@@ -28,10 +28,10 @@ Follow the existing C++ style: two-space indentation, K&R braces for functions a
 Tests are standalone CMake executables rather than a centralized CTest suite. Add new test files under `tests/` with names ending in `_test.cpp`, then register them in the root `CMakeLists.txt` with `add_executable` and `target_link_libraries`. Run the relevant binary directly from `build-ninja/`. Prefer offline tests where possible; hardware-dependent tests should document required devices and config files in comments or usage output.
 
 ## Commit & Pull Request Guidelines
-Recent history uses short, direct commit summaries, often in Chinese, without strict prefixes. Keep commits focused and describe the changed behavior, for example `修复相机线程退出逻辑` or `Add planner offline test`. Pull requests should include a concise summary, affected modules, build/test commands run, linked issues if any, and screenshots or logs when changing visualization, detection output, or hardware behavior.
+Recent history uses short, direct commit summaries, often in Chinese, without strict prefixes. Keep commits focused and describe the changed behavior, for example `修复相机线程退出逻辑` or `Add planner offline test`. Pull requests should include a concise summary, affected modules, build/test commands run, linked issues if any, and screenshots or logs when changing visualization, detection output, or hardware behavior. Commit messages must not carry AI co-author or generator attribution trailers (for example `Co-Authored-By: Claude <noreply@anthropic.com>`); keep only a summary and, when useful, a body.
 
 ## Security & Configuration Tips
-Do not commit machine-specific secrets, absolute device IDs, or large generated logs. Keep reusable configuration in `configs/` and document robot-specific deviations. OpenVINO is pinned to `/opt/intel/openvino_2024.6.0/runtime/cmake` in `CMakeLists.txt`, `tasks/auto_aim/CMakeLists.txt`, and `tasks/omniperception/CMakeLists.txt`; update all three together when changing the SDK path.
+Do not commit machine-specific secrets, absolute device IDs, or large generated logs. Keep reusable configuration in `configs/` and document robot-specific deviations. OpenVINO is pinned to `/opt/intel/openvino_2024.6.0/runtime/cmake` by the single `set(OpenVINO_DIR ... CACHE PATH ...)` line in the root `CMakeLists.txt`; `tasks/auto_aim/CMakeLists.txt` and `tasks/omniperception/CMakeLists.txt` only call `target_link_libraries(... openvino::runtime)` and define no such variable, so there is nothing else to keep in sync. Because that variable is `CACHE` without `FORCE`, an existing build directory needs `-DOpenVINO_DIR=...` or a fresh configure to pick up a change.
 
 ## AI Memory Workflow
 The files below are local private memory and are ignored by Git:
