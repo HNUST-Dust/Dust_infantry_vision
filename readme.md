@@ -342,7 +342,7 @@ sudo usermod -aG dialout $USER
 
 ### systemd 服务（可选）
 
-`systemd/infantry.service` 提供开机自启模板，使用 `Type=exec`、`KillSignal=SIGINT`、`TimeoutStopSec=10`，并预设 MVS SDK 的运行环境变量。部署前必须修改其中的绝对路径：模板里的 `WorkingDirectory` 与 `ExecStart` 写的是 `/home/j/Dust_infantry_vision`，与实际检出的 `/home/rmul/Dust_infantry_vision` 不一致。模板默认带 `--simulate-gimbal`，接实机时按需要去掉。
+`systemd/infantry.service` 提供开机自启模板，使用 `Type=exec`、`KillSignal=SIGINT`、`TimeoutStopSec=10`，并预设 MVS SDK 的运行环境变量。其中的 `WorkingDirectory` 与 `ExecStart` 使用绝对路径，当前指向本检出的 `/home/rmul/Dust_infantry_vision`，换到别的机器或用户名下部署时需要相应修改。模板默认带 `--simulate-gimbal`，接实机时按需要去掉。
 
 ## 项目结构
 

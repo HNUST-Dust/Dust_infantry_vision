@@ -16,10 +16,9 @@ Binaries are emitted under `build-ninja/`, for example:
 ```bash
 ./build-ninja/infantry configs/standard3.yaml
 ./build-ninja/camera_test configs/standard3.yaml
-./build-ninja/planner_test_offline configs/standard3.yaml
 ```
 
-Use `cmake --build build-ninja --target <target>` for focused iteration, such as `infantry`, `auto_aim_test`, or `planner_test_offline`.
+Use `cmake --build build-ninja --target <target>` for focused iteration, such as `infantry` or `auto_aim_test`.
 
 ## Coding Style & Naming Conventions
 Follow the existing C++ style: two-space indentation, K&R braces for functions and control flow, `snake_case` for files, variables, and functions, and PascalCase for classes such as `Tracker` or `ThreadSafeQueue`. Keep headers beside their implementation files (`detector.hpp` with `detector.cpp`). Prefer existing helpers in `tools/` and established module boundaries before adding new utilities.
