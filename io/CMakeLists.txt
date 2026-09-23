@@ -52,7 +52,22 @@ else()
   message(FATAL_ERROR "Unsupported architecture: ${CMAKE_SYSTEM_PROCESSOR}!")
 endif()
 
-target_link_libraries(io PUBLIC MVSDK usb-1.0 yaml-cpp serial)
+# io 的公共头暴露 OpenCV（camera.hpp / hikrobot.hpp / mindvision.hpp / usbcamera.hpp 含
+# <opencv2/opencv.hpp>）、Eigen（dm_imu/gimbal 含 <Eigen/Geometry>）与 serial
+# （dm_imu.hpp / gimbal.hpp 含 <serial/serial.h>）；gimbal.hpp 等用根相对路径包含
+# tools/quaternion_buffer.hpp，故 dust::include 也必需。
+target_link_libraries(io
+  PUBLIC
+    dust::include
+    Eigen3::Eigen
+    MVSDK
+    usb-1.0
+    yaml-cpp
+    serial
+    ${OpenCV_LIBS}
+  PRIVATE
+    Threads::Threads
+)
 
 target_precompile_headers(io PRIVATE
   <Eigen/Geometry>
