@@ -30,6 +30,11 @@ option(
   "Enable the native Foxglove WebSocket preview and services in capture"
   OFF
 )
+option(
+  ENABLE_FOXGLOVE_VISION
+  "Enable the native Foxglove WebSocket image and telemetry stream in infantry / infantry_debug"
+  OFF
+)
 
 message(STATUS "--------------------CMAKE_BUILD_TYPE: ${CMAKE_BUILD_TYPE}--------------------")
 
@@ -52,8 +57,8 @@ add_subdirectory(io)
 add_subdirectory(tasks/auto_aim)
 
 ###################src###################
-add_executable(infantry_debug src/infantry_debug.cpp)
-add_executable(infantry src/infantry.cpp)
+add_executable(infantry_debug src/infantry_debug.cpp visualization/vision_overlay.cpp)
+add_executable(infantry src/infantry.cpp visualization/vision_overlay.cpp)
 
 target_link_libraries(infantry_debug ${OpenCV_LIBS} fmt::fmt yaml-cpp auto_aim tools io)
 target_link_libraries(infantry ${OpenCV_LIBS} fmt::fmt yaml-cpp auto_aim tools io)
@@ -71,7 +76,9 @@ target_link_libraries(calibrate_handeye ${OpenCV_LIBS} fmt::fmt yaml-cpp tools)
 target_link_libraries(calibrate_robotworld_handeye ${OpenCV_LIBS} fmt::fmt yaml-cpp tools)
 target_link_libraries(split_video ${OpenCV_LIBS} fmt::fmt tools)
 
-if(ENABLE_FOXGLOVE_CALIBRATION)
+if(ENABLE_FOXGLOVE_CALIBRATION OR ENABLE_FOXGLOVE_VISION)
+  # 两个功能共用同一份 SDK：只下载、只 find_package、只定义 dust_foxglove_cpp 一次。
+  # 离线环境可用 -DFETCHCONTENT_SOURCE_DIR_FOXGLOVE_SDK_DIST=<已解压目录> 跳过下载。
   include(FetchContent)
   FetchContent_Declare(
     foxglove_sdk_dist
@@ -88,6 +95,9 @@ if(ENABLE_FOXGLOVE_CALIBRATION)
     HINTS "${foxglove_sdk_dist_SOURCE_DIR}"
   )
   foxglove_sdk_add_cpp_library(dust_foxglove_cpp TYPE STATIC REMOTE_ACCESS OFF)
+endif()
+
+if(ENABLE_FOXGLOVE_CALIBRATION)
   add_library(calibration_foxglove STATIC calibration/foxglove_calibration.cpp)
   target_link_libraries(
     calibration_foxglove
@@ -99,6 +109,25 @@ if(ENABLE_FOXGLOVE_CALIBRATION)
 
   add_executable(foxglove_calibration_test tests/foxglove_calibration_test.cpp)
   target_link_libraries(foxglove_calibration_test calibration_foxglove)
+endif()
+
+if(ENABLE_FOXGLOVE_VISION)
+  # 传输库只依赖 OpenCV / nlohmann_json / Foxglove：auto_aim 与 tools 都是 OBJECT 库，
+  # 把它们链进静态库会复制一份目标文件，与可执行程序自身链接的那份冲突。
+  add_library(visualization_foxglove STATIC visualization/foxglove_vision.cpp)
+  target_link_libraries(
+    visualization_foxglove
+    PUBLIC ${OpenCV_LIBS} nlohmann_json::nlohmann_json dust_foxglove_cpp
+  )
+
+  # 叠加层已在上面直接编进两个可执行程序（不依赖 Foxglove），这里只补上编译定义与传输库。
+  foreach(vision_target infantry infantry_debug)
+    target_compile_definitions(${vision_target} PRIVATE DUST_ENABLE_FOXGLOVE)
+    target_link_libraries(${vision_target} visualization_foxglove)
+  endforeach()
+
+  add_executable(foxglove_vision_test tests/foxglove_vision_test.cpp)
+  target_link_libraries(foxglove_vision_test visualization_foxglove)
 endif()
 
 #################tests##################
@@ -144,8 +173,11 @@ target_link_libraries(detector_roi_test ${OpenCV_LIBS} fmt::fmt yaml-cpp auto_ai
 add_executable(openvino_benchmark_test tests/openvino_benchmark_test.cpp)
 target_link_libraries(openvino_benchmark_test ${OpenCV_LIBS} fmt::fmt yaml-cpp auto_aim tools io)
 
-if(ENABLE_FOXGLOVE_CALIBRATION)
+if(ENABLE_FOXGLOVE_CALIBRATION OR ENABLE_FOXGLOVE_VISION)
   find_package(Python3 REQUIRED COMPONENTS Interpreter)
+endif()
+
+if(ENABLE_FOXGLOVE_CALIBRATION)
   add_test(
     NAME foxglove_calibration_protocol
     COMMAND
@@ -154,4 +186,15 @@ if(ENABLE_FOXGLOVE_CALIBRATION)
       $<TARGET_FILE:foxglove_calibration_test>
   )
   set_tests_properties(foxglove_calibration_protocol PROPERTIES TIMEOUT 20)
+endif()
+
+if(ENABLE_FOXGLOVE_VISION)
+  add_test(
+    NAME foxglove_vision_protocol
+    COMMAND
+      ${Python3_EXECUTABLE}
+      ${PROJECT_SOURCE_DIR}/tests/foxglove_vision_protocol_test.py
+      $<TARGET_FILE:foxglove_vision_test>
+  )
+  set_tests_properties(foxglove_vision_protocol PROPERTIES TIMEOUT 60)
 endif()

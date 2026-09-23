@@ -13,6 +13,7 @@
 
 #include "io/camera.hpp"
 #include "io/gimbal/gimbal.hpp"
+#include "tools/command_line.hpp"
 #include "tools/img_tools.hpp"
 #include "tools/logger.hpp"
 #include "tools/math_tools.hpp"
@@ -25,8 +26,8 @@ const std::string keys =
   "{help h usage ? |                          | 输出命令行参数说明}"
   "{@config-path   | configs/calibration.yaml | 位置参数，yaml配置文件路径 }"
   "{output-folder o |      assets/img_with_q   | 输出文件夹路径   }"
-  "{headless       |                          | 不创建OpenCV窗口 }"
-  "{foxglove      |                          | 启用Foxglove WebSocket }"
+  "{headless       | false                    | 不创建OpenCV窗口 }"
+  "{foxglove      | false                    | 启用Foxglove WebSocket }"
   "{foxglove-host | 127.0.0.1                | Foxglove监听地址 }"
   "{foxglove-port | 8765                     | Foxglove监听端口 }"
   "{foxglove-fps  | 10                       | Foxglove预览帧率 }"
@@ -199,9 +200,23 @@ int main(int argc, char * argv[])
     cli.printMessage();
     return 0;
   }
+  // OpenCV 只解析 --key=value：写成 --key value 时该开关取到字符串 "true"，而后面那个值还会被
+  // 当成位置参数吃掉 config-path，接着按错误路径加载 YAML。因此必须在任何强类型读取之前报错退出。
+  // 必须用 get<std::string>：has() 的语义是“值非空”，默认值非空时恒为 true，无法用来自查。
+  for (const char * flag :
+       {"output-folder", "foxglove-host", "foxglove-port", "foxglove-fps", "jpeg-quality"}) {
+    if (tools::cli_value_flag_misused(cli.get<std::string>(flag))) {
+      tools::logger()->error(
+        "[cli] --{} was parsed as the literal string \"true\"; use --{}=<value>", flag, flag);
+      return 2;
+    }
+  }
+
   auto output_folder = cli.get<std::string>("output-folder");
-  auto headless = cli.has("headless");
-  auto enable_foxglove = cli.has("foxglove");
+  // 注意这两项与 keys 里的默认值强耦合：has() 判断的是“值非空”，默认值一改成 false 就会恒为 true，
+  // 所以必须用 get<bool>；反过来若保留空默认值，get<bool> 会报 Missing parameter 让 check() 失败。
+  auto headless = cli.get<bool>("headless");
+  auto enable_foxglove = cli.get<bool>("foxglove");
   auto foxglove_host = cli.get<std::string>("foxglove-host");
   auto foxglove_port = cli.get<int>("foxglove-port");
   auto foxglove_fps = cli.get<double>("foxglove-fps");
@@ -211,7 +226,7 @@ int main(int argc, char * argv[])
     return 2;
   }
   if (headless && !enable_foxglove) {
-    tools::logger()->error("--headless requires --foxglove so the process remains controllable");
+    tools::logger()->error("--headless requires --foxglove=true so the process remains controllable");
     return 2;
   }
   if (foxglove_port < 1 || foxglove_port > 65535 || foxglove_fps <= 0 ||
@@ -225,9 +240,16 @@ int main(int argc, char * argv[])
 
   tools::logger()->info("默认标定板尺寸为10列7行");
   // 主循环，保存图片和对应四元数
-  capture_loop(
-    config_path, output_folder, headless, enable_foxglove, foxglove_host, foxglove_port,
-    foxglove_fps, jpeg_quality);
+  // 包 try/catch：Foxglove 构造失败（例如 host 绑不上）以及采集循环内的校验/写盘异常
+  // 都改为记一条明确日志并返回 2，而不是未捕获异常直接 terminate。
+  try {
+    capture_loop(
+      config_path, output_folder, headless, enable_foxglove, foxglove_host, foxglove_port,
+      foxglove_fps, jpeg_quality);
+  } catch (const std::exception & e) {
+    tools::logger()->error("[Calibration] {}", e.what());
+    return 2;
+  }
 
   tools::logger()->warn("注意四元数输出顺序为wxyz");
 

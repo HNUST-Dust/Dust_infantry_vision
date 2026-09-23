@@ -70,6 +70,10 @@ public:
   void close();
   void join();
 
+  // 源图保留可随订阅状态动态开关：无人观看时不必让整帧随检测结果传递
+  void set_keep_source(bool keep_source) { keep_source_.store(keep_source); }
+  bool keep_source() const { return keep_source_.load(); }
+
   std::size_t request_capacity() const;
 
 private:
@@ -89,7 +93,7 @@ private:
   void worker_loop();
 
   YOLO yolo_;
-  const bool keep_source_;
+  std::atomic<bool> keep_source_;
   tools::OrderedDelivery<Detection> delivery_;
   std::atomic<bool> accepting_{true};
   std::atomic<uint64_t> next_sequence_{1};

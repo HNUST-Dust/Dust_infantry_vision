@@ -3,6 +3,7 @@
 #include <atomic>
 #include <chrono>
 #include <cstdint>
+#include <memory>
 #include <nlohmann/json.hpp>
 #include <opencv2/opencv.hpp>
 #include <optional>
@@ -14,6 +15,7 @@
 #include "tasks/auto_aim/solver.hpp"
 #include "tasks/auto_aim/tracker.hpp"
 #include "tasks/auto_aim/multithread/mt_detector.hpp"
+#include "tools/command_line.hpp"
 #include "tools/exiter.hpp"
 #include "tools/img_tools.hpp"
 #include "tools/latency_stats.hpp"
@@ -22,12 +24,25 @@
 #include "tools/plotter.hpp"
 #include "tools/thread_safe_queue.hpp"
 
+#ifdef DUST_ENABLE_FOXGLOVE
+#include "visualization/foxglove_vision.hpp"
+#include "visualization/vision_overlay.hpp"
+#endif
+
 using namespace std::chrono_literals;
 
 const std::string keys =
   "{help h usage ? |                        | 输出命令行参数说明}"
   "{@config-path   | configs/standard3.yaml | 位置参数，yaml配置文件路径 }"
-  "{simulate-gimbal | false                  | 使用虚拟云台姿态和串口输出 }";
+  "{simulate-gimbal | false                  | 使用虚拟云台姿态和串口输出 }"
+  "{foxglove        | false                  | 启用Foxglove WebSocket图像与遥测推送 }"
+  "{foxglove-host   | 127.0.0.1              | Foxglove监听地址 }"
+  "{foxglove-port   | 8766                   | 图像端口，单端口模式下同时承载遥测 }"
+  "{foxglove-data-port | 0                   | 非0时遥测走独立端口，与图像互不抢占带宽 }"
+  "{foxglove-fps    | 10                     | 图像发布帧率上限 }"
+  "{foxglove-scale  | 0.5                    | 图像发布缩放系数(0,1] }"
+  "{foxglove-sched  | auto                   | 发布线程降级让出CPU给推理(auto/off) }"
+  "{jpeg-quality    | 80                     | JPEG质量(1-100) }";
 
 namespace
 {
@@ -51,6 +66,23 @@ void add_latency_metrics(
   data["vision_latency_p99_ms"] = summary.p99_ms;
 }
 
+// 计划线程只读这个原子状态码；直接调 Tracker::state() 会和主循环的 track() 抢同一把锁
+const char * tracker_state_name(int code)
+{
+  switch (code) {
+    case 1:
+      return "detecting";
+    case 2:
+      return "tracking";
+    case 3:
+      return "temp_lost";
+    case 4:
+      return "switching";
+    default:
+      return "lost";
+  }
+}
+
 }  // namespace
 
 int main(int argc, char * argv[])
@@ -64,6 +96,58 @@ int main(int argc, char * argv[])
     cli.printMessage();
     return 0;
   }
+
+  // 可选的 Foxglove 图像与遥测推送；构造失败只记日志，视觉主链路继续运行
+#ifdef DUST_ENABLE_FOXGLOVE
+  std::unique_ptr<visualization::FoxgloveVision> foxglove;
+  if (cli.get<bool>("foxglove")) {
+    // OpenCV 只解析 --key=value；写成 --key value 会静默取到默认值（端口会退回 8766，
+    // host 会变成字符串 "true" 让 server 根本起不来），这里直接报错。
+    for (const char * flag :
+         {"foxglove-host", "foxglove-port", "foxglove-data-port", "foxglove-fps", "foxglove-scale",
+          "foxglove-sched", "jpeg-quality"}) {
+      if (tools::cli_value_flag_misused(cli.get<std::string>(flag))) {
+        tools::logger()->error("[Foxglove] use --{}=<value>; space-separated values are not parsed", flag);
+        return 2;
+      }
+    }
+
+    const int image_port = cli.get<int>("foxglove-port");
+    const int data_port = cli.get<int>("foxglove-data-port");
+    const auto sched = cli.get<std::string>("foxglove-sched");
+    if (sched != "auto" && sched != "off") {
+      tools::logger()->error("[Foxglove] --foxglove-sched must be auto or off");
+      return 2;
+    }
+    visualization::FoxgloveVisionOptions options;
+    options.host = cli.get<std::string>("foxglove-host");
+    options.image_port = static_cast<uint16_t>(image_port);
+    options.data_port = static_cast<uint16_t>(data_port);
+    options.image_fps = cli.get<double>("foxglove-fps");
+    options.image_scale = cli.get<double>("foxglove-scale");
+    options.jpeg_quality = cli.get<int>("jpeg-quality");
+    options.yield_cpu = sched == "auto";
+    if (
+      image_port < 1 || image_port > 65535 || data_port < 0 || data_port > 65535 ||
+      options.image_fps <= 0 || options.image_scale <= 0 || options.image_scale > 1.0 ||
+      options.jpeg_quality < 1 || options.jpeg_quality > 100) {
+      tools::logger()->error("[Foxglove] Invalid port, fps, scale, or JPEG quality");
+      return 2;
+    }
+    try {
+      foxglove = std::make_unique<visualization::FoxgloveVision>(options);
+      tools::logger()->info(
+        "[Foxglove] image ws://{}:{}, telemetry ws://{}:{}", options.host, foxglove->image_port(),
+        options.host, foxglove->data_port());
+    } catch (const std::exception & e) {
+      tools::logger()->error("[Foxglove] disabled: {}", e.what());
+    }
+  }
+#else
+  if (cli.get<bool>("foxglove"))
+    tools::logger()->error(
+      "infantry was built without Foxglove; configure with -DENABLE_FOXGLOVE_VISION=ON");
+#endif
 
   io::Gimbal gimbal(config_path, cli.get<bool>("simulate-gimbal"));
   io::Camera camera(config_path);
@@ -152,6 +236,17 @@ int main(int argc, char * argv[])
       data["mode"] = mode_value;
       add_latency_metrics(data, latency_summary);
       plotter.plot(data);
+#ifdef DUST_ENABLE_FOXGLOVE
+      if (foxglove) {
+        const auto sampled_at = std::chrono::steady_clock::now();
+        // 按值传参 + move：上一条语句的 plotter.plot(data) 已经消费过 data，之后不再使用。
+        foxglove->publish_telemetry(std::move(data), sampled_at);
+        foxglove->publish_status(
+          {{"tracker_state_name", tracker_state_name(tracker_state_code.load())},
+           {"has_target", update.target.has_value()}},
+          sampled_at);
+      }
+#endif
 
       if (
         latency_summary &&
@@ -191,10 +286,16 @@ int main(int argc, char * argv[])
   });
 
   while (!exiter.exit()) {
+#ifdef DUST_ENABLE_FOXGLOVE
+    // 必须放在 wait_pop_for 之前：跳帧时的 continue 会跳过这里。
+    // 只在真有 Foxglove 客户端订阅图像时才让检测器保留源图，其余时候零开销。
+    detector.set_keep_source(foxglove && foxglove->image_requested());
+#endif
     auto detection = detector.wait_pop_for(50ms);
     if (!detection || !detection->q) continue;
     const auto & q = *detection->q;
     solver.set_R_gimbal2world(q);
+    cv::Mat img_det = std::move(detection->source);
     auto armors = std::move(detection->armors);
     const auto t = detection->timestamp;
     
@@ -228,18 +329,20 @@ int main(int argc, char * argv[])
         ekf_x[6], ekf_x[7], ekf_x[8], ekf_x[9], ekf_x[10]);
     }
     
-    // // 在图像上显示 Tracker 状态
-    // cv::Scalar state_color = (current_state == "tracking") ? cv::Scalar(0, 255, 0) : 
-    //                          (current_state == "detecting") ? cv::Scalar(0, 255, 255) :
-    //                          (current_state == "temp_lost") ? cv::Scalar(0, 165, 255) :
-    //                          cv::Scalar(0, 0, 255);  // lost = red
-    // cv::putText(img, fmt::format("State: {}", current_state), 
-    //             {10, 30}, cv::FONT_HERSHEY_SIMPLEX, 0.8, state_color, 2);
-
-    // cv::resize(img, img, {}, 0.5, 0.5);  // 显示时缩小图片尺寸
-    // cv::imshow("reprojection", img);
-    // auto key = cv::waitKey(1);
-    // if (key == 'q') break;
+#ifdef DUST_ENABLE_FOXGLOVE
+    // 有 Foxglove 客户端订阅时，推送与 infantry_debug 完全相同的标注图。
+    // 放在 target_queue.push 之后，图像处理不会推迟目标的发布。
+    if (foxglove && foxglove->image_requested() && detection->inferred && !img_det.empty()) {
+      visualization::VisionOverlayInput overlay{
+        armors, detection->net_roi, detection->light_roi, current_state};
+      if (!targets.empty()) {
+        overlay.target = &targets.front();
+        overlay.aim_xyza = planner.debug_xyza();
+      }
+      visualization::draw_vision_overlay(img_det, overlay, solver);
+      foxglove->publish_image(img_det, t);
+    }
+#endif
   }
 
   camera.stop();

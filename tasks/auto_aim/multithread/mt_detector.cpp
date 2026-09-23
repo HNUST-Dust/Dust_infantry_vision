@@ -127,7 +127,7 @@ void MultiThreadDetector::worker_loop()
       pending.sequence, pending.timestamp, {}, pending.net_roi, pending.light_roi, true, {}, pending.q};
     try {
       detection.armors = yolo_.postprocess(pending.ticket, -1, pending.light_roi);
-      if (keep_source_) detection.source = yolo_.source(pending.ticket);
+      if (keep_source_.load()) detection.source = yolo_.source(pending.ticket);
     } catch (const std::exception & e) {
       detection.inferred = false;
       tools::logger()->warn(
