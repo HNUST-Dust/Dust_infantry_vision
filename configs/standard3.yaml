@@ -88,6 +88,17 @@ t_camera2gimbal: [0.092605722425708623, 0.092642888073632274, 0.0274680155577947
 #####-----gimbal参数-----#####
 com_port: "/dev/gimbal"
 
+#####-----Foxglove-----#####
+# 仅当命令行走 --foxglove 时生效：启用开关留在命令行，监听与编码参数在这里
+foxglove:
+  host: "127.0.0.1"   # 监听地址
+  port: 8766          # 图像端口；data_port 为 0 时同时承载遥测
+  data_port: 0        # 非 0 时遥测走独立端口，与图像互不抢占带宽
+  fps: 30             # 图像发布帧率上限，超出的帧直接丢弃、不排队
+  scale: 0.5          # 发布前缩放系数 (0,1]
+  sched: auto         # 发布线程降级让出 CPU 给推理 (auto/off)
+  jpeg_quality: 80    # JPEG 质量 (1-100)
+
 #####-----planner-----#####
 fire_thresh_high_speed: 1e-3   # 高速旋转时使用较宽松的阈值
 fire_thresh_low_speed: 1e-4    # 低速/静止时使用较严格的阈值

@@ -98,7 +98,8 @@ source /opt/intel/openvino_2024.6.0/setupvars.sh
 
 - `--simulate-gimbal`（默认 `false`）：置为 `true` 时使用虚拟云台姿态并只做串口输出，不依赖真实云台，可用于无设备联调。
 - `--headless`（默认 `false`）：置为 `true` 时关闭检测可视化和窗口事件，适合无桌面的远程运行；`systemd/infantry.service` 模板即带此开关。
-- 其余开关（`--foxglove*`、`--jpeg-quality`、`--verbose-ekf`）见 `./build-ninja/infantry -h` 与下文「自瞄图像与数据」。
+- `--foxglove`（默认 `false`）：置为 `true` 时启用 Foxglove 图像与遥测推送；监听地址、端口、帧率、缩放、发布线程调度和 JPEG 质量在 `configs/standard3.yaml` 的 `foxglove` 段配置，不在命令行上。
+- `--verbose-ekf`（默认 `false`）：每帧输出 EKF 11 维状态；关闭时无输出。其余细节见 `./build-ninja/infantry -h` 与下文「自瞄图像与数据」。
 
 单独测试相机：
 
@@ -438,7 +439,7 @@ tests/                    调试和测试程序
 
 ### `configs/standard3.yaml`
 
-这是当前机器人配置，不适合直接用于所有电脑或所有机器人。部署到新机器人时建议复制一份，再修改相机、串口、标定和射击参数。绝大多数键是**必填**的，缺失时会抛出 `Missing YAML key`；可选的有 `infer_request_buffer_num`（缺省 `2`）、`skip_gimbal_crc`（缺省 `false`）、`dynamic_roi.net_ratio`（缺省 `1.0`），以及 `dynamic_roi` 和 `armor_association` 两个节点本身（节点不存在时用内置默认值）。
+这是当前机器人配置，不适合直接用于所有电脑或所有机器人。部署到新机器人时建议复制一份，再修改相机、串口、标定和射击参数。绝大多数键是**必填**的，缺失时会抛出 `Missing YAML key`；可选的有 `infer_request_buffer_num`（缺省 `2`）、`skip_gimbal_crc`（缺省 `false`）、`dynamic_roi.net_ratio`（缺省 `1.0`），以及 `dynamic_roi`、`armor_association` 和 `foxglove` 三个节点本身（节点不存在时用内置默认值）。
 
 | 分类 | 字段 | 说明 |
 | --- | --- | --- |
@@ -492,6 +493,13 @@ tests/                    调试和测试程序
 | 规划 | `fire_thresh_high_speed` / `fire_thresh_low_speed` | 高/低速下的射击阈值 |
 | 规划 | `max_yaw_acc` / `max_pitch_acc` | 云台角加速度约束（rad/s²） |
 | 规划 | `Q_yaw` / `R_yaw` / `Q_pitch` / `R_pitch` | TinyMPC 权重 |
+| Foxglove | `foxglove.host` | 监听地址，默认 `127.0.0.1` |
+| Foxglove | `foxglove.port` | 图像端口，默认 `8766`；`data_port` 为 0 时同时承载遥测 |
+| Foxglove | `foxglove.data_port` | 非 0 时遥测走独立端口，默认 `0` |
+| Foxglove | `foxglove.fps` | 图像发布帧率上限，默认 `30` |
+| Foxglove | `foxglove.scale` | 发布前缩放系数，默认 `0.5`，范围 `(0,1]` |
+| Foxglove | `foxglove.sched` | `auto`（默认，发布线程降级让出 CPU）或 `off` |
+| Foxglove | `foxglove.jpeg_quality` | JPEG 质量，默认 `80`，范围 `1-100` |
 
 `yaw_offset`、`pitch_offset`、`decision_speed`、`high_speed_delay_time`、`low_speed_delay_time` 同时被 `Aimer` 和 `Planner` 读取。
 
@@ -656,31 +664,44 @@ Foxglove Studio 选择 **Open connection → Foxglove WebSocket**，连接 `ws:/
 各自有独立的积压队列，慢速图像客户端不会挤占遥测的带宽和时延。
 
 ```bash
-./build-ninja/infantry configs/standard3.yaml --foxglove --headless --foxglove-data-port=8767
+# 先把 configs/standard3.yaml 里的 foxglove.data_port 设为 8767
+./build-ninja/infantry configs/standard3.yaml --foxglove --headless
 ssh -N -L 127.0.0.1:18766:127.0.0.1:8766 -L 127.0.0.1:18767:127.0.0.1:8767 edge-108
 # Foxglove 里建立两个连接：图像 ws://127.0.0.1:18766，遥测 ws://127.0.0.1:18767
 ```
 
+命令行的 Foxglove 开关只剩启用开关：
+
 | 参数 | 默认 | 说明 |
 | --- | --- | --- |
 | `--foxglove` | 关 | 启用图像与遥测推送 |
-| `--foxglove-host` | `127.0.0.1` | 监听地址 |
-| `--foxglove-port` | `8766` | 图像端口；单端口模式下同时承载遥测 |
-| `--foxglove-data-port` | `0` | 非 0 时启用双端口，遥测只走该端口 |
-| `--foxglove-fps` | `30` | 图像发布帧率上限，超出的帧直接丢弃、不排队 |
-| `--foxglove-scale` | `0.5` | 发布前缩放系数，`1.0` 为原始分辨率 |
-| `--foxglove-sched` | `auto` | 发布线程降级让出 CPU 给推理（`auto`）或保持默认优先级（`off`） |
-| `--jpeg-quality` | `80` | JPEG 质量 |
 
-带值的开关必须写成 `--key=value`：OpenCV 的 `CommandLineParser` 不解析空格分隔形式（`--foxglove-port 8766`
-会让该开关取到字符串 `true`），程序检测到这种写法会报错退出，不会静默退回默认端口。
+监听与编码参数取自 `configs/standard3.yaml` 的 `foxglove` 段（节点不存在或缺键时用内置默认值）：
 
-布尔开关（`--headless`、`--simulate-gimbal`、`--verbose-ekf`）不在这项检查内：裸写与 `--key=true`
-效果相同，都不会报错。但位置参数陷阱依旧——`--headless true a.yaml` 会把 `true` 当成 `@config-path`，
-所以布尔开关要单独写（`--headless`），后面不要跟空格分隔的值。
+| 键 | 默认 | 说明 |
+| --- | --- | --- |
+| `foxglove.host` | `127.0.0.1` | 监听地址 |
+| `foxglove.port` | `8766` | 图像端口；单端口模式下同时承载遥测 |
+| `foxglove.data_port` | `0` | 非 0 时启用双端口，遥测只走该端口 |
+| `foxglove.fps` | `30` | 图像发布帧率上限，超出的帧直接丢弃、不排队 |
+| `foxglove.scale` | `0.5` | 发布前缩放系数，`1.0` 为原始分辨率 |
+| `foxglove.sched` | `auto` | 发布线程降级让出 CPU 给推理（`auto`）或保持默认优先级（`off`） |
+| `foxglove.jpeg_quality` | `80` | JPEG 质量 |
+
+取值非法（端口越界、`fps <= 0`、`scale` 不在 `(0,1]`、JPEG 质量不在 `1-100`、`sched` 不是 `auto|off`）
+会在启动时报错并以退出码 2 结束，不会静默退回默认值。
+
+原来的命令行开关 `--foxglove-host`、`--foxglove-port`、`--foxglove-data-port`、`--foxglove-fps`、
+`--foxglove-scale`、`--foxglove-sched`、`--jpeg-quality` 已移除。`CommandLineParser` 对未声明的键是
+**静默忽略**的，所以 `infantry` 显式检测这些旧写法（`--key value` 与 `--key=value` 两种拼法都查），
+命中即报错退出（退出码 2）并提示改到 YAML，不会让人误以为参数已经生效。
+
+`infantry` 现在只剩布尔开关（`--headless`、`--simulate-gimbal`、`--verbose-ekf`、`--foxglove`）：
+裸写与 `--key=true` 效果相同，都不会报错。但位置参数陷阱依旧——`--headless true a.yaml` 会把 `true`
+当成 `@config-path`，所以布尔开关要单独写（`--headless`），后面不要跟空格分隔的值。
 
 实测（MV-CS016-10UC，0.5 倍缩放、10 FPS、JPEG 质量 80）：单帧约 15-20 KB，图像码率约 0.2 MB/s，
-遥测约 100 Hz。图像码率随画面内容变化，`--foxglove-scale=1.0` 或提高帧率会成倍上升，此时建议拆端口。
+遥测约 100 Hz。图像码率随画面内容变化，`foxglove.scale: 1.0` 或提高帧率会成倍上升，此时建议拆端口。
 
 ### 不拖慢推理：传输线程的调度
 
@@ -692,7 +713,7 @@ ssh -N -L 127.0.0.1:18766:127.0.0.1:8766 -L 127.0.0.1:18767:127.0.0.1:8767 edge-
   遥测（100 Hz、单条微秒级），降到 SCHED_IDLE 有被饿死的风险。两个队列都有界且丢最旧。
 
 100 Hz 的规划线程（发云台指令的那条）不再做 JSON 序列化：`publish_telemetry` 只做订阅判断、取时间戳和
-入队，`dump()` 与 SDK 调用都在 `foxglove-data` 上完成。`--foxglove-sched=off` 可整体关掉降级（排查用）。
+入队，`dump()` 与 SDK 调用都在 `foxglove-data` 上完成。`foxglove.sched: off` 可整体关掉降级（排查用）。
 
 `/vision/status` 里可以直接读到效果：`sched_mode`（请求值）、`image_sched`/`data_sched`
 （`{policy, nice, errno, err}`，**实际生效值**）、`encode_ms_last`/`encode_ms_ema`（缩放+编码的单帧耗时）、

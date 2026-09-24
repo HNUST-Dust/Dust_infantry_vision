@@ -7,6 +7,7 @@
 #include <nlohmann/json.hpp>
 #include <opencv2/opencv.hpp>
 #include <optional>
+#include <stdexcept>
 #include <thread>
 
 #include "io/camera.hpp"
@@ -24,6 +25,7 @@
 #include "visualization/vision_overlay.hpp"
 
 #ifdef DUST_ENABLE_FOXGLOVE
+#include "tools/yaml.hpp"
 #include "visualization/foxglove_vision.hpp"
 #endif
 
@@ -56,6 +58,42 @@ void add_latency_metrics(
   data["vision_latency_p99_ms"] = summary.p99_ms;
 }
 
+#ifdef DUST_ENABLE_FOXGLOVE
+// Foxglove 的运行参数来自 config_path 的 foxglove 段；缺段或缺键都退回下面的默认值，
+// 与 visualization::FoxgloveVisionOptions 的默认值一致。启用开关在命令行，不在这里。
+struct FoxgloveConfig
+{
+  std::string host = "127.0.0.1";
+  int image_port = 8766;
+  int data_port = 0;
+  double image_fps = 30.0;
+  double image_scale = 0.5;
+  int jpeg_quality = 80;
+  bool yield_cpu = true;
+};
+
+FoxgloveConfig load_foxglove_config(const std::string & config_path)
+{
+  FoxgloveConfig config;
+  const auto node = tools::load(config_path)["foxglove"];  // 加载失败时抛 runtime_error
+  if (!node) return config;
+
+  if (node["host"]) config.host = node["host"].as<std::string>();
+  if (node["port"]) config.image_port = node["port"].as<int>();
+  if (node["data_port"]) config.data_port = node["data_port"].as<int>();
+  if (node["fps"]) config.image_fps = node["fps"].as<double>();
+  if (node["scale"]) config.image_scale = node["scale"].as<double>();
+  if (node["jpeg_quality"]) config.jpeg_quality = node["jpeg_quality"].as<int>();
+  if (node["sched"]) {
+    const auto sched = node["sched"].as<std::string>();
+    if (sched != "auto" && sched != "off")
+      throw std::runtime_error("foxglove.sched must be auto or off, but is: " + sched);
+    config.yield_cpu = sched == "auto";
+  }
+  return config;
+}
+#endif
+
 }  // namespace
 
 int run(const RuntimeOptions & options)
@@ -68,22 +106,29 @@ int run(const RuntimeOptions & options)
 #ifdef DUST_ENABLE_FOXGLOVE
   std::unique_ptr<visualization::FoxgloveVision> foxglove;
   if (options.foxglove_enabled) {
+    FoxgloveConfig config;
+    try {
+      config = load_foxglove_config(options.config_path);
+    } catch (const std::exception & e) {
+      tools::logger()->error("[Foxglove] {}", e.what());
+      return 2;
+    }
     if (
-      options.foxglove_port < 1 || options.foxglove_port > 65535 || options.foxglove_data_port < 0 ||
-      options.foxglove_data_port > 65535 || options.foxglove_fps <= 0 ||
-      options.foxglove_scale <= 0 || options.foxglove_scale > 1.0 ||
-      options.foxglove_jpeg_quality < 1 || options.foxglove_jpeg_quality > 100) {
-      tools::logger()->error("[Foxglove] Invalid port, fps, scale, or JPEG quality");
+      config.image_port < 1 || config.image_port > 65535 || config.data_port < 0 ||
+      config.data_port > 65535 || config.image_fps <= 0 || config.image_scale <= 0 ||
+      config.image_scale > 1.0 || config.jpeg_quality < 1 || config.jpeg_quality > 100) {
+      tools::logger()->error(
+        "[Foxglove] Invalid port, fps, scale, or JPEG quality in the foxglove section");
       return 2;
     }
     visualization::FoxgloveVisionOptions foxglove_options;
-    foxglove_options.host = options.foxglove_host;
-    foxglove_options.image_port = static_cast<uint16_t>(options.foxglove_port);
-    foxglove_options.data_port = static_cast<uint16_t>(options.foxglove_data_port);
-    foxglove_options.image_fps = options.foxglove_fps;
-    foxglove_options.image_scale = options.foxglove_scale;
-    foxglove_options.jpeg_quality = options.foxglove_jpeg_quality;
-    foxglove_options.yield_cpu = options.foxglove_yield_cpu;
+    foxglove_options.host = config.host;
+    foxglove_options.image_port = static_cast<uint16_t>(config.image_port);
+    foxglove_options.data_port = static_cast<uint16_t>(config.data_port);
+    foxglove_options.image_fps = config.image_fps;
+    foxglove_options.image_scale = config.image_scale;
+    foxglove_options.jpeg_quality = config.jpeg_quality;
+    foxglove_options.yield_cpu = config.yield_cpu;
     try {
       foxglove = std::make_unique<visualization::FoxgloveVision>(foxglove_options);
       tools::logger()->info(

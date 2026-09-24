@@ -20,15 +20,9 @@ struct RuntimeOptions
   // 是否关闭本地窗口与按键事件（--headless）。默认与入口一致：开本地窗口
   bool headless = false;
 
-  // Foxglove 是否启用由入口解析后写入；未启用时下面的参数不参与
+  // Foxglove 的启用开关由入口解析后写入；监听地址、端口、帧率、缩放、发布线程调度与 JPEG
+  // 质量来自 config_path 的 foxglove 段（见 configs/standard3.yaml），不在命令行上。
   bool foxglove_enabled = false;
-  std::string foxglove_host = "127.0.0.1";
-  int foxglove_port = 8766;
-  int foxglove_data_port = 0;
-  double foxglove_fps = 30.0;
-  double foxglove_scale = 0.5;
-  int foxglove_jpeg_quality = 80;
-  bool foxglove_yield_cpu = true;
 
   // 每帧输出 EKF 11 维状态。默认关闭：165 fps 下它会把 logs/ 写满
   bool verbose_ekf = false;
