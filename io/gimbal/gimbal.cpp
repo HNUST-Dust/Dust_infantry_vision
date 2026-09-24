@@ -175,7 +175,7 @@ void Gimbal::read_thread()
       continue;
     }
 
-    uint16_t crc = rx_data_.crc16;
+    // uint16_t crc = rx_data_.crc16;
     // tools::logger()->info("[Gimbal] Received data, CRC: 0x{:04X}", crc);
 
     if (!tools::check_crc16(reinterpret_cast<uint8_t *>(&rx_data_), sizeof(rx_data_))) {
@@ -190,9 +190,9 @@ void Gimbal::read_thread()
       // else: skip CRC check silently
     }
 
-    uint16_t received_crc = rx_data_.crc16;
-    uint16_t calculated_crc = tools::get_crc16(
-      reinterpret_cast<uint8_t *>(&rx_data_), sizeof(rx_data_) - sizeof(rx_data_.crc16));
+    // uint16_t received_crc = rx_data_.crc16;
+    // uint16_t calculated_crc = tools::get_crc16(
+    //   reinterpret_cast<uint8_t *>(&rx_data_), sizeof(rx_data_) - sizeof(rx_data_.crc16));
     // tools::logger()->info("[Gimbal] CRC16 check passed. Received: 0x{:04X}, Calculated: 0x{:04X}", received_crc, calculated_crc);
 
     error_count = 0;
@@ -203,13 +203,13 @@ void Gimbal::read_thread()
     Eigen::Vector3d ypr = q.toRotationMatrix().eulerAngles(2, 1, 0);
     double yaw_angle   = ypr[0];  // Z
     double pitch_angle = ypr[1];  // Y
-    double roll_angle  = ypr[2];  // X
+    // double roll_angle  = ypr[2];  // X
 
-    tools::logger()->info(
-      "[Gimbal] Euler from q (ZYX) -> Yaw(Z): {:.4f} rad ({:.2f} deg), Pitch(Y): {:.4f} rad ({:.2f} deg), Roll(X): {:.4f} rad ({:.2f} deg)",
-      yaw_angle, yaw_angle * 180.0 / M_PI,
-      pitch_angle, pitch_angle * 180.0 / M_PI,
-      roll_angle, roll_angle * 180.0 / M_PI);
+    // tools::logger()->info(
+    //   "[Gimbal] Euler from q (ZYX) -> Yaw(Z): {:.4f} rad ({:.2f} deg), Pitch(Y): {:.4f} rad ({:.2f} deg), Roll(X): {:.4f} rad ({:.2f} deg)",
+    //   yaw_angle, yaw_angle * 180.0 / M_PI,
+    //   pitch_angle, pitch_angle * 180.0 / M_PI,
+    //   roll_angle, roll_angle * 180.0 / M_PI);
     // 打印原始数据
     std::string raw_hex;
     for (size_t i = 0; i < sizeof(rx_data_); ++i) {
