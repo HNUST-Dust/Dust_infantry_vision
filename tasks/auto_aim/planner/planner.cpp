@@ -61,7 +61,7 @@ Plan Planner::plan(Target target, double bullet_speed, const Eigen::Matrix3d & R
   auto bullet_traj = tools::Trajectory(bullet_speed, min_dist, xyz.z());
   if (bullet_traj.unsolvable) {
     tools::logger()->debug("Unsolvable target trajectory");
-    return {false};
+    return Plan{};
   }
   target.predict(bullet_traj.fly_time);
 
@@ -73,7 +73,7 @@ Plan Planner::plan(Target target, double bullet_speed, const Eigen::Matrix3d & R
     traj = get_trajectory(target, yaw0, bullet_speed, R_gimbal2world);
   } catch (const std::exception & e) {
     tools::logger()->warn("Unsolvable target {:.2f}", bullet_speed);
-    return {false};
+    return Plan{};
   }
 
   // 3. Solve yaw
@@ -116,7 +116,7 @@ Plan Planner::plan(Target target, double bullet_speed, const Eigen::Matrix3d & R
 
 Plan Planner::plan(std::optional<Target> target, double bullet_speed, const Eigen::Matrix3d & R_gimbal2world)
 {
-  if (!target.has_value()) return {false};
+  if (!target.has_value()) return Plan{};
 
   double delay_time =
     std::abs(target->ekf_x()[7]) > decision_speed_ ? high_speed_delay_time_ : low_speed_delay_time_;

@@ -19,16 +19,20 @@ using Trajectory = Eigen::Matrix<double, 4, HORIZON>;  // yaw, yaw_vel, pitch, p
 
 struct Plan
 {
-  bool control;
-  bool fire;
-  float target_yaw;
-  float target_pitch;
-  float yaw;
-  float yaw_vel;
-  float yaw_acc;
-  float pitch;
-  float pitch_vel;
-  float pitch_acc;
+  bool control = false;
+  bool fire = false;
+  float target_yaw = 0;
+  float target_pitch = 0;
+  float yaw = 0;
+  float yaw_vel = 0;
+  float yaw_acc = 0;
+  float pitch = 0;
+  float pitch_vel = 0;
+  float pitch_acc = 0;
+
+  // 云台控制帧的 mode：0=IDLE(不控制), 1=AUTO_AIM(控制云台但不开火), 2=FIRE
+  // 唯一实现处；Gimbal::send(bool,bool,...) 也按同一规则算 mode。
+  int mode() const { return control ? (fire ? 2 : 1) : 0; }
 };
 
 class Planner

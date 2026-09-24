@@ -22,12 +22,30 @@ struct DetectionResult;
 
 namespace auto_aim
 {
+// Tracker 的状态机取值。唯一真相：tracker.cpp 内部只用这个枚举，
+// 字符串形式由 to_string() 派生，供 vision_overlay 等显示层使用。
+enum class TrackerState
+{
+  lost = 0,
+  detecting = 1,
+  tracking = 2,
+  temp_lost = 3,
+  switching = 4
+};
+
+const char * to_string(TrackerState state);
+
+// 字符串 -> 枚举。未知字符串返回 TrackerState::lost（与改前 tracker_state_name 的
+// default 分支一致）。
+TrackerState tracker_state_from(const std::string & name);
+
 class Tracker
 {
 public:
   Tracker(const std::string & config_path, Solver & solver);
 
   std::string state() const;
+  TrackerState state_enum() const;
 
   bool dynamic_roi_enabled() const;
 
@@ -63,7 +81,7 @@ private:
   int temp_lost_count_;
   int outpost_max_temp_lost_count_;
   int normal_temp_lost_count_;
-  std::string state_, pre_state_;
+  TrackerState state_, pre_state_;
   Target target_;
   std::chrono::steady_clock::time_point last_timestamp_;
   std::chrono::steady_clock::time_point last_observed_timestamp_;

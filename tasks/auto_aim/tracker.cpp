@@ -19,8 +19,8 @@ Tracker::Tracker(const std::string & config_path, Solver & solver)
 : solver_{solver},
   detect_count_(0),
   temp_lost_count_(0),
-  state_{"lost"},
-  pre_state_{"lost"},
+  state_{TrackerState::lost},
+  pre_state_{TrackerState::lost},
   last_timestamp_(std::chrono::steady_clock::now()),
   last_observed_timestamp_(std::chrono::steady_clock::time_point{}),
   omni_target_priority_{ArmorPriority::fifth}
@@ -65,7 +65,37 @@ Tracker::Tracker(const std::string & config_path, Solver & solver)
   }
 }
 
+const char * to_string(TrackerState state)
+{
+  switch (state) {
+    case TrackerState::detecting:
+      return "detecting";
+    case TrackerState::tracking:
+      return "tracking";
+    case TrackerState::temp_lost:
+      return "temp_lost";
+    case TrackerState::switching:
+      return "switching";
+    default:
+      return "lost";
+  }
+}
+
+TrackerState tracker_state_from(const std::string & name)
+{
+  if (name == "detecting") return TrackerState::detecting;
+  if (name == "tracking") return TrackerState::tracking;
+  if (name == "temp_lost") return TrackerState::temp_lost;
+  if (name == "switching") return TrackerState::switching;
+  return TrackerState::lost;
+}
+
 std::string Tracker::state() const
+{
+  return to_string(state_enum());
+}
+
+TrackerState Tracker::state_enum() const
 {
   std::lock_guard<std::mutex> lock(mutex_);
   return state_;
@@ -89,7 +119,7 @@ FocusRois Tracker::focus_rois(
   std::chrono::steady_clock::time_point last_observed;
   {
     std::lock_guard<std::mutex> lock(mutex_);
-    if (state_ == "lost" || last_observed_timestamp_ == std::chrono::steady_clock::time_point{}) {
+    if (state_ == TrackerState::lost || last_observed_timestamp_ == std::chrono::steady_clock::time_point{}) {
       return {full_frame, std::nullopt};
     }
     target = target_;
@@ -119,9 +149,9 @@ std::list<Target> Tracker::track(
   last_timestamp_ = t;
 
   // 时间间隔过长，说明可能发生了相机离线
-  if (state_ != "lost" && dt > 0.3) {
+  if (state_ != TrackerState::lost && dt > 0.3) {
     tools::logger()->warn("[Tracker] Large dt: {:.3f}s", dt);
-    state_ = "lost";
+    state_ = TrackerState::lost;
   }
   // 过滤掉非我方装甲板
   armors.remove_if([&](const auto_aim::Armor & a) { return a.color != enemy_color_; });
@@ -146,7 +176,7 @@ std::list<Target> Tracker::track(
     [](const auto_aim::Armor & a, const auto_aim::Armor & b) { return a.priority < b.priority; });
 
   bool found;
-  if (state_ == "lost") {
+  if (state_ == TrackerState::lost) {
     found = set_target(armors, t);
   }
 
@@ -159,9 +189,9 @@ std::list<Target> Tracker::track(
   state_machine(found);
 
   // 发散检测
-  if (state_ != "lost" && target_.diverged()) {
+  if (state_ != TrackerState::lost && target_.diverged()) {
     tools::logger()->debug("[Tracker] Target diverged!");
-    state_ = "lost";
+    state_ = TrackerState::lost;
     return {};
   }
 
@@ -171,11 +201,11 @@ std::list<Target> Tracker::track(
       target_.ekf().recent_nis_failures.begin(), target_.ekf().recent_nis_failures.end(), 0) >=
     (0.8 * target_.ekf().window_size)) {
     tools::logger()->debug("[Target] Bad Converge Found!");
-    state_ = "lost";
+    state_ = TrackerState::lost;
     return {};
   }
 
-  if (state_ == "lost") return {};
+  if (state_ == TrackerState::lost) return {};
 
   std::list<Target> targets = {target_};
   return targets;
@@ -196,9 +226,9 @@ std::tuple<omniperception::DetectionResult, std::list<Target>> Tracker::track(
   last_timestamp_ = t;
 
   // 时间间隔过长，说明可能发生了相机离线
-  if (state_ != "lost" && dt > 0.3) {
+  if (state_ != TrackerState::lost && dt > 0.3) {
     tools::logger()->warn("[Tracker] Large dt: {:.3f}s", dt);
-    state_ = "lost";
+    state_ = TrackerState::lost;
   }
 
   // 优先选择靠近图像中心的装甲板
@@ -213,21 +243,21 @@ std::tuple<omniperception::DetectionResult, std::list<Target>> Tracker::track(
   armors.sort([](const Armor & a, const Armor & b) { return a.priority < b.priority; });
 
   bool found;
-  if (state_ == "lost") {
+  if (state_ == TrackerState::lost) {
     found = set_target(armors, t);
   }
 
   // 此时主相机画面中出现了优先级更高的装甲板，切换目标
-  else if (state_ == "tracking" && !armors.empty() && armors.front().priority < target_.priority) {
+  else if (state_ == TrackerState::tracking && !armors.empty() && armors.front().priority < target_.priority) {
     found = set_target(armors, t);
     tools::logger()->debug("auto_aim switch target to {}", ARMOR_NAMES[armors.front().name]);
   }
 
   // 此时全向感知相机画面中出现了优先级更高的装甲板，切换目标
   else if (
-    state_ == "tracking" && !temp_target.armors.empty() &&
+    state_ == TrackerState::tracking && !temp_target.armors.empty() &&
     temp_target.armors.front().priority < target_.priority && target_.convergened()) {
-    state_ = "switching";
+    state_ = TrackerState::switching;
     switch_target = omniperception::DetectionResult{
       temp_target.armors, t, temp_target.delta_yaw, temp_target.delta_pitch};
     omni_target_priority_ = temp_target.armors.front().priority;
@@ -235,11 +265,11 @@ std::tuple<omniperception::DetectionResult, std::list<Target>> Tracker::track(
     tools::logger()->debug("omniperception find higher priority target");
   }
 
-  else if (state_ == "switching") {
+  else if (state_ == TrackerState::switching) {
     found = !armors.empty() && armors.front().priority == omni_target_priority_;
   }
 
-  else if (state_ == "detecting" && pre_state_ == "switching") {
+  else if (state_ == TrackerState::detecting && pre_state_ == TrackerState::switching) {
     found = set_target(armors, t);
   }
 
@@ -254,13 +284,13 @@ std::tuple<omniperception::DetectionResult, std::list<Target>> Tracker::track(
   state_machine(found);
 
   // 发散检测
-  if (state_ != "lost" && target_.diverged()) {
+  if (state_ != TrackerState::lost && target_.diverged()) {
     tools::logger()->debug("[Tracker] Target diverged!");
-    state_ = "lost";
+    state_ = TrackerState::lost;
     return {switch_target, {}};  // 返回switch_target和空的targets
   }
 
-  if (state_ == "lost") return {switch_target, {}};  // 返回switch_target和空的targets
+  if (state_ == TrackerState::lost) return {switch_target, {}};  // 返回switch_target和空的targets
 
   std::list<Target> targets = {target_};
   return {switch_target, targets};
@@ -268,42 +298,42 @@ std::tuple<omniperception::DetectionResult, std::list<Target>> Tracker::track(
 
 void Tracker::state_machine(bool found)
 {
-  if (state_ == "lost") {
+  if (state_ == TrackerState::lost) {
     if (!found) return;
 
-    state_ = "detecting";
+    state_ = TrackerState::detecting;
     detect_count_ = 1;
   }
 
-  else if (state_ == "detecting") {
+  else if (state_ == TrackerState::detecting) {
     if (found) {
       detect_count_++;
-      if (detect_count_ >= min_detect_count_) state_ = "tracking";
+      if (detect_count_ >= min_detect_count_) state_ = TrackerState::tracking;
     } else {
       detect_count_ = 0;
-      state_ = "lost";
+      state_ = TrackerState::lost;
     }
   }
 
-  else if (state_ == "tracking") {
+  else if (state_ == TrackerState::tracking) {
     if (found) return;
 
     temp_lost_count_ = 1;
-    state_ = "temp_lost";
+    state_ = TrackerState::temp_lost;
   }
 
-  else if (state_ == "switching") {
+  else if (state_ == TrackerState::switching) {
     if (found) {
-      state_ = "detecting";
+      state_ = TrackerState::detecting;
     } else {
       temp_lost_count_++;
-      if (temp_lost_count_ > 200) state_ = "lost";
+      if (temp_lost_count_ > 200) state_ = TrackerState::lost;
     }
   }
 
-  else if (state_ == "temp_lost") {
+  else if (state_ == TrackerState::temp_lost) {
     if (found) {
-      state_ = "tracking";
+      state_ = TrackerState::tracking;
     } else {
       temp_lost_count_++;
       if (target_.name == ArmorName::outpost)
@@ -312,7 +342,7 @@ void Tracker::state_machine(bool found)
       else
         max_temp_lost_count_ = normal_temp_lost_count_;
 
-      if (temp_lost_count_ > max_temp_lost_count_) state_ = "lost";
+      if (temp_lost_count_ > max_temp_lost_count_) state_ = TrackerState::lost;
     }
   }
 }
