@@ -18,10 +18,15 @@ option(ENABLE_CCACHE "Use ccache when it is available" ON)
 if(ENABLE_CCACHE)
   find_program(CCACHE_PROGRAM ccache)
   if(CCACHE_PROGRAM)
-    set(CMAKE_CXX_COMPILER_LAUNCHER "${CCACHE_PROGRAM}" CACHE STRING "C++ compiler launcher")
+    set(CMAKE_CXX_COMPILER_LAUNCHER "${CCACHE_PROGRAM}" CACHE STRING "C++ compiler launcher" FORCE)
   else()
     message(STATUS "ccache not found; building without a compiler cache")
+    unset(CMAKE_CXX_COMPILER_LAUNCHER CACHE)
+    unset(CMAKE_CXX_COMPILER_LAUNCHER)
   endif()
+else()
+  unset(CMAKE_CXX_COMPILER_LAUNCHER CACHE)
+  unset(CMAKE_CXX_COMPILER_LAUNCHER)
 endif()
 
 option(ENABLE_WARNINGS "Enable extra compiler warnings" OFF)
@@ -76,8 +81,8 @@ add_executable(infantry src/infantry.cpp visualization/vision_overlay.cpp)
 # 只声明各自直接使用的库：OpenCV / Eigen / yaml-cpp / nlohmann / spdlog / OpenVINO /
 # Threads 与仓库根 include 由 tools / io / auto_aim 的 PUBLIC（及 PRIVATE 的 LINK_ONLY）
 # 需求传播而来，不再逐个手抄。
-target_link_libraries(infantry_debug PRIVATE fmt::fmt auto_aim tools io)
-target_link_libraries(infantry PRIVATE fmt::fmt auto_aim tools io)
+target_link_libraries(infantry_debug PRIVATE fmt::fmt nlohmann_json::nlohmann_json ${OpenCV_LIBS} Threads::Threads auto_aim tools io)
+target_link_libraries(infantry PRIVATE fmt::fmt nlohmann_json::nlohmann_json ${OpenCV_LIBS} Threads::Threads auto_aim tools io)
 
 #################calibration################
 add_executable(capture calibration/capture.cpp)
@@ -86,11 +91,17 @@ add_executable(calibrate_handeye calibration/calibrate_handeye.cpp)
 add_executable(calibrate_robotworld_handeye calibration/calibrate_robotworld_handeye.cpp)
 add_executable(split_video calibration/split_video.cpp)
 
-target_link_libraries(capture PRIVATE fmt::fmt tools io)
-target_link_libraries(calibrate_camera PRIVATE fmt::fmt tools)
-target_link_libraries(calibrate_handeye PRIVATE fmt::fmt tools)
-target_link_libraries(calibrate_robotworld_handeye PRIVATE fmt::fmt tools)
-target_link_libraries(split_video PRIVATE fmt::fmt tools)
+target_link_libraries(
+  capture PRIVATE fmt::fmt nlohmann_json::nlohmann_json Eigen3::Eigen ${OpenCV_LIBS} tools io
+)
+target_link_libraries(calibrate_camera PRIVATE fmt::fmt yaml-cpp ${OpenCV_LIBS} tools)
+target_link_libraries(
+  calibrate_handeye PRIVATE fmt::fmt yaml-cpp Eigen3::Eigen ${OpenCV_LIBS} tools
+)
+target_link_libraries(
+  calibrate_robotworld_handeye PRIVATE fmt::fmt yaml-cpp Eigen3::Eigen ${OpenCV_LIBS} tools
+)
+target_link_libraries(split_video PRIVATE fmt::fmt ${OpenCV_LIBS} tools)
 
 if(ENABLE_FOXGLOVE_CALIBRATION OR ENABLE_FOXGLOVE_VISION)
   # 两个功能共用同一份 SDK：只下载、只 find_package、只定义 dust_foxglove_cpp 一次。

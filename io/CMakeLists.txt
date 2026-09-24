@@ -33,14 +33,8 @@ set_target_properties(MVSDK PROPERTIES
   INTERFACE_INCLUDE_DIRECTORIES "${CMAKE_CURRENT_SOURCE_DIR}/mindvision/include"
 )
 
-# libusb：用 find_library 得到的绝对路径取代裸名 usb-1.0（该库 SONAME 为 libusb-1.0.so.0，
-# 按绝对路径链接不改变 DT_NEEDED）。这里不用 find_library(... REQUIRED)，因为 REQUIRED
-# 是 CMake 3.18 才支持的写法，而本仓最低要求是 3.16.3。
+# libusb 固定使用 MVS SDK 自带版本，避免 MVS 相机库与系统 libusb 版本不一致。
 # mindvision.cpp 用 <libusb-1.0/libusb.h>，该头由默认的 /usr/include 解析，无需额外 include 目录。
-find_library(USB_1_0_LIBRARY NAMES usb-1.0)
-if(NOT USB_1_0_LIBRARY)
-  message(FATAL_ERROR "libusb-1.0 not found; install libusb-1.0-0-dev")
-endif()
 
 # hikrobot：优先用 HIKROBOT_MVS_ROOT 下的完整 SDK，缺失时回退到仓库内 bundled 库。
 # 两条分支共用一个 imported target，只替换 IMPORTED_LOCATION 与 include 目录。
@@ -48,6 +42,13 @@ set(HIKROBOT_MVS_ROOT "/opt/MVS" CACHE PATH "HikRobot MVS SDK installation root"
 set(HIKROBOT_BUNDLED_LIBRARY_DIR "${CMAKE_CURRENT_SOURCE_DIR}/hikrobot/lib/${DUST_SDK_ARCH}")
 set(HIKROBOT_MVS_LIBRARY_DIR "${HIKROBOT_MVS_ROOT}/lib/64")
 set(HIKROBOT_MVS_LIBRARY "${HIKROBOT_MVS_LIBRARY_DIR}/libMvCameraControl.so")
+set(HIKROBOT_MVS_USB_LIBRARY "${HIKROBOT_MVS_LIBRARY_DIR}/libusb-1.0.so.0")
+
+if(NOT EXISTS "${HIKROBOT_MVS_USB_LIBRARY}")
+  message(FATAL_ERROR "MVS libusb not found: ${HIKROBOT_MVS_USB_LIBRARY}")
+endif()
+add_library(MVS::usb SHARED IMPORTED)
+set_target_properties(MVS::usb PROPERTIES IMPORTED_LOCATION "${HIKROBOT_MVS_USB_LIBRARY}")
 
 add_library(MvCameraControl SHARED IMPORTED)
 if(EXISTS "${HIKROBOT_MVS_ROOT}/include/MvCameraControl.h" AND
@@ -77,7 +78,7 @@ target_link_libraries(io
     Eigen3::Eigen
     MvCameraControl
     MVSDK
-    ${USB_1_0_LIBRARY}
+    MVS::usb
     yaml-cpp
     serial
     ${OpenCV_LIBS}

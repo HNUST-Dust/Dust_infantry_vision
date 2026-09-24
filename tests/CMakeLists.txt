@@ -23,19 +23,40 @@ add_executable(dynamic_roi_test dynamic_roi_test.cpp)
 add_executable(detector_roi_test detector_roi_test.cpp)
 add_executable(openvino_benchmark_test openvino_benchmark_test.cpp)
 
-target_link_libraries(auto_aim_test PRIVATE fmt::fmt tools io auto_aim)
-target_link_libraries(camera_test PRIVATE fmt::fmt tools io)
-target_link_libraries(camera_thread_test PRIVATE fmt::fmt auto_aim tools io)
-target_link_libraries(fire_test PRIVATE fmt::fmt tools io)
-target_link_libraries(detector_video_test PRIVATE fmt::fmt tools auto_aim)
-target_link_libraries(gimbal_response_test PRIVATE fmt::fmt tools io)
-target_link_libraries(handeye_test PRIVATE fmt::fmt tools io auto_aim)
-target_link_libraries(minimum_vision_system PRIVATE fmt::fmt tools io auto_aim)
-target_link_libraries(gimbal_test PRIVATE fmt::fmt auto_aim tools io)
-target_link_libraries(async_detector_test PRIVATE fmt::fmt auto_aim tools io)
-target_link_libraries(dynamic_roi_test PRIVATE fmt::fmt auto_aim tools io)
-target_link_libraries(detector_roi_test PRIVATE fmt::fmt auto_aim tools io)
-target_link_libraries(openvino_benchmark_test PRIVATE fmt::fmt auto_aim tools io)
+target_link_libraries(
+  auto_aim_test PRIVATE fmt::fmt nlohmann_json::nlohmann_json Eigen3::Eigen ${OpenCV_LIBS}
+  tools io auto_aim
+)
+target_link_libraries(camera_test PRIVATE ${OpenCV_LIBS} tools io)
+target_link_libraries(
+  camera_thread_test PRIVATE fmt::fmt nlohmann_json::nlohmann_json Eigen3::Eigen ${OpenCV_LIBS}
+  Threads::Threads auto_aim tools io
+)
+target_link_libraries(
+  fire_test PRIVATE fmt::fmt nlohmann_json::nlohmann_json ${OpenCV_LIBS} tools io
+)
+target_link_libraries(detector_video_test PRIVATE fmt::fmt ${OpenCV_LIBS} tools auto_aim)
+target_link_libraries(
+  gimbal_response_test PRIVATE nlohmann_json::nlohmann_json ${OpenCV_LIBS} Eigen3::Eigen
+  tools io
+)
+target_link_libraries(
+  handeye_test PRIVATE fmt::fmt yaml-cpp nlohmann_json::nlohmann_json Eigen3::Eigen ${OpenCV_LIBS}
+  tools io auto_aim
+)
+target_link_libraries(
+  minimum_vision_system PRIVATE fmt::fmt nlohmann_json::nlohmann_json Eigen3::Eigen ${OpenCV_LIBS}
+  Threads::Threads tools io auto_aim
+)
+target_link_libraries(
+  gimbal_test PRIVATE nlohmann_json::nlohmann_json ${OpenCV_LIBS} Threads::Threads auto_aim tools io
+)
+target_link_libraries(
+  async_detector_test PRIVATE Eigen3::Eigen ${OpenCV_LIBS} Threads::Threads auto_aim tools io
+)
+target_link_libraries(dynamic_roi_test PRIVATE ${OpenCV_LIBS} auto_aim tools io)
+target_link_libraries(detector_roi_test PRIVATE ${OpenCV_LIBS} auto_aim tools io)
+target_link_libraries(openvino_benchmark_test PRIVATE ${OpenCV_LIBS} auto_aim tools io)
 
 # ordered_delivery.hpp 是纯头（只用 std），但它用 #include "tools/ordered_delivery.hpp"
 # 根相对路径，故仍需 dust::include；其源码用 std::async/std::future/std::mutex，补上 Threads。
@@ -52,7 +73,9 @@ endif()
 
 if(ENABLE_FOXGLOVE_CALIBRATION)
   add_executable(foxglove_calibration_test foxglove_calibration_test.cpp)
-  target_link_libraries(foxglove_calibration_test PRIVATE dust::include calibration_foxglove)
+  target_link_libraries(
+    foxglove_calibration_test PRIVATE dust::include Eigen3::Eigen ${OpenCV_LIBS} calibration_foxglove
+  )
 
   add_test(
     NAME foxglove_calibration_protocol
@@ -66,7 +89,9 @@ endif()
 
 if(ENABLE_FOXGLOVE_VISION)
   add_executable(foxglove_vision_test foxglove_vision_test.cpp)
-  target_link_libraries(foxglove_vision_test PRIVATE dust::include visualization_foxglove)
+  target_link_libraries(
+    foxglove_vision_test PRIVATE dust::include ${OpenCV_LIBS} visualization_foxglove
+  )
 
   add_test(
     NAME foxglove_vision_protocol
