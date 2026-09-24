@@ -43,7 +43,7 @@ option(
 )
 option(
   ENABLE_FOXGLOVE_VISION
-  "Enable the native Foxglove WebSocket image and telemetry stream in infantry / infantry_debug"
+  "Enable the native Foxglove WebSocket image and telemetry stream in infantry"
   OFF
 )
 
@@ -75,13 +75,11 @@ add_subdirectory(io)
 add_subdirectory(tasks/auto_aim)
 
 ###################src###################
-add_executable(infantry_debug src/infantry_debug.cpp visualization/vision_overlay.cpp)
-add_executable(infantry src/infantry.cpp visualization/vision_overlay.cpp)
+add_executable(infantry src/infantry.cpp src/auto_aim_runtime.cpp visualization/vision_overlay.cpp)
 
-# 只声明各自直接使用的库：OpenCV / Eigen / yaml-cpp / nlohmann / spdlog / OpenVINO /
+# 只声明直接使用的库：OpenCV / Eigen / yaml-cpp / nlohmann / spdlog / OpenVINO /
 # Threads 与仓库根 include 由 tools / io / auto_aim 的 PUBLIC（及 PRIVATE 的 LINK_ONLY）
 # 需求传播而来，不再逐个手抄。
-target_link_libraries(infantry_debug PRIVATE fmt::fmt nlohmann_json::nlohmann_json ${OpenCV_LIBS} Threads::Threads auto_aim tools io)
 target_link_libraries(infantry PRIVATE fmt::fmt nlohmann_json::nlohmann_json ${OpenCV_LIBS} Threads::Threads auto_aim tools io)
 
 #################calibration################
@@ -147,11 +145,9 @@ if(ENABLE_FOXGLOVE_VISION)
   # 本库的 cpp 用根相对路径包含自己的头（#include "visualization/foxglove_vision.hpp"）。
   target_link_libraries(visualization_foxglove PRIVATE dust::include)
 
-  # 叠加层已在上面直接编进两个可执行程序（不依赖 Foxglove），这里只补上编译定义与传输库。
-  foreach(vision_target infantry infantry_debug)
-    target_compile_definitions(${vision_target} PRIVATE DUST_ENABLE_FOXGLOVE)
-    target_link_libraries(${vision_target} PRIVATE visualization_foxglove)
-  endforeach()
+  # 叠加层已在上面直接编进可执行程序（不依赖 Foxglove），这里只补上编译定义与传输库。
+  target_compile_definitions(infantry PRIVATE DUST_ENABLE_FOXGLOVE)
+  target_link_libraries(infantry PRIVATE visualization_foxglove)
 endif()
 
 #################tests##################

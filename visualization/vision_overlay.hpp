@@ -25,7 +25,7 @@ struct VisionOverlayInput
 };
 
 // 绘制网络 ROI、灯条 ROI、装甲板角点、重投影装甲板、重投影瞄准点、Tracker 状态与中心准星。
-// 与 infantry_debug 本地窗口原有的叠加内容一一对应；不含缩放、窗口、按键与日志。
+// 与本地窗口的叠加内容一一对应；不含缩放、窗口、按键与日志。
 void draw_vision_overlay(
   cv::Mat & image, const VisionOverlayInput & input, const auto_aim::Solver & solver);
 

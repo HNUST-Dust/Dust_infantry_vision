@@ -11,7 +11,7 @@ Environment="MVCAM_COMMON_RUNENV=/opt/MVS/lib"
 Environment="MVCAM_SOFTWARE_LIBENV=/opt/MVS/lib"
 Environment="MVCAM_GENICAM_CLPROTOCOL=/opt/MVS/lib/CLProtocol"
 Environment="ALLUSERSPROFILE=/opt/MVS/MVFG"
-ExecStart=/home/rmul/Dust_infantry_vision/build-ninja/infantry /home/rmul/Dust_infantry_vision/configs/standard3.yaml --simulate-gimbal
+ExecStart=/home/rmul/Dust_infantry_vision/build-ninja/infantry /home/rmul/Dust_infantry_vision/configs/standard3.yaml --simulate-gimbal --headless=true
 KillSignal=SIGINT
 TimeoutStopSec=10
 Restart=no

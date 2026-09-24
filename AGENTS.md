@@ -1,7 +1,7 @@
 # Repository Guidelines
 
 ## Project Structure & Module Organization
-This is a C++17 vision stack built with CMake. Application entry points live in `src/` (`infantry.cpp`, `infantry_debug.cpp`). Core feature modules are under `tasks/`: `auto_aim/` and `omniperception/`. Hardware and communication abstractions are in `io/`: camera drivers (`hikrobot/`, `mindvision/`, `usbcamera/`), gimbal, DM IMU, and serial. Shared utilities are in `tools/`, calibration programs in `calibration/`, and runnable test programs in `tests/`. Robot and camera parameters are YAML files in `configs/`; model weights and demo data are in `assets/`. Treat `build-ninja/`, `build/`, `install/`, and `logs/` as generated output.
+This is a C++17 vision stack built with CMake. The single application entry point is `src/infantry.cpp` (it serves both production and local-window debugging). Core feature modules are under `tasks/`: `auto_aim/` and `omniperception/`. Hardware and communication abstractions are in `io/`: camera drivers (`hikrobot/`, `mindvision/`, `usbcamera/`), gimbal, DM IMU, and serial. Shared utilities are in `tools/`, calibration programs in `calibration/`, and runnable test programs in `tests/`. Robot and camera parameters are YAML files in `configs/`; model weights and demo data are in `assets/`. Treat `build-ninja/`, `build/`, `install/`, and `logs/` as generated output.
 
 ## Build, Test, and Development Commands
 Install the SDKs and libraries described in `readme.md` first, including OpenCV, OpenVINO, Eigen, fmt, spdlog, yaml-cpp, nlohmann-json, ccache, and Ninja. Build from the repository root:

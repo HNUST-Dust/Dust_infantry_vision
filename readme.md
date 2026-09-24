@@ -47,7 +47,7 @@ cmake --build build-ninja --target auto_aim_test -j$(nproc)
 
 可执行文件输出在 `build-ninja/` 目录。主要程序包括：
 
-- `build-ninja/infantry`（生产入口）、`build-ninja/infantry_debug`（带可视化调试）
+- `build-ninja/infantry`（唯一运行入口，默认开本地可视化窗口）
 - `build-ninja/camera_test`、`build-ninja/detector_video_test`、`build-ninja/auto_aim_test`
 - `build-ninja/gimbal_test`、`build-ninja/handeye_test`
 - `build-ninja/capture`、`build-ninja/calibrate_camera`、`build-ninja/calibrate_handeye`、`build-ninja/calibrate_robotworld_handeye`
@@ -94,15 +94,11 @@ source /opt/intel/openvino_2024.6.0/setupvars.sh
 ./build-ninja/infantry configs/standard3.yaml
 ```
 
-`infantry` 只有一个可选开关 `--simulate-gimbal`（默认 `false`）：置为 `true` 时使用虚拟云台姿态并只做串口输出，不依赖真实云台，可用于无设备联调。
+`infantry` 默认打开本地可视化窗口，显示检测叠加图，按 `q` 退出（与 SIGINT 同一条退出路径）。可选开关：
 
-需要可视化调试窗口和 EKF 日志时运行：
-
-```bash
-./build-ninja/infantry_debug configs/standard3.yaml
-```
-
-`infantry_debug` 另有 `--headless`（默认 `false`），置为 `true` 时关闭检测可视化和窗口事件，适合无桌面的远程运行。
+- `--simulate-gimbal`（默认 `false`）：置为 `true` 时使用虚拟云台姿态并只做串口输出，不依赖真实云台，可用于无设备联调。
+- `--headless`（默认 `false`）：置为 `true` 时关闭检测可视化和窗口事件，适合无桌面的远程运行；`systemd/infantry.service` 模板即带此开关。
+- 其余开关（`--foxglove*`、`--jpeg-quality`、`--verbose-ekf`）见 `./build-ninja/infantry -h` 与下文「自瞄图像与数据」。
 
 单独测试相机：
 
@@ -342,14 +338,14 @@ sudo usermod -aG dialout $USER
 
 ### systemd 服务（可选）
 
-`systemd/infantry.service` 提供开机自启模板，使用 `Type=exec`、`KillSignal=SIGINT`、`TimeoutStopSec=10`，并预设 MVS SDK 的运行环境变量。其中的 `WorkingDirectory` 与 `ExecStart` 使用绝对路径，当前指向本检出的 `/home/rmul/Dust_infantry_vision`，换到别的机器或用户名下部署时需要相应修改。模板默认带 `--simulate-gimbal`，接实机时按需要去掉。
+`systemd/infantry.service` 提供开机自启模板，使用 `Type=exec`、`KillSignal=SIGINT`、`TimeoutStopSec=10`，并预设 MVS SDK 的运行环境变量。其中的 `WorkingDirectory` 与 `ExecStart` 使用绝对路径，当前指向本检出的 `/home/rmul/Dust_infantry_vision`，换到别的机器或用户名下部署时需要相应修改。模板默认带 `--simulate-gimbal` 与 `--headless=true`：前者接实机时按需要去掉，后者在无桌面的开机自启下必须保留（`infantry` 默认开本地窗口）。
 
 ## 项目结构
 
 ```text
 src/                      主程序入口
-  infantry.cpp            生产运行入口
-  infantry_debug.cpp      调试运行入口（带重投影可视化）
+  infantry.cpp            唯一运行入口（生产与调试，含重投影可视化窗口）
+  auto_aim_runtime.cpp    运行编排：相机/检测/跟踪/规划三线程与运行期选项
 tasks/
   auto_aim/               自瞄核心算法
     armor / detector / classifier / solver / target / tracker
@@ -436,7 +432,7 @@ tests/                    调试和测试程序
 
 - 姿态在采集时刻快照，并**随每一帧一起传递**；处理异步结果时**禁止**重新消费云台队列。
 - `Gimbal::orientation_at(t)` 用 `QuaternionBuffer` 保留最近 1000 个姿态，按主机时间 slerp 插值，查询不消费历史。等待与相邻样本间隔上限均为 20 ms，无有效覆盖时返回空值。
-- `infantry` / `infantry_debug` 每帧只快照一次；姿态不可用时**跳过该帧图像**并暂停目标控制。
+- `infantry` 每帧只快照一次；姿态不可用时**跳过该帧图像**并暂停目标控制。
 
 ## 配置文件
 
@@ -588,7 +584,7 @@ tests/                    调试和测试程序
 
 `capture` 没有虚拟云台开关，因此必须有可用的 `/dev/gimbal`。
 
-姿态缓存保留最近 1000 个有效样本，查询不消费历史；最多等待 20 ms，且只在相邻姿态间隔不超过 20 ms 时插值。不覆盖图像时间戳、过期或通信中断时，预览显示 `Pose unavailable`，保存请求返回状态 `save_rejected_pose_unavailable`。`infantry` / `infantry_debug` 将采集姿态随帧送入异步检测，处理结果及退出排空时复用该姿态；姿态不可用时跳过图像并暂停目标控制。
+姿态缓存保留最近 1000 个有效样本，查询不消费历史；最多等待 20 ms，且只在相邻姿态间隔不超过 20 ms 时插值。不覆盖图像时间戳、过期或通信中断时，预览显示 `Pose unavailable`，保存请求返回状态 `save_rejected_pose_unavailable`。`infantry` 将采集姿态随帧送入异步检测，处理结果及退出排空时复用该姿态；姿态不可用时跳过图像并暂停目标控制。
 
 每组数据写入三个同编号文件：`.jpg`（相机原始分辨率的未标注原图）、`.txt`（四元数，顺序为 **w x y z**）、`.json`（时间元数据）。JSON 字段固定为：
 
@@ -631,16 +627,16 @@ Foxglove Studio 选择 **Open connection → Foxglove WebSocket**，连接 `ws:/
 
 预览默认是 10 FPS、JPEG 质量 80，保存的仍是相机原始分辨率图片。可通过 `--foxglove-fps`、`--jpeg-quality`、`--foxglove-host` 和 `--foxglove-port` 调整。
 
-### 自瞄图像与数据（infantry / infantry_debug）
+### 自瞄图像与数据（infantry）
 
-`infantry` 与 `infantry_debug` 可以把 EKF/规划数据和检测叠加图推送到 Foxglove，不必远程桌面。
+`infantry` 可以把 EKF/规划数据和检测叠加图推送到 Foxglove，不必远程桌面。
 与标定程序共用同一份官方 Foxglove C++ SDK 0.27.0，两个开关同时打开也只下载一次：
 
 ```bash
 cmake -B build-ninja -G Ninja -DENABLE_FOXGLOVE_VISION=ON
 # 与标定一起打开：-DENABLE_FOXGLOVE_CALIBRATION=ON -DENABLE_FOXGLOVE_VISION=ON
-cmake --build build-ninja --target infantry_debug -j$(nproc)
-./build-ninja/infantry_debug configs/standard3.yaml --foxglove --headless
+cmake --build build-ninja --target infantry -j$(nproc)
+./build-ninja/infantry configs/standard3.yaml --foxglove --headless
 ```
 
 服务默认只监听远端 `127.0.0.1:8766`（与 `capture` 的 8765 分开，同机可同时运行）。在操作电脑建立 SSH 隧道：
@@ -651,8 +647,8 @@ ssh -N -L 127.0.0.1:18766:127.0.0.1:8766 edge-108
 
 Foxglove Studio 选择 **Open connection → Foxglove WebSocket**，连接 `ws://127.0.0.1:18766`：
 
-- Image 面板选择 `/vision/image/compressed`。内容与 `infantry_debug` 本地窗口一致：检测 ROI、装甲板角点、
-  重投影装甲板与瞄准点、Tracker 状态和中心准星。`infantry` 在本机没有窗口，推送的是同一份叠加图。
+- Image 面板选择 `/vision/image/compressed`。内容与本地窗口一致：检测 ROI、装甲板角点、
+  重投影装甲板与瞄准点、Tracker 状态和中心准星。开不开本地窗口，推送的都是同一份叠加图。
 - Plot / Raw Messages 面板选择 `/vision/telemetry`，字段与 UDP `127.0.0.1:9870` 的调试数据完全一致。
 - Raw Messages 面板选择 `/vision/status`，查看连接数、发布/丢帧计数、当前工作模式和发布线程的调度状态。
 
@@ -660,7 +656,7 @@ Foxglove Studio 选择 **Open connection → Foxglove WebSocket**，连接 `ws:/
 各自有独立的积压队列，慢速图像客户端不会挤占遥测的带宽和时延。
 
 ```bash
-./build-ninja/infantry_debug configs/standard3.yaml --foxglove --headless --foxglove-data-port=8767
+./build-ninja/infantry configs/standard3.yaml --foxglove --headless --foxglove-data-port=8767
 ssh -N -L 127.0.0.1:18766:127.0.0.1:8766 -L 127.0.0.1:18767:127.0.0.1:8767 edge-108
 # Foxglove 里建立两个连接：图像 ws://127.0.0.1:18766，遥测 ws://127.0.0.1:18767
 ```
@@ -671,13 +667,17 @@ ssh -N -L 127.0.0.1:18766:127.0.0.1:8766 -L 127.0.0.1:18767:127.0.0.1:8767 edge-
 | `--foxglove-host` | `127.0.0.1` | 监听地址 |
 | `--foxglove-port` | `8766` | 图像端口；单端口模式下同时承载遥测 |
 | `--foxglove-data-port` | `0` | 非 0 时启用双端口，遥测只走该端口 |
-| `--foxglove-fps` | `10` / `30` | 图像发布帧率上限，超出的帧直接丢弃、不排队（`infantry` 默认 `10`，`infantry_debug` 默认 `30`） |
+| `--foxglove-fps` | `30` | 图像发布帧率上限，超出的帧直接丢弃、不排队 |
 | `--foxglove-scale` | `0.5` | 发布前缩放系数，`1.0` 为原始分辨率 |
 | `--foxglove-sched` | `auto` | 发布线程降级让出 CPU 给推理（`auto`）或保持默认优先级（`off`） |
 | `--jpeg-quality` | `80` | JPEG 质量 |
 
 带值的开关必须写成 `--key=value`：OpenCV 的 `CommandLineParser` 不解析空格分隔形式（`--foxglove-port 8766`
 会让该开关取到字符串 `true`），程序检测到这种写法会报错退出，不会静默退回默认端口。
+
+布尔开关（`--headless`、`--simulate-gimbal`、`--verbose-ekf`）不在这项检查内：裸写与 `--key=true`
+效果相同，都不会报错。但位置参数陷阱依旧——`--headless true a.yaml` 会把 `true` 当成 `@config-path`，
+所以布尔开关要单独写（`--headless`），后面不要跟空格分隔的值。
 
 实测（MV-CS016-10UC，0.5 倍缩放、10 FPS、JPEG 质量 80）：单帧约 15-20 KB，图像码率约 0.2 MB/s，
 遥测约 100 Hz。图像码率随画面内容变化，`--foxglove-scale=1.0` 或提高帧率会成倍上升，此时建议拆端口。
