@@ -22,10 +22,10 @@
 #include "tools/math_tools.hpp"
 #include "tools/plotter.hpp"
 #include "tools/thread_safe_queue.hpp"
+#include "tools/yaml.hpp"
 #include "visualization/vision_overlay.hpp"
 
 #ifdef DUST_ENABLE_FOXGLOVE
-#include "tools/yaml.hpp"
 #include "visualization/foxglove_vision.hpp"
 #endif
 
@@ -58,9 +58,32 @@ void add_latency_metrics(
   data["vision_latency_p99_ms"] = summary.p99_ms;
 }
 
+// 运行模式开关来自 config_path 的 runtime 段；缺段或缺键都退回下面的默认值。
+// 这四个开关原先在命令行上（--simulate-gimbal/--headless/--verbose-ekf/--foxglove），已移除。
+struct RuntimeConfig
+{
+  bool simulate_gimbal = false;
+  bool headless = false;
+  bool verbose_ekf = false;
+  bool foxglove_enabled = false;
+};
+
+RuntimeConfig load_runtime_config(const std::string & config_path)
+{
+  RuntimeConfig config;
+  const auto node = tools::load(config_path)["runtime"];  // 加载失败时抛 runtime_error
+  if (!node) return config;
+
+  if (node["simulate_gimbal"]) config.simulate_gimbal = node["simulate_gimbal"].as<bool>();
+  if (node["headless"]) config.headless = node["headless"].as<bool>();
+  if (node["verbose_ekf"]) config.verbose_ekf = node["verbose_ekf"].as<bool>();
+  if (node["foxglove"]) config.foxglove_enabled = node["foxglove"].as<bool>();
+  return config;
+}
+
 #ifdef DUST_ENABLE_FOXGLOVE
 // Foxglove 的运行参数来自 config_path 的 foxglove 段；缺段或缺键都退回下面的默认值，
-// 与 visualization::FoxgloveVisionOptions 的默认值一致。启用开关在命令行，不在这里。
+// 与 visualization::FoxgloveVisionOptions 的默认值一致。启用开关在 runtime 段，不在这里。
 struct FoxgloveConfig
 {
   std::string host = "127.0.0.1";
@@ -101,34 +124,45 @@ int run(const RuntimeOptions & options)
   tools::Exiter exiter;
   tools::Plotter plotter;
 
-  const bool headless = options.headless;
+  // 运行模式开关先于任何硬件对象读取：配置文件缺失、runtime 段类型不合法都在这里退出
+  RuntimeConfig runtime_config;
+  try {
+    runtime_config = load_runtime_config(options.config_path);
+  } catch (const std::exception & e) {
+    tools::logger()->error("[Runtime] {}", e.what());
+    return 2;
+  }
+
+  const bool headless = runtime_config.headless;
 
 #ifdef DUST_ENABLE_FOXGLOVE
   std::unique_ptr<visualization::FoxgloveVision> foxglove;
-  if (options.foxglove_enabled) {
-    FoxgloveConfig config;
+  if (runtime_config.foxglove_enabled) {
+    FoxgloveConfig foxglove_config;
     try {
-      config = load_foxglove_config(options.config_path);
+      foxglove_config = load_foxglove_config(options.config_path);
     } catch (const std::exception & e) {
       tools::logger()->error("[Foxglove] {}", e.what());
       return 2;
     }
     if (
-      config.image_port < 1 || config.image_port > 65535 || config.data_port < 0 ||
-      config.data_port > 65535 || config.image_fps <= 0 || config.image_scale <= 0 ||
-      config.image_scale > 1.0 || config.jpeg_quality < 1 || config.jpeg_quality > 100) {
+      foxglove_config.image_port < 1 || foxglove_config.image_port > 65535 ||
+      foxglove_config.data_port < 0 || foxglove_config.data_port > 65535 ||
+      foxglove_config.image_fps <= 0 || foxglove_config.image_scale <= 0 ||
+      foxglove_config.image_scale > 1.0 || foxglove_config.jpeg_quality < 1 ||
+      foxglove_config.jpeg_quality > 100) {
       tools::logger()->error(
         "[Foxglove] Invalid port, fps, scale, or JPEG quality in the foxglove section");
       return 2;
     }
     visualization::FoxgloveVisionOptions foxglove_options;
-    foxglove_options.host = config.host;
-    foxglove_options.image_port = static_cast<uint16_t>(config.image_port);
-    foxglove_options.data_port = static_cast<uint16_t>(config.data_port);
-    foxglove_options.image_fps = config.image_fps;
-    foxglove_options.image_scale = config.image_scale;
-    foxglove_options.jpeg_quality = config.jpeg_quality;
-    foxglove_options.yield_cpu = config.yield_cpu;
+    foxglove_options.host = foxglove_config.host;
+    foxglove_options.image_port = static_cast<uint16_t>(foxglove_config.image_port);
+    foxglove_options.data_port = static_cast<uint16_t>(foxglove_config.data_port);
+    foxglove_options.image_fps = foxglove_config.image_fps;
+    foxglove_options.image_scale = foxglove_config.image_scale;
+    foxglove_options.jpeg_quality = foxglove_config.jpeg_quality;
+    foxglove_options.yield_cpu = foxglove_config.yield_cpu;
     try {
       foxglove = std::make_unique<visualization::FoxgloveVision>(foxglove_options);
       tools::logger()->info(
@@ -140,12 +174,12 @@ int run(const RuntimeOptions & options)
     }
   }
 #else
-  if (options.foxglove_enabled)
+  if (runtime_config.foxglove_enabled)
     tools::logger()->error(
       "this binary was built without Foxglove; configure with -DENABLE_FOXGLOVE_VISION=ON");
 #endif
 
-  io::Gimbal gimbal(options.config_path, options.simulate_gimbal);
+  io::Gimbal gimbal(options.config_path, runtime_config.simulate_gimbal);
   io::Camera camera(options.config_path);
 
   multithread::MultiThreadDetector detector(options.config_path, !headless);
@@ -311,7 +345,7 @@ int run(const RuntimeOptions & options)
       {targets.empty() ? std::nullopt : std::optional<Target>(targets.front()), t,
        detection->sequence});
 
-    if (!targets.empty() && options.verbose_ekf) {
+    if (!targets.empty() && runtime_config.verbose_ekf) {
       // 在终端上显示 EKF 状态信息；默认关闭，165 fps 下会把日志刷满
       auto ekf_x = targets.front().ekf_x();
       tools::logger()->debug(

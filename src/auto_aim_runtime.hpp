@@ -8,26 +8,14 @@ namespace auto_aim
 namespace runtime
 {
 
-// 入口（infantry）只负责解析命令行、填充本结构，然后调用 run()：
-// 窗口开关、Foxglove 参数与 EKF 日志等运行期差异都由本结构表达。
+// 入口（infantry）只负责解析配置文件路径、填充本结构，然后调用 run()。
+// 运行模式开关（虚拟云台、本地窗口、EKF 日志、Foxglove）不在命令行上：run() 从 config_path 的
+// runtime 段读取（见 configs/standard3.yaml），缺段或缺键时用内置默认值。
 struct RuntimeOptions
 {
   std::string config_path;
 
-  // 虚拟云台：不依赖真机，姿态与串口都走模拟
-  bool simulate_gimbal = false;
-
-  // 是否关闭本地窗口与按键事件（--headless）。默认与入口一致：开本地窗口
-  bool headless = false;
-
-  // Foxglove 的启用开关由入口解析后写入；监听地址、端口、帧率、缩放、发布线程调度与 JPEG
-  // 质量来自 config_path 的 foxglove 段（见 configs/standard3.yaml），不在命令行上。
-  bool foxglove_enabled = false;
-
-  // 每帧输出 EKF 11 维状态。默认关闭：165 fps 下它会把 logs/ 写满
-  bool verbose_ekf = false;
-
-  // 仅在 !headless 时使用
+  // 仅在未关闭本地窗口（runtime.headless 为 false）时使用
   std::string window_name = "reprojection";
 };
 

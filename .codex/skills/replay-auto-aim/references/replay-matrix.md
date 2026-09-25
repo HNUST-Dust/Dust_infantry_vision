@@ -16,8 +16,8 @@
 
 **There is no offline planner binary.** The only `Planner` caller is `src/auto_aim_runtime.cpp`
 (the shared runtime behind the single entry `src/infantry.cpp`), which needs a live camera —
-verified: the runtime constructs `io::Camera`, and `--simulate-gimbal` only swaps the gimbal for a
-simulated pose/serial path. Read trajectory and fire values from the `Plotter` UDP stream
+verified: the runtime constructs `io::Camera`, and `runtime.simulate_gimbal: true` in the config only
+swaps the gimbal for a simulated pose/serial path. Read trajectory and fire values from the `Plotter` UDP stream
 (`127.0.0.1:9870`) or the Foxglove `/vision/telemetry` keys listed in `SKILL.md`. `Aimer`/`Shooter`,
 which `auto_aim_test` and `minimum_vision_system` replay, are **not** the production planning path —
 `readme.md` says so explicitly.

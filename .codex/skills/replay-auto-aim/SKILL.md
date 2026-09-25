@@ -17,11 +17,12 @@ Use recorded inputs before using a camera or gimbal. The goal is a tight, repeat
    - there is **no** standalone offline planner executable in this checkout. `Planner`
      (`tasks/auto_aim/planner/planner.cpp`) is reachable only through `src/auto_aim_runtime.cpp`,
      the shared runtime behind the single entry `src/infantry.cpp`, and that runtime requires a
-     live camera — `--simulate-gimbal` only swaps the gimbal for a simulated pose/serial path,
-     not the camera. Observe trajectory and fire values instead through the `Plotter` UDP stream
-     or the Foxglove `/vision/telemetry` keys `plan_yaw`, `plan_yaw_vel`, `plan_yaw_acc`,
-     `plan_pitch`, `plan_pitch_vel`, `plan_pitch_acc`, `fire`, and `mode`
-     (0 = IDLE, 1 = AUTO_AIM, 2 = FIRE); the Foxglove stream itself needs `--foxglove`.
+     live camera — `runtime.simulate_gimbal: true` in the config only swaps the gimbal for a
+     simulated pose/serial path, not the camera. Observe trajectory and fire values instead through
+     the `Plotter` UDP stream or the Foxglove `/vision/telemetry` keys `plan_yaw`, `plan_yaw_vel`,
+     `plan_yaw_acc`, `plan_pitch`, `plan_pitch_vel`, `plan_pitch_acc`, `fire`, and `mode`
+     (0 = IDLE, 1 = AUTO_AIM, 2 = FIRE); the Foxglove stream itself needs `runtime.foxglove: true`
+     in the same config (as of 2026-09-24 all four run-mode switches left the infantry CLI).
 4. If OpenVINO GPU is unavailable, use a temporary copied YAML with `device: CPU`; never overwrite the robot config during diagnosis.
 5. Compare one variable at a time: model, detector mode, config threshold, frame interval, or calibration. Record frame index, detection count, tracker state, command, and stage timings.
 6. Minimise the frame range until removing any remaining input makes the symptom disappear. Turn that replay into a regression test at a public seam before changing implementation.

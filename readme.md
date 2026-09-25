@@ -94,12 +94,16 @@ source /opt/intel/openvino_2024.6.0/setupvars.sh
 ./build-ninja/infantry configs/standard3.yaml
 ```
 
-`infantry` 默认打开本地可视化窗口，显示检测叠加图，按 `q` 退出（与 SIGINT 同一条退出路径）。可选开关：
+`infantry` 默认打开本地可视化窗口，显示检测叠加图，按 `q` 退出（与 SIGINT 同一条退出路径）。运行模式开关统一放在配置文件的 `runtime` 段（见 `configs/standard3.yaml`），命令行只剩配置文件路径：
 
-- `--simulate-gimbal`（默认 `false`）：置为 `true` 时使用虚拟云台姿态并只做串口输出，不依赖真实云台，可用于无设备联调。
-- `--headless`（默认 `false`）：置为 `true` 时关闭检测可视化和窗口事件，适合无桌面的远程运行；`systemd/infantry.service` 模板即带此开关。
-- `--foxglove`（默认 `false`）：置为 `true` 时启用 Foxglove 图像与遥测推送；监听地址、端口、帧率、缩放、发布线程调度和 JPEG 质量在 `configs/standard3.yaml` 的 `foxglove` 段配置，不在命令行上。
-- `--verbose-ekf`（默认 `false`）：每帧输出 EKF 11 维状态；关闭时无输出。其余细节见 `./build-ninja/infantry -h` 与下文「自瞄图像与数据」。
+| 键 | 默认 | 说明 |
+| --- | --- | --- |
+| `runtime.simulate_gimbal` | `false` | 置为 `true` 时使用虚拟云台姿态并只做串口输出，不依赖真实云台，可用于无设备联调 |
+| `runtime.headless` | `false` | 置为 `true` 时关闭检测可视化和窗口事件，适合无桌面的远程运行；无桌面开机自启必须为 `true` |
+| `runtime.verbose_ekf` | `false` | 置为 `true` 时每帧输出 EKF 11 维状态；关闭时无输出 |
+| `runtime.foxglove` | `false` | 置为 `true` 时启用 Foxglove 图像与遥测推送；监听地址、端口、帧率、缩放、发布线程调度和 JPEG 质量在 `foxglove` 段配置 |
+
+`runtime` 段整体缺失或缺少某个键时用上表的默认值；值不是布尔（例如 `headless: 3`）会在启动时报错并以退出码 2 结束。原来的命令行开关 `--simulate-gimbal`、`--headless`、`--foxglove`、`--verbose-ekf` 已移除，旧写法会被 `infantry` 拦截并报错退出（见下文「自瞄图像与数据」）。
 
 单独测试相机：
 
@@ -339,7 +343,7 @@ sudo usermod -aG dialout $USER
 
 ### systemd 服务（可选）
 
-`systemd/infantry.service` 提供开机自启模板，使用 `Type=exec`、`KillSignal=SIGINT`、`TimeoutStopSec=10`，并预设 MVS SDK 的运行环境变量。其中的 `WorkingDirectory` 与 `ExecStart` 使用绝对路径，当前指向本检出的 `/home/rmul/Dust_infantry_vision`，换到别的机器或用户名下部署时需要相应修改。模板默认带 `--simulate-gimbal` 与 `--headless=true`：前者接实机时按需要去掉，后者在无桌面的开机自启下必须保留（`infantry` 默认开本地窗口）。
+`systemd/infantry.service` 提供开机自启模板，使用 `Type=exec`、`KillSignal=SIGINT`、`TimeoutStopSec=10`，并预设 MVS SDK 的运行环境变量。其中的 `WorkingDirectory` 与 `ExecStart` 使用绝对路径，当前指向本检出的 `/home/rmul/Dust_infantry_vision`，换到别的机器或用户名下部署时需要相应修改。`ExecStart` 只传配置文件路径：运行模式开关已移入 `configs/standard3.yaml` 的 `runtime` 段，命令行不再有 `--simulate-gimbal`/`--headless`。用这份模板做无桌面开机自启时，必须把该段的 `headless` 置为 `true`（`infantry` 默认开本地窗口，没有 `DISPLAY` 时会失败）；`simulate_gimbal` 接实机时保持 `false`。
 
 ## 项目结构
 
@@ -439,7 +443,7 @@ tests/                    调试和测试程序
 
 ### `configs/standard3.yaml`
 
-这是当前机器人配置，不适合直接用于所有电脑或所有机器人。部署到新机器人时建议复制一份，再修改相机、串口、标定和射击参数。绝大多数键是**必填**的，缺失时会抛出 `Missing YAML key`；可选的有 `infer_request_buffer_num`（缺省 `2`）、`skip_gimbal_crc`（缺省 `false`）、`dynamic_roi.net_ratio`（缺省 `1.0`），以及 `dynamic_roi`、`armor_association` 和 `foxglove` 三个节点本身（节点不存在时用内置默认值）。
+这是当前机器人配置，不适合直接用于所有电脑或所有机器人。部署到新机器人时建议复制一份，再修改相机、串口、标定和射击参数。绝大多数键是**必填**的，缺失时会抛出 `Missing YAML key`；可选的有 `infer_request_buffer_num`（缺省 `2`）、`skip_gimbal_crc`（缺省 `false`）、`dynamic_roi.net_ratio`（缺省 `1.0`），以及 `dynamic_roi`、`armor_association`、`foxglove` 和 `runtime` 四个节点本身（节点不存在时用内置默认值；`runtime` 的四个开关见上文「运行生产主程序」）。
 
 | 分类 | 字段 | 说明 |
 | --- | --- | --- |
@@ -493,6 +497,10 @@ tests/                    调试和测试程序
 | 规划 | `fire_thresh_high_speed` / `fire_thresh_low_speed` | 高/低速下的射击阈值 |
 | 规划 | `max_yaw_acc` / `max_pitch_acc` | 云台角加速度约束（rad/s²） |
 | 规划 | `Q_yaw` / `R_yaw` / `Q_pitch` / `R_pitch` | TinyMPC 权重 |
+| 运行模式 | `runtime.simulate_gimbal` | 虚拟云台姿态与串口输出，不依赖真机，默认 `false` |
+| 运行模式 | `runtime.headless` | 关闭检测可视化与窗口事件，无桌面运行必须为 `true`，默认 `false` |
+| 运行模式 | `runtime.verbose_ekf` | 每帧输出 EKF 11 维状态，默认 `false` |
+| 运行模式 | `runtime.foxglove` | 启用 Foxglove 图像与遥测推送，默认 `false` |
 | Foxglove | `foxglove.host` | 监听地址，默认 `127.0.0.1` |
 | Foxglove | `foxglove.port` | 图像端口，默认 `8766`；`data_port` 为 0 时同时承载遥测 |
 | Foxglove | `foxglove.data_port` | 非 0 时遥测走独立端口，默认 `0` |
@@ -644,7 +652,8 @@ Foxglove Studio 选择 **Open connection → Foxglove WebSocket**，连接 `ws:/
 cmake -B build-ninja -G Ninja -DENABLE_FOXGLOVE_VISION=ON
 # 与标定一起打开：-DENABLE_FOXGLOVE_CALIBRATION=ON -DENABLE_FOXGLOVE_VISION=ON
 cmake --build build-ninja --target infantry -j$(nproc)
-./build-ninja/infantry configs/standard3.yaml --foxglove --headless
+# 先把 configs/standard3.yaml 的 runtime 段设为 foxglove: true、headless: true
+./build-ninja/infantry configs/standard3.yaml
 ```
 
 服务默认只监听远端 `127.0.0.1:8766`（与 `capture` 的 8765 分开，同机可同时运行）。在操作电脑建立 SSH 隧道：
@@ -664,18 +673,14 @@ Foxglove Studio 选择 **Open connection → Foxglove WebSocket**，连接 `ws:/
 各自有独立的积压队列，慢速图像客户端不会挤占遥测的带宽和时延。
 
 ```bash
-# 先把 configs/standard3.yaml 里的 foxglove.data_port 设为 8767
-./build-ninja/infantry configs/standard3.yaml --foxglove --headless
+# 先把 configs/standard3.yaml 的 runtime 段设为 foxglove: true、headless: true，
+# 再把 foxglove.data_port 设为 8767
+./build-ninja/infantry configs/standard3.yaml
 ssh -N -L 127.0.0.1:18766:127.0.0.1:8766 -L 127.0.0.1:18767:127.0.0.1:8767 edge-108
 # Foxglove 里建立两个连接：图像 ws://127.0.0.1:18766，遥测 ws://127.0.0.1:18767
 ```
 
-命令行的 Foxglove 开关只剩启用开关：
-
-| 参数 | 默认 | 说明 |
-| --- | --- | --- |
-| `--foxglove` | 关 | 启用图像与遥测推送 |
-
+Foxglove 的启用开关同样在配置文件的 `runtime` 段（`runtime.foxglove`），命令行上已经没有 Foxglove 开关。
 监听与编码参数取自 `configs/standard3.yaml` 的 `foxglove` 段（节点不存在或缺键时用内置默认值）：
 
 | 键 | 默认 | 说明 |
@@ -692,13 +697,16 @@ ssh -N -L 127.0.0.1:18766:127.0.0.1:8766 -L 127.0.0.1:18767:127.0.0.1:8767 edge-
 会在启动时报错并以退出码 2 结束，不会静默退回默认值。
 
 原来的命令行开关 `--foxglove-host`、`--foxglove-port`、`--foxglove-data-port`、`--foxglove-fps`、
-`--foxglove-scale`、`--foxglove-sched`、`--jpeg-quality` 已移除。`CommandLineParser` 对未声明的键是
-**静默忽略**的，所以 `infantry` 显式检测这些旧写法（`--key value` 与 `--key=value` 两种拼法都查），
-命中即报错退出（退出码 2）并提示改到 YAML，不会让人误以为参数已经生效。
+`--foxglove-scale`、`--foxglove-sched`、`--jpeg-quality` 已移除，运行模式开关 `--simulate-gimbal`、
+`--headless`、`--foxglove`、`--verbose-ekf` 也一并移除（前者改到 `foxglove` 段，后者改到 `runtime` 段）。
+`CommandLineParser` 对未声明的键是**静默忽略**的，所以 `infantry` 显式检测这些旧写法（`--key` 与
+`--key=value` 两种拼法都查），命中即报错退出（退出码 2）并提示改到哪个 YAML 段，不会让人误以为参数
+已经生效。
 
-`infantry` 现在只剩布尔开关（`--headless`、`--simulate-gimbal`、`--verbose-ekf`、`--foxglove`）：
-裸写与 `--key=true` 效果相同，都不会报错。但位置参数陷阱依旧——`--headless true a.yaml` 会把 `true`
-当成 `@config-path`，所以布尔开关要单独写（`--headless`），后面不要跟空格分隔的值。
+`infantry` 现在没有任何布尔开关，命令行上只剩位置参数 `@config-path` 和 `-h`/`--help`：`--headless true a.yaml`
+这类「布尔开关后面跟空格分隔的值」的陷阱随之消失——这种写法现在会被当成已移除开关直接报错退出，不会再
+偷偷顶掉 `@config-path`。`capture` 仍有 `--headless` 与 `--foxglove` 两个布尔开关，对它来说该陷阱依旧
+存在，必须裸写。
 
 实测（MV-CS016-10UC，0.5 倍缩放、10 FPS、JPEG 质量 80）：单帧约 15-20 KB，图像码率约 0.2 MB/s，
 遥测约 100 Hz。图像码率随画面内容变化，`foxglove.scale: 1.0` 或提高帧率会成倍上升，此时建议拆端口。

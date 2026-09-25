@@ -1,6 +1,15 @@
 # enemy_color: "red"
 enemy_color: "blue"
 
+#####-----运行模式-----#####
+# 程序级开关统一在这里；命令行不再有对应参数（旧的 --simulate-gimbal/--headless/--verbose-ekf/--foxglove
+# 已被拦截并报错退出）。整个 runtime 段缺失或缺少某个键时，用下面注释里的默认值。
+runtime:
+  simulate_gimbal: false  # 虚拟云台：姿态与串口都走模拟，不依赖真机（默认 false）
+  headless: true          # 关闭检测可视化与窗口事件，无桌面运行（如开机自启）时置 true（默认 false）
+  verbose_ekf: false      # 每帧输出 EKF 11 维状态，165fps 下会刷满日志（默认 false）
+  foxglove: true          # 启用 Foxglove 图像与遥测推送，监听与编码参数见下面的 foxglove 段（默认 false）
+
 #####-----神经网络参数-----#####
 classify_model: assets/tiny_resnet.onnx
 yolov5_model_path: assets/0708.xml
@@ -89,7 +98,7 @@ t_camera2gimbal: [0.092605722425708623, 0.092642888073632274, 0.0274680155577947
 com_port: "/dev/gimbal"
 
 #####-----Foxglove-----#####
-# 仅当命令行走 --foxglove 时生效：启用开关留在命令行，监听与编码参数在这里
+# 仅当 runtime.foxglove 为 true 时生效：启用开关在 runtime 段，监听与编码参数在这里
 foxglove:
   host: "127.0.0.1"   # 监听地址
   port: 8766          # 图像端口；data_port 为 0 时同时承载遥测

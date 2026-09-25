@@ -11,7 +11,10 @@ Environment="MVCAM_COMMON_RUNENV=/opt/MVS/lib"
 Environment="MVCAM_SOFTWARE_LIBENV=/opt/MVS/lib"
 Environment="MVCAM_GENICAM_CLPROTOCOL=/opt/MVS/lib/CLProtocol"
 Environment="ALLUSERSPROFILE=/opt/MVS/MVFG"
-ExecStart=/home/rmul/Dust_infantry_vision/build-ninja/infantry /home/rmul/Dust_infantry_vision/configs/standard3.yaml --simulate-gimbal --headless=true
+# 运行模式开关（simulate_gimbal/headless/verbose_ekf/foxglove）在 configs/standard3.yaml 的 runtime 段，
+# 命令行上已没有对应参数。无桌面开机自启用这份模板时，务必把该段的 headless 置为 true，否则进程会去创建
+# OpenCV 窗口并在没有 DISPLAY 的环境下失败。
+ExecStart=/home/rmul/Dust_infantry_vision/build-ninja/infantry /home/rmul/Dust_infantry_vision/configs/standard3.yaml
 KillSignal=SIGINT
 TimeoutStopSec=10
 Restart=no
