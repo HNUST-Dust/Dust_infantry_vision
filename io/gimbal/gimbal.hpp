@@ -71,6 +71,7 @@ public:
 
   GimbalMode mode() const;
   GimbalState state() const;
+  std::chrono::steady_clock::time_point feedback_timestamp() const;
   std::string str(GimbalMode mode) const;
   // Returns no sample if the image timestamp cannot be bracketed by valid telemetry.
   std::optional<tools::QuaternionSample> orientation_at(std::chrono::steady_clock::time_point t);
@@ -97,9 +98,12 @@ private:
   bool skip_crc_ = false;
   GimbalMode mode_ = GimbalMode::IDLE;
   GimbalState state_{};
+  std::chrono::steady_clock::time_point feedback_timestamp_{};
+  std::atomic<uint64_t> write_failure_count_{0};
   tools::QuaternionBuffer orientations_{1000};
 
   bool read(uint8_t * buffer, size_t size);
+  bool write_tx_data();
   void read_thread();
   void reconnect();
 };

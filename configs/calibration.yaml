@@ -4,7 +4,7 @@ center_distance_mm: 40
 
 #####-----camera参数-----#####
 camera_name: "hikrobot"
-exposure_ms: 6.0
+exposure_ms: 1.0
 gain: 16.9
 frame_rate: 165
 vid_pid: "2bdf:0001"
@@ -26,3 +26,4 @@ t_camera2gimbal: [0.092605722425708623, 0.092642888073632274, 0.0274680155577947
 
 #####-----gimbal参数-----#####
 com_port: "/dev/gimbal"
+baudrate: 460800

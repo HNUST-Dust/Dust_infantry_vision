@@ -38,11 +38,22 @@ namespace runtime
 namespace
 {
 
-// 规划线程与检测主循环之间只传目标本身，姿态有效性随目标一起走
+// 规划线程与检测主循环之间只传容量一的目标状态快照。
 struct TargetUpdate
 {
   std::optional<Target> target;
   std::chrono::steady_clock::time_point frame_timestamp;
+  std::chrono::steady_clock::time_point last_observed_timestamp;
+  uint64_t sequence = 0;
+};
+
+struct PlanUpdate
+{
+  Plan plan;
+  std::chrono::steady_clock::time_point generated_at;
+  std::chrono::steady_clock::time_point frame_timestamp;
+  std::chrono::steady_clock::time_point last_observed_timestamp;
+  double planning_ms = 0.0;
   uint64_t sequence = 0;
 };
 
@@ -66,6 +77,10 @@ struct RuntimeConfig
   bool headless = false;
   bool verbose_ekf = false;
   bool foxglove_enabled = false;
+  std::chrono::milliseconds fire_timeout{30};
+  std::chrono::milliseconds control_timeout{80};
+  std::chrono::milliseconds feedback_timeout{100};
+  std::chrono::milliseconds plan_timeout{20};
 };
 
 RuntimeConfig load_runtime_config(const std::string & config_path)
@@ -78,6 +93,18 @@ RuntimeConfig load_runtime_config(const std::string & config_path)
   if (node["headless"]) config.headless = node["headless"].as<bool>();
   if (node["verbose_ekf"]) config.verbose_ekf = node["verbose_ekf"].as<bool>();
   if (node["foxglove"]) config.foxglove_enabled = node["foxglove"].as<bool>();
+  if (node["fire_timeout_ms"])
+    config.fire_timeout = std::chrono::milliseconds(node["fire_timeout_ms"].as<int>());
+  if (node["control_timeout_ms"])
+    config.control_timeout = std::chrono::milliseconds(node["control_timeout_ms"].as<int>());
+  if (node["feedback_timeout_ms"])
+    config.feedback_timeout = std::chrono::milliseconds(node["feedback_timeout_ms"].as<int>());
+  if (node["plan_timeout_ms"])
+    config.plan_timeout = std::chrono::milliseconds(node["plan_timeout_ms"].as<int>());
+  if (
+    config.fire_timeout <= 0ms || config.control_timeout <= 0ms || config.feedback_timeout <= 0ms ||
+    config.plan_timeout <= 0ms)
+    throw std::runtime_error("runtime safety timeout values must be positive");
   return config;
 }
 
@@ -122,7 +149,6 @@ FoxgloveConfig load_foxglove_config(const std::string & config_path)
 int run(const RuntimeOptions & options)
 {
   tools::Exiter exiter;
-  tools::Plotter plotter;
 
   // 运行模式开关先于任何硬件对象读取：配置文件缺失、runtime 段类型不合法都在这里退出
   RuntimeConfig runtime_config;
@@ -187,119 +213,195 @@ int run(const RuntimeOptions & options)
   Tracker tracker(options.config_path, solver);
   Planner planner(options.config_path);
 
+  // Both queues are capacity-one snapshots: a producer always replaces the old value.
+  // The initial entries keep consumers non-blocking from the first cycle onward.
+  const auto epoch = std::chrono::steady_clock::time_point{};
   tools::ThreadSafeQueue<TargetUpdate, true> target_queue(1);
-  target_queue.push({std::nullopt, std::chrono::steady_clock::now(), 0});
+  target_queue.push({std::nullopt, epoch, epoch, 0});
+  tools::ThreadSafeQueue<PlanUpdate, true> plan_queue(1);
+  plan_queue.push({Plan{}, epoch, epoch, epoch, 0.0, 0});
 
   // 计划线程只读这个原子状态码；直接调 Tracker::state() 会和主循环的 track() 抢同一把锁
   std::atomic<int> tracker_state_code{static_cast<int>(TrackerState::lost)};
-  std::atomic<bool> orientation_valid{false};
   std::atomic<bool> quit = false;
 
   auto plan_thread = std::thread([&]() {
-    auto t0 = std::chrono::steady_clock::now();
+    constexpr auto period = 2ms;
+    auto next = std::chrono::steady_clock::now();
+    tools::LatencyStats planning_stats;
+    auto last_planning_log = next;
+    while (!quit) {
+      const auto update = target_queue.front();
+      const auto started = std::chrono::steady_clock::now();
+      Plan plan;
+      bool plan_ok = false;
+      try {
+        const auto gs = gimbal.state();
+        // Planner::plan() owns the single prediction-to-control-time step. The target
+        // copied from the snapshot is never written back to Tracker.
+        plan = planner.plan(update.target, gs.bullet_speed, solver.R_gimbal2world());
+        plan_ok = true;
+      } catch (const std::exception & e) {
+        tools::logger()->warn("[Planner] plan failed: {}", e.what());
+      }
+      const auto generated_at = std::chrono::steady_clock::now();
+      const double planning_ms =
+        std::chrono::duration<double, std::milli>(generated_at - started).count();
+      planning_stats.add(planning_ms);
+      if (plan_ok) {
+        plan_queue.push({
+          plan, generated_at, update.frame_timestamp, update.last_observed_timestamp, planning_ms,
+          update.sequence});
+      }
+
+      if (tools::delta_time(generated_at, last_planning_log) >= 1.0 && !planning_stats.empty()) {
+        const auto summary = planning_stats.summary();
+        tools::logger()->info(
+          "[PlannerTiming] samples: {}, latest: {:.3f} ms, p50: {:.3f} ms, p95: {:.3f} ms, "
+          "p99: {:.3f} ms, max: {:.3f} ms",
+          summary.sample_count, summary.latest_ms, summary.p50_ms, summary.p95_ms, summary.p99_ms,
+          summary.max_ms);
+        last_planning_log = generated_at;
+      }
+
+      next += period;
+      const auto now = std::chrono::steady_clock::now();
+      if (next <= now)
+        next = now + period;  // drop missed planning slots; never replay a backlog
+      else
+        std::this_thread::sleep_until(next);
+    }
+  });
+
+  auto send_thread = std::thread([&]() {
+    constexpr auto period = 2ms;
+    auto next = std::chrono::steady_clock::now();
+    while (!quit) {
+      const auto update = plan_queue.front();
+      const auto now = std::chrono::steady_clock::now();
+      auto plan = update.plan;
+      const auto feedback_at = gimbal.feedback_timestamp();
+      const bool plan_fresh =
+        update.generated_at != epoch && now - update.generated_at <= runtime_config.plan_timeout;
+      const bool feedback_fresh =
+        feedback_at != epoch && now - feedback_at <= runtime_config.feedback_timeout;
+      const bool observation_known = update.last_observed_timestamp != epoch;
+      const auto observation_age = observation_known ? now - update.last_observed_timestamp : now - epoch;
+
+      if (!plan_fresh || !feedback_fresh || !observation_known ||
+          observation_age > runtime_config.control_timeout) {
+        plan = Plan{};  // startup, no target, stale plan/pose, or stale real observation
+      } else if (observation_age > runtime_config.fire_timeout) {
+        plan.fire = false;
+      }
+
+      // The gimbal must interpret a continuous mode=2 stream as a fire permission,
+      // not as one trigger event per received frame.
+      gimbal.send(
+        plan.control, plan.fire, plan.yaw, plan.yaw_vel, plan.yaw_acc, plan.pitch, plan.pitch_vel,
+        plan.pitch_acc);
+
+      next += period;
+      if (next <= now)
+        next = now + period;  // skip missed send slots; do not burst to catch up
+      else
+        std::this_thread::sleep_until(next);
+    }
+  });
+
+  auto telemetry_thread = std::thread([&]() {
+    constexpr auto period = 20ms;
+    auto next = std::chrono::steady_clock::now();
+    const auto t0 = next;
     uint16_t last_bullet_count = 0;
     uint64_t last_latency_sequence = 0;
     auto last_latency_log = t0;
     tools::LatencyStats latency_stats;
     std::optional<tools::LatencySummary> latency_summary;
+    tools::Plotter plotter;
 
     while (!quit) {
-      const auto update = target_queue.front();
-      auto gs = gimbal.state();
-      auto plan = planner.plan(
-        orientation_valid.load() ? update.target : std::nullopt, gs.bullet_speed,
-        solver.R_gimbal2world());
-
-      gimbal.send(
-        plan.control, plan.fire, plan.yaw, plan.yaw_vel, plan.yaw_acc, plan.pitch, plan.pitch_vel,
-        plan.pitch_acc);
-      const auto sent_at = std::chrono::steady_clock::now();
-      if (update.sequence != 0 && update.sequence != last_latency_sequence) {
-        latency_stats.add(1e3 * tools::delta_time(sent_at, update.frame_timestamp));
-        last_latency_sequence = update.sequence;
+      const auto target_update = target_queue.front();
+      const auto plan_update = plan_queue.front();
+      const auto gs = gimbal.state();
+      const auto sampled_at = std::chrono::steady_clock::now();
+      if (target_update.sequence != 0 && target_update.sequence != last_latency_sequence) {
+        latency_stats.add(1e3 * tools::delta_time(sampled_at, target_update.frame_timestamp));
+        last_latency_sequence = target_update.sequence;
         latency_summary = latency_stats.summary();
       }
 
-      auto fired = gs.bullet_count > last_bullet_count;
-      last_bullet_count = gs.bullet_count;
-
       nlohmann::json data;
-      data["t"] = tools::delta_time(std::chrono::steady_clock::now(), t0);
-
-      // Tracker 状态
+      data["t"] = tools::delta_time(sampled_at, t0);
       data["tracker_state"] = tracker_state_code.load();
-      data["has_target"] = update.target.has_value() ? 1 : 0;
-
-      data["gimbal_yaw"] = gs.yaw;  // radians
+      data["has_target"] = target_update.target.has_value() ? 1 : 0;
+      data["gimbal_yaw"] = gs.yaw;
       data["gimbal_yaw_vel"] = gs.yaw_vel;
-      data["gimbal_pitch"] = gs.pitch;  // 向上为负 (radians)
+      data["gimbal_pitch"] = gs.pitch;
       data["gimbal_pitch_vel"] = gs.pitch_vel;
-
-      data["target_yaw"] = plan.target_yaw;
-      data["target_pitch"] = plan.target_pitch;
-
-      // plan.yaw 已是云台系绝对目标角（Planner 内部 limit_rad(x + yaw0)），不要叠加 gs.yaw
-      data["plan_yaw"] = plan.yaw;
-      data["plan_yaw_vel"] = plan.yaw_vel;
-      data["plan_yaw_acc"] = plan.yaw_acc;
-
-      data["plan_pitch"] = plan.pitch;
-      data["plan_pitch_vel"] = plan.pitch_vel;
-      data["plan_pitch_acc"] = plan.pitch_acc;
-
-      data["fire"] = plan.fire ? 1 : 0;
-      data["fired"] = fired ? 1 : 0;
-
-      if (update.target.has_value()) {
-        data["target_z"] = update.target->ekf_x()[4];   // z
-        data["target_vz"] = update.target->ekf_x()[5];  // vz
-      }
-
-      if (update.target.has_value()) {
-        data["w"] = update.target->ekf_x()[7];
-        data["angle"] = update.target->ekf_x()[6];  // EKF 角度 a
+      data["target_yaw"] = plan_update.plan.target_yaw;
+      data["target_pitch"] = plan_update.plan.target_pitch;
+      data["plan_yaw"] = plan_update.plan.yaw;
+      data["plan_yaw_vel"] = plan_update.plan.yaw_vel;
+      data["plan_yaw_acc"] = plan_update.plan.yaw_acc;
+      data["plan_pitch"] = plan_update.plan.pitch;
+      data["plan_pitch_vel"] = plan_update.plan.pitch_vel;
+      data["plan_pitch_acc"] = plan_update.plan.pitch_acc;
+      data["plan_time_ms"] = plan_update.planning_ms;
+      data["fire"] = plan_update.plan.fire ? 1 : 0;
+      data["fired"] = gs.bullet_count > last_bullet_count ? 1 : 0;
+      last_bullet_count = gs.bullet_count;
+      if (target_update.target.has_value()) {
+        const auto x = target_update.target->ekf_x();
+        data["target_z"] = x[4];
+        data["target_vz"] = x[5];
+        data["w"] = x[7];
+        data["angle"] = x[6];
       } else {
         data["w"] = 0.0;
       }
-
-      data["mode"] = plan.mode();  // 0=IDLE, 1=AUTO_AIM, 2=FIRE
+      data["mode"] = plan_update.plan.mode();
       add_latency_metrics(data, latency_summary);
       plotter.plot(data);
 #ifdef DUST_ENABLE_FOXGLOVE
       if (foxglove) {
-        const auto sampled_at = std::chrono::steady_clock::now();
-        // 按值传参 + move：上一条语句的 plotter.plot(data) 已经消费过 data，之后不再使用。
         foxglove->publish_telemetry(std::move(data), sampled_at);
         foxglove->publish_status(
           {{"tracker_state_name", to_string(static_cast<TrackerState>(tracker_state_code.load()))},
-           {"has_target", update.target.has_value()}},
+           {"has_target", target_update.target.has_value()}},
           sampled_at);
       }
 #endif
-
-      if (latency_summary && tools::delta_time(sent_at, last_latency_log) >= 1.0) {
+      if (latency_summary && tools::delta_time(sampled_at, last_latency_log) >= 1.0) {
         const auto & summary = *latency_summary;
         tools::logger()->info(
           "[VisionLatency] samples: {}, latest: {:.2f} ms, p50: {:.2f} ms, p95: {:.2f} ms, "
           "p99: {:.2f} ms, max: {:.2f} ms",
           summary.sample_count, summary.latest_ms, summary.p50_ms, summary.p95_ms, summary.p99_ms,
           summary.max_ms);
-        last_latency_log = sent_at;
+        last_latency_log = sampled_at;
       }
 
-      std::this_thread::sleep_for(10ms);
+      next += period;
+      const auto now = std::chrono::steady_clock::now();
+      if (next <= now)
+        next = now + period;
+      else
+        std::this_thread::sleep_until(next);
     }
   });
 
   TrackerState last_state = TrackerState::lost;
   auto capture_thread = std::thread([&] {
+    bool orientation_was_valid = false;
     while (!quit) {
       cv::Mat image;
       std::chrono::steady_clock::time_point timestamp;
       camera.read(image, timestamp);
       if (image.empty()) break;
       const auto orientation = gimbal.orientation_at(timestamp);
-      const bool was_valid = orientation_valid.exchange(orientation.has_value());
+      const bool was_valid = orientation_was_valid;
+      orientation_was_valid = orientation.has_value();
       if (!orientation) {
         if (was_valid) tools::logger()->warn("[Gimbal] No synchronized pose; skipping images");
         continue;
@@ -343,7 +445,7 @@ int run(const RuntimeOptions & options)
 
     target_queue.push(
       {targets.empty() ? std::nullopt : std::optional<Target>(targets.front()), t,
-       detection->sequence});
+       tracker.last_observed_timestamp(), detection->sequence});
 
     if (!targets.empty() && runtime_config.verbose_ekf) {
       // 在终端上显示 EKF 状态信息；默认关闭，165 fps 下会把日志刷满
@@ -397,11 +499,13 @@ int run(const RuntimeOptions & options)
     auto targets = tracker.track(armors, detection->timestamp);
     target_queue.push(
       {targets.empty() ? std::nullopt : std::optional<Target>(targets.front()),
-       detection->timestamp, detection->sequence});
+       detection->timestamp, tracker.last_observed_timestamp(), detection->sequence});
   }
   detector.join();
   quit = true;
   if (plan_thread.joinable()) plan_thread.join();
+  if (send_thread.joinable()) send_thread.join();
+  if (telemetry_thread.joinable()) telemetry_thread.join();
   gimbal.send(false, false, 0, 0, 0, 0, 0, 0);
 
   return 0;

@@ -47,6 +47,10 @@ public:
   std::string state() const;
   TrackerState state_enum() const;
 
+  // The timestamp of the last frame that matched a real armor observation.
+  // Prediction-only gap handling must not advance this value.
+  std::chrono::steady_clock::time_point last_observed_timestamp() const;
+
   bool dynamic_roi_enabled() const;
 
   FocusRois focus_rois(
@@ -85,6 +89,7 @@ private:
   Target target_;
   std::chrono::steady_clock::time_point last_timestamp_;
   std::chrono::steady_clock::time_point last_observed_timestamp_;
+  bool last_update_real_observation_ = false;
   ArmorPriority omni_target_priority_;
   bool dynamic_roi_enabled_ = false;
   DynamicRoiConfig dynamic_roi_config_;

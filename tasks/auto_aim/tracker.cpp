@@ -101,6 +101,12 @@ TrackerState Tracker::state_enum() const
   return state_;
 }
 
+std::chrono::steady_clock::time_point Tracker::last_observed_timestamp() const
+{
+  std::lock_guard<std::mutex> lock(mutex_);
+  return last_observed_timestamp_;
+}
+
 bool Tracker::dynamic_roi_enabled() const
 {
   return dynamic_roi_enabled_;
@@ -145,6 +151,7 @@ std::list<Target> Tracker::track(
   std::list<Armor> & armors, std::chrono::steady_clock::time_point t, bool use_enemy_color)
 {
   std::lock_guard<std::mutex> lock(mutex_);
+  last_update_real_observation_ = false;
   auto dt = tools::delta_time(t, last_timestamp_);
   last_timestamp_ = t;
 
@@ -184,7 +191,7 @@ std::list<Target> Tracker::track(
     found = update_target(armors, t);
   }
 
-  if (found) last_observed_timestamp_ = t;
+  if (last_update_real_observation_) last_observed_timestamp_ = t;
 
   state_machine(found);
 
@@ -216,6 +223,7 @@ std::tuple<omniperception::DetectionResult, std::list<Target>> Tracker::track(
   std::chrono::steady_clock::time_point t, bool use_enemy_color)
 {
   std::lock_guard<std::mutex> lock(mutex_);
+  last_update_real_observation_ = false;
   omniperception::DetectionResult switch_target{std::list<Armor>(), t, 0, 0};
   omniperception::DetectionResult temp_target{std::list<Armor>(), t, 0, 0};
   if (!detection_queue.empty()) {
@@ -277,7 +285,7 @@ std::tuple<omniperception::DetectionResult, std::list<Target>> Tracker::track(
     found = update_target(armors, t);
   }
 
-  if (found) last_observed_timestamp_ = t;
+  if (last_update_real_observation_) last_observed_timestamp_ = t;
 
   pre_state_ = state_;
   // 更新状态机
@@ -380,6 +388,7 @@ bool Tracker::set_target(std::list<Armor> & armors, std::chrono::steady_clock::t
     target_ = Target(armor, t, 0.2, 4, P0_dig);
   }
 
+  last_update_real_observation_ = true;
   return true;
 }
 
@@ -406,12 +415,15 @@ bool Tracker::update_target(std::list<Armor> & armors, std::chrono::steady_clock
   }
 
   if (!armor_association_config_.enabled) {
+    bool updated = false;
     for (auto & armor : armors) {
       if (armor.name != target_.name || armor.type != target_.armor_type) continue;
       solver_.solve(armor);
       target_.update(armor);
+      updated = true;
     }
-    return true;
+    last_update_real_observation_ = updated;
+    return updated;
   }
 
   struct Match {
@@ -514,7 +526,8 @@ bool Tracker::update_target(std::list<Armor> & armors, std::chrono::steady_clock
       armor_association_config_.image_observation_enabled ? &solver_ : nullptr,
       armor_association_config_.image_point_sigma_px);
   }
-  return !matches.empty();
+  last_update_real_observation_ = !matches.empty();
+  return last_update_real_observation_;
 }
 
 }  // namespace auto_aim

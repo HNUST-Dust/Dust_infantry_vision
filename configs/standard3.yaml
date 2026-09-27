@@ -5,19 +5,23 @@ enemy_color: "blue"
 # 程序级开关统一在这里；命令行不再有对应参数（旧的 --simulate-gimbal/--headless/--verbose-ekf/--foxglove
 # 已被拦截并报错退出）。整个 runtime 段缺失或缺少某个键时，用下面注释里的默认值。
 runtime:
-  simulate_gimbal: false  # 虚拟云台：姿态与串口都走模拟，不依赖真机（默认 false）
+  simulate_gimbal: true  # 虚拟云台：姿态与串口都走模拟，不依赖真机（默认 false）
   headless: true          # 关闭检测可视化与窗口事件，无桌面运行（如开机自启）时置 true（默认 false）
   verbose_ekf: false      # 每帧输出 EKF 11 维状态，165fps 下会刷满日志（默认 false）
-  foxglove: true          # 启用 Foxglove 图像与遥测推送，监听与编码参数见下面的 foxglove 段（默认 false）
-
+  foxglove: true         # 启用 Foxglove 图像与遥测推送，监听与编码参数见下面的 foxglove 段（默认 false）
+  fire_timeout_ms: 30     # 最后一次真实匹配超过此时间后禁止开火
+  control_timeout_ms: 80  # 最后一次真实匹配超过此时间后停止目标控制
+  feedback_timeout_ms: 100 # 云台姿态反馈超时后停止目标控制
+  plan_timeout_ms: 20     # 计划生成超时后停止目标控制
+  
 #####-----神经网络参数-----#####
 classify_model: assets/tiny_resnet.onnx
-yolov5_model_path: assets/0708.xml
-device: CPU
+yolov5_model_path: assets/yolov5.xml
+device: GPU
 # Number of reusable OpenVINO requests kept in flight by YOLO and MultiThreadDetector.
-infer_request_buffer_num: 5
-min_confidence: 0.0
-use_traditional: false
+infer_request_buffer_num: 2
+min_confidence: 0.8
+use_traditional: true
 
 dynamic_roi:
   enabled: false
@@ -66,7 +70,7 @@ pitch_offset: 1.0 # degree 2  向上为正
 comming_angle: 55 # degree
 leaving_angle: 20 # degree
 decision_speed: 8 # rad/s
-high_speed_delay_time: 0.01 # s
+high_speed_delay_time: 0.01 # s  规划，下发，云台到达，发弹延迟
 low_speed_delay_time: 0.01 # s 
 
 #####-----shooter参数-----#####
@@ -76,9 +80,9 @@ judge_distance: 2 #距离判断阈值
 auto_fire: true # 是否由自瞄控制射击
 
 camera_name: "hikrobot"
-exposure_ms: 6.0
+exposure_ms: 1.0
 gain: 16.9
-frame_rate: 165
+frame_rate: 250
 vid_pid: "2bdf:0001"
 
 #  1  0  0
@@ -96,6 +100,7 @@ t_camera2gimbal: [0.092605722425708623, 0.092642888073632274, 0.0274680155577947
 
 #####-----gimbal参数-----#####
 com_port: "/dev/gimbal"
+baudrate: 460800
 
 #####-----Foxglove-----#####
 # 仅当 runtime.foxglove 为 true 时生效：启用开关在 runtime 段，监听与编码参数在这里

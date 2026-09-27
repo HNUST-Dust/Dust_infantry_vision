@@ -14,18 +14,22 @@ Gimbal::Gimbal(const std::string & config_path, bool simulate)
 {
   auto yaml = tools::load(config_path);
   auto com_port = tools::read<std::string>(yaml, "com_port");
+  const uint32_t baudrate = yaml["baudrate"] ? yaml["baudrate"].as<uint32_t>() : 460800;
   skip_crc_ = false;  // 默认
   if (yaml["skip_gimbal_crc"])
     skip_crc_ = tools::read<bool>(yaml, "skip_gimbal_crc");
 
   if (simulate_) {
     state_.bullet_speed = 23.0F;
+    feedback_timestamp_ = std::chrono::steady_clock::now();
     tools::logger()->warn("[Gimbal] Using simulated feedback and serial output.");
     return;
   }
 
   try {
     serial_.setPort(com_port);
+    serial_.setBaudrate(baudrate);
+    tools::logger()->info("[Gimbal] Serial {} at {} baud", com_port, baudrate);
     auto timeout = serial::Timeout::simpleTimeout(20);
     serial_.setTimeout(timeout);
     serial_.open();
@@ -66,6 +70,13 @@ GimbalState Gimbal::state() const
   return state_;
 }
 
+std::chrono::steady_clock::time_point Gimbal::feedback_timestamp() const
+{
+  if (simulate_) return std::chrono::steady_clock::now();
+  std::lock_guard<std::mutex> lock(mutex_);
+  return feedback_timestamp_;
+}
+
 std::string Gimbal::str(GimbalMode mode) const
 {
   switch (mode) {
@@ -98,11 +109,7 @@ void Gimbal::send(io::VisionToGimbal VisionToGimbal)
 
   if (simulate_) return;
 
-  try {
-    serial_.write(reinterpret_cast<uint8_t *>(&tx_data_), sizeof(tx_data_));
-  } catch (const std::exception & e) {
-    tools::logger()->warn("[Gimbal] Failed to write serial: {}", e.what());
-  }
+  write_tx_data();
 }
 
 void Gimbal::send(
@@ -129,11 +136,25 @@ void Gimbal::send(
   // }
   // tools::logger()->info("[Gimbal Send HEX] {}", hex_str);
 
+  write_tx_data();
+}
+
+bool Gimbal::write_tx_data()
+{
   try {
-    serial_.write(reinterpret_cast<uint8_t *>(&tx_data_), sizeof(tx_data_));
+    const auto written = serial_.write(reinterpret_cast<uint8_t *>(&tx_data_), sizeof(tx_data_));
+    if (written == sizeof(tx_data_)) return true;
+    const auto failures = ++write_failure_count_;
+    if (failures <= 3 || failures % 100 == 0)
+      tools::logger()->warn(
+        "[Gimbal] Short serial write: {}/{} bytes (failures={})", written, sizeof(tx_data_),
+        failures);
   } catch (const std::exception & e) {
-    tools::logger()->warn("[Gimbal] Failed to write serial: {}", e.what());
+    const auto failures = ++write_failure_count_;
+    if (failures <= 3 || failures % 100 == 0)
+      tools::logger()->warn("[Gimbal] Failed to write serial (failures={}): {}", failures, e.what());
   }
+  return false;
 }
 
 bool Gimbal::read(uint8_t * buffer, size_t size)
@@ -230,6 +251,7 @@ void Gimbal::read_thread()
     state_.bullet_speed = rx_data_.bullet_speed;
     // tools::logger()->info("[Gimbal] bullet_speed: {:.2f}", state_.bullet_speed);
     state_.bullet_count = rx_data_.bullet_count;
+    feedback_timestamp_ = t;
 
     switch (rx_data_.mode) {
       case 0:
