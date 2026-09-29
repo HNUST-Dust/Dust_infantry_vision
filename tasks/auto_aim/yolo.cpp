@@ -40,9 +40,9 @@ std::list<Armor> YOLO::detect(
 }
 
 NetDetector::TicketPtr YOLO::try_start_async(
-  const cv::Mat & img, std::optional<cv::Rect> roi_override)
+  const cv::Mat & img, std::optional<cv::Rect> roi_override, bool clone_source)
 {
-  return net_detector_.try_start_async(img, true, roi_override);
+  return net_detector_.try_start_async(img, clone_source, roi_override);
 }
 
 std::list<Armor> YOLO::postprocess(

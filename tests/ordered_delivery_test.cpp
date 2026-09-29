@@ -18,6 +18,8 @@ int main()
   assert(delivery.reserve(1));
   assert(delivery.reserve(2));
   assert(!delivery.reserve(3));
+  assert(delivery.cancel(2));
+  assert(delivery.reserve(2));
 
   assert(delivery.complete(2, 22));
   assert(delivery.complete(0, 0));

@@ -37,6 +37,24 @@ public:
     return reserve_locked(sequence);
   }
 
+  // Cancels the most recently reserved, not-yet-completed event. This is used
+  // when a downstream resource (for example, an inference request) turns out
+  // to be busy after the delivery window was tentatively reserved.
+  bool cancel(uint64_t sequence)
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    const auto it = events_.find(sequence);
+    if (
+      it == events_.end() || it->second.has_value() ||
+      next_reservation_sequence_ != sequence + 1) {
+      return false;
+    }
+    events_.erase(it);
+    next_reservation_sequence_ = sequence;
+    space_available_.notify_all();
+    return true;
+  }
+
   bool wait_reserve(uint64_t sequence)
   {
     std::unique_lock<std::mutex> lock(mutex_);

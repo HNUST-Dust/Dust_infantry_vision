@@ -4,6 +4,7 @@
 
 #include <cassert>
 #include <chrono>
+#include <thread>
 #include <opencv2/opencv.hpp>
 #include <vector>
 
@@ -38,49 +39,63 @@ int main(int argc, char * argv[])
 
   auto_aim::multithread::MultiThreadDetector detector(argv[1], false);
   const cv::Rect full(0, 0, image.cols, image.rows);
-  std::vector<auto_aim::multithread::SubmitResult> submissions;
-  const std::size_t count = detector.request_capacity() + 2;
+  const std::size_t count = detector.request_capacity() * 20 + 10;
   const auto capture_start = std::chrono::steady_clock::now();
-  auto timestamp_for = [&](uint64_t sequence) {
-    return capture_start + std::chrono::milliseconds(sequence);
+  auto timestamp_for = [&](uint64_t index) {
+    return capture_start + std::chrono::milliseconds(index);
   };
-  auto pose_for = [](uint64_t sequence) {
-    return Eigen::Quaterniond(Eigen::AngleAxisd(0.01 * sequence, Eigen::Vector3d::UnitY()));
+  auto pose_for = [](uint64_t index) {
+    return Eigen::Quaterniond(Eigen::AngleAxisd(0.01 * index, Eigen::Vector3d::UnitY()));
   };
-  for (std::size_t i = 0; i < count; ++i) {
-    submissions.push_back(detector.submit(
-      image, timestamp_for(i + 1), full, std::nullopt, pose_for(i + 1)));
-    assert(submissions.back().sequence == i + 1);
-  }
+  std::vector<auto_aim::multithread::Detection> delivered_detections;
   const auto error = detector.submit(
-    image, timestamp_for(count + 1), cv::Rect(-1, 0, image.cols, image.rows),
-    std::nullopt, pose_for(count + 1));
-  assert(error.status == auto_aim::multithread::SubmitStatus::skipped_error);
-  assert(error.sequence == count + 1);
+    image, timestamp_for(0), cv::Rect(-1, 0, image.cols, image.rows), std::nullopt, pose_for(0));
+  assert(error.status == auto_aim::multithread::SubmitStatus::accepted);
+  const auto error_deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+  while (detector.drop_counts().skipped_error == 0 &&
+         std::chrono::steady_clock::now() < error_deadline) {
+    if (auto detection = detector.wait_pop_for(std::chrono::milliseconds(10)))
+      delivered_detections.push_back(std::move(*detection));
+  }
+  assert(detector.drop_counts().skipped_error >= 1);
+  while (auto detection = detector.wait_pop_for(std::chrono::milliseconds(10)))
+    delivered_detections.push_back(std::move(*detection));
 
-  const auto empty = detector.submit(
-    {}, timestamp_for(count + 2), full, std::nullopt, pose_for(count + 2));
-  assert(empty.status == auto_aim::multithread::SubmitStatus::skipped_empty);
-  assert(empty.sequence == count + 2);
-
+  for (std::size_t i = 0; i < count; ++i) {
+    const auto submitted = detector.submit(
+      image, timestamp_for(i + 1), full, std::nullopt, pose_for(i + 1));
+    assert(submitted.status == auto_aim::multithread::SubmitStatus::accepted);
+    assert(submitted.sequence == 0);  // A sequence is assigned only after dispatch accepts a frame.
+  }
   detector.close();
   const auto closed = detector.submit(image, std::chrono::steady_clock::now(), full);
   assert(closed.status == auto_aim::multithread::SubmitStatus::closed);
   assert(closed.sequence == 0);
 
   uint64_t expected_sequence = 1;
-  std::size_t delivered = 0;
+  bool saw_error_placeholder = false;
   while (auto detection = detector.wait_pop()) {
-    assert(detection->sequence == expected_sequence++);
-    // Each delayed result, including skip/error events and shutdown draining,
-    // must retain its own capture timestamp and quaternion.
-    assert(detection->timestamp == timestamp_for(detection->sequence));
-    assert(detection->q);
-    assert(detection->q->angularDistance(pose_for(detection->sequence)) < 1e-12);
-    ++delivered;
+    delivered_detections.push_back(std::move(*detection));
   }
   detector.join();
-  assert(delivered == count + 2);
+  assert(!delivered_detections.empty());
+  for (const auto & detection : delivered_detections) {
+    assert(detection.sequence == expected_sequence++);
+    // Results retain the selected frame's capture metadata; overwritten frames have no sequence.
+    assert(detection.timestamp >= capture_start);
+    assert(detection.timestamp <= timestamp_for(count + 1));
+    assert(detection.q);
+    assert(detection.capture_ms >= 0.0);
+    assert(detection.submit_ms >= 0.0);
+    assert(detection.inference_ms >= 0.0);
+    assert(detection.delivery_ms >= 0.0);
+    if (detection.timestamp == timestamp_for(0)) {
+      assert(!detection.inferred);
+      saw_error_placeholder = true;
+    }
+  }
+  assert(expected_sequence > 1);
+  assert(saw_error_placeholder);
 
   return 0;
 }

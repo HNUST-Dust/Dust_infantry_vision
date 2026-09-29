@@ -224,6 +224,10 @@ int run(const RuntimeOptions & options)
   // 计划线程只读这个原子状态码；直接调 Tracker::state() 会和主循环的 track() 抢同一把锁
   std::atomic<int> tracker_state_code{static_cast<int>(TrackerState::lost)};
   std::atomic<bool> quit = false;
+  std::atomic<double> latest_capture_ms{0.0};
+  std::atomic<double> latest_submit_ms{0.0};
+  std::atomic<double> latest_inference_ms{0.0};
+  std::atomic<double> latest_delivery_ms{0.0};
 
   auto plan_thread = std::thread([&]() {
     constexpr auto period = 2ms;
@@ -348,6 +352,16 @@ int run(const RuntimeOptions & options)
       data["plan_pitch_vel"] = plan_update.plan.pitch_vel;
       data["plan_pitch_acc"] = plan_update.plan.pitch_acc;
       data["plan_time_ms"] = plan_update.planning_ms;
+      data["capture_time_ms"] = latest_capture_ms.load();
+      data["detection_submit_ms"] = latest_submit_ms.load();
+      data["inference_time_ms"] = latest_inference_ms.load();
+      data["result_delivery_ms"] = latest_delivery_ms.load();
+      const auto detector_drops = detector.drop_counts();
+      data["dropped_overwritten_frames"] = detector_drops.overwritten;
+      data["dropped_result_capacity_frames"] = detector_drops.result_capacity;
+      data["skipped_empty_frames"] = detector_drops.skipped_empty;
+      data["skipped_busy_frames"] = detector_drops.skipped_busy;
+      data["skipped_error_frames"] = detector_drops.skipped_error;
       data["fire"] = plan_update.plan.fire ? 1 : 0;
       data["fired"] = gs.bullet_count > last_bullet_count ? 1 : 0;
       last_bullet_count = gs.bullet_count;
@@ -392,12 +406,17 @@ int run(const RuntimeOptions & options)
   });
 
   TrackerState last_state = TrackerState::lost;
+  auto last_detector_timing_log = std::chrono::steady_clock::now();
   auto capture_thread = std::thread([&] {
     bool orientation_was_valid = false;
     while (!quit) {
       cv::Mat image;
       std::chrono::steady_clock::time_point timestamp;
+      const auto capture_started = std::chrono::steady_clock::now();
       camera.read(image, timestamp);
+      const double capture_ms = std::chrono::duration<double, std::milli>(
+                                  std::chrono::steady_clock::now() - capture_started)
+                                  .count();
       if (image.empty()) break;
       const auto orientation = gimbal.orientation_at(timestamp);
       const bool was_valid = orientation_was_valid;
@@ -410,7 +429,7 @@ int run(const RuntimeOptions & options)
       const auto rois = tracker.dynamic_roi_enabled()
                           ? tracker.focus_rois(image.size(), timestamp, solver.R_gimbal2world(q))
                           : FocusRois{cv::Rect(0, 0, image.cols, image.rows), std::nullopt};
-      detector.submit(image, timestamp, rois.net, rois.light, q);
+      detector.submit(image, timestamp, rois.net, rois.light, q, capture_ms);
     }
   });
 
@@ -428,6 +447,20 @@ int run(const RuntimeOptions & options)
 
     auto detection = detector.wait_pop_for(50ms);
     if (!detection || !detection->q) continue;
+    latest_capture_ms.store(detection->capture_ms);
+    latest_submit_ms.store(detection->submit_ms);
+    latest_inference_ms.store(detection->inference_ms);
+    latest_delivery_ms.store(detection->delivery_ms);
+    if (tools::delta_time(std::chrono::steady_clock::now(), last_detector_timing_log) >= 1.0) {
+      const auto drops = detector.drop_counts();
+      tools::logger()->info(
+        "[DetectorTiming] capture: {:.2f} ms, submit: {:.2f} ms, inference: {:.2f} ms, result "
+        "delivery: {:.2f} ms; dropped overwritten/result-capacity/busy/empty/error: {}/{}/{}/{}/{}",
+        detection->capture_ms, detection->submit_ms, detection->inference_ms,
+        detection->delivery_ms, drops.overwritten, drops.result_capacity, drops.skipped_busy,
+        drops.skipped_empty, drops.skipped_error);
+      last_detector_timing_log = std::chrono::steady_clock::now();
+    }
     const auto & q = *detection->q;
     solver.set_R_gimbal2world(q);
     cv::Mat img_det = std::move(detection->source);

@@ -37,7 +37,8 @@ public:
 
   // Returns no request when the bounded request pool is busy, so callers can drop stale frames.
   NetDetector::TicketPtr try_start_async(
-    const cv::Mat & img, std::optional<cv::Rect> roi_override = std::nullopt);
+    const cv::Mat & img, std::optional<cv::Rect> roi_override = std::nullopt,
+    bool clone_source = true);
 
   std::list<Armor> postprocess(
     const NetDetector::TicketPtr & ticket, int frame_count = -1,
