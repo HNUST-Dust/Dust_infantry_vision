@@ -227,6 +227,8 @@ int run(const RuntimeOptions & options)
   std::atomic<double> latest_capture_ms{0.0};
   std::atomic<double> latest_submit_ms{0.0};
   std::atomic<double> latest_inference_ms{0.0};
+  std::atomic<double> latest_inference_wait_ms{0.0};
+  std::atomic<double> latest_postprocess_ms{0.0};
   std::atomic<double> latest_delivery_ms{0.0};
 
   auto plan_thread = std::thread([&]() {
@@ -355,6 +357,8 @@ int run(const RuntimeOptions & options)
       data["capture_time_ms"] = latest_capture_ms.load();
       data["detection_submit_ms"] = latest_submit_ms.load();
       data["inference_time_ms"] = latest_inference_ms.load();
+      data["inference_wait_ms"] = latest_inference_wait_ms.load();
+      data["postprocess_time_ms"] = latest_postprocess_ms.load();
       data["result_delivery_ms"] = latest_delivery_ms.load();
       const auto detector_drops = detector.drop_counts();
       data["dropped_overwritten_frames"] = detector_drops.overwritten;
@@ -450,14 +454,16 @@ int run(const RuntimeOptions & options)
     latest_capture_ms.store(detection->capture_ms);
     latest_submit_ms.store(detection->submit_ms);
     latest_inference_ms.store(detection->inference_ms);
+    latest_inference_wait_ms.store(detection->inference_wait_ms);
+    latest_postprocess_ms.store(detection->postprocess_ms);
     latest_delivery_ms.store(detection->delivery_ms);
     if (tools::delta_time(std::chrono::steady_clock::now(), last_detector_timing_log) >= 1.0) {
       const auto drops = detector.drop_counts();
       tools::logger()->info(
-        "[DetectorTiming] capture: {:.2f} ms, submit: {:.2f} ms, inference: {:.2f} ms, result "
-        "delivery: {:.2f} ms; dropped overwritten/result-capacity/busy/empty/error: {}/{}/{}/{}/{}",
+        "[DetectorTiming] capture: {:.2f} ms, submit: {:.2f} ms, inference: {:.2f} ms "
+        "(wait: {:.2f} ms, postprocess: {:.2f} ms), result delivery: {:.2f} ms; dropped overwritten/result-capacity/busy/empty/error: {}/{}/{}/{}/{}",
         detection->capture_ms, detection->submit_ms, detection->inference_ms,
-        detection->delivery_ms, drops.overwritten, drops.result_capacity, drops.skipped_busy,
+        detection->inference_wait_ms, detection->postprocess_ms, detection->delivery_ms, drops.overwritten, drops.result_capacity, drops.skipped_busy,
         drops.skipped_empty, drops.skipped_error);
       last_detector_timing_log = std::chrono::steady_clock::now();
     }

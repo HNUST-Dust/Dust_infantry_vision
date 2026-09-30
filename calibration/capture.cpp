@@ -17,6 +17,7 @@
 #include "tools/img_tools.hpp"
 #include "tools/logger.hpp"
 #include "tools/math_tools.hpp"
+#include "tools/yaml.hpp"
 
 #ifdef DUST_ENABLE_FOXGLOVE
 #include "calibration/foxglove_calibration.hpp"
@@ -27,10 +28,10 @@ const std::string keys =
   "{@config-path   | configs/calibration.yaml | 位置参数，yaml配置文件路径 }"
   "{output-folder o |      assets/img_with_q   | 输出文件夹路径   }"
   "{headless       | false                    | 不创建OpenCV窗口 }"
-  "{foxglove      | false                    | 启用Foxglove WebSocket }"
+  "{foxglove      | true                    | 启用Foxglove WebSocket }"
   "{foxglove-host | 127.0.0.1                | Foxglove监听地址 }"
   "{foxglove-port | 8765                     | Foxglove监听端口 }"
-  "{foxglove-fps  | 10                       | Foxglove预览帧率 }"
+  "{foxglove-fps  | 30                       | Foxglove预览帧率 }"
   "{jpeg-quality  | 80                       | JPEG质量(1-100) }";
 
 void write_q(const std::string q_path, const Eigen::Quaterniond & q)
@@ -96,6 +97,16 @@ void capture_loop(
   bool enable_foxglove, const std::string & foxglove_host, int foxglove_port,
   double foxglove_fps, int jpeg_quality)
 {
+  // 标定板规格统一从 YAML 读取：此处曾把图案尺寸写死为 10x7，配置与实际板子不符时会静默识别失败
+  auto yaml = tools::load(config_path);
+  auto pattern_size = cv::Size(
+    tools::read<int>(yaml, "pattern_cols"), tools::read<int>(yaml, "pattern_rows"));
+  if (pattern_size.width < 2 || pattern_size.height < 2)
+    throw std::runtime_error("pattern_cols and pattern_rows must be at least 2");
+  tools::logger()->info(
+    "[Calibration] Pattern {} cols x {} rows (from {})", pattern_size.width, pattern_size.height,
+    config_path);
+
   io::Gimbal gimbal(config_path);
   io::Camera camera(config_path);
   cv::Mat img;
@@ -143,8 +154,8 @@ void capture_loop(
     }
 
     std::vector<cv::Point2f> centers_2d;
-    auto success = cv::findCirclesGrid(img, cv::Size(10, 7), centers_2d);  // 默认是对称圆点图案
-    cv::drawChessboardCorners(img_with_ypr, cv::Size(10, 7), centers_2d, success);  // 显示识别结果
+    auto success = cv::findCirclesGrid(img, pattern_size, centers_2d);  // 默认是对称圆点图案
+    cv::drawChessboardCorners(img_with_ypr, pattern_size, centers_2d, success);  // 显示识别结果
     cv::resize(img_with_ypr, img_with_ypr, {}, 0.5, 0.5);  // 显示时缩小图片尺寸
 
     bool save_requested = false;
@@ -238,7 +249,6 @@ int main(int argc, char * argv[])
   // 新建输出文件夹
   std::filesystem::create_directories(output_folder);
 
-  tools::logger()->info("默认标定板尺寸为10列7行");
   // 主循环，保存图片和对应四元数
   // 包 try/catch：Foxglove 构造失败（例如 host 绑不上）以及采集循环内的校验/写盘异常
   // 都改为记一条明确日志并返回 2，而不是未捕获异常直接 terminate。

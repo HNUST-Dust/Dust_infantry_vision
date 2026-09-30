@@ -61,6 +61,8 @@ struct Detection
   double capture_ms = 0.0;
   double submit_ms = 0.0;
   double inference_ms = 0.0;
+  double inference_wait_ms = 0.0;
+  double postprocess_ms = 0.0;
   double delivery_ms = 0.0;
   std::chrono::steady_clock::time_point ready_at;
 };

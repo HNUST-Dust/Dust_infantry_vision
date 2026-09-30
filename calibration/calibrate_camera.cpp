@@ -47,13 +47,6 @@ void load(
     std::vector<cv::Point2f> centers_2d;
     auto success = cv::findCirclesGrid(img, pattern_size, centers_2d, cv::CALIB_CB_SYMMETRIC_GRID);
 
-    // 显示识别结果
-    auto drawing = img.clone();
-    cv::drawChessboardCorners(drawing, pattern_size, centers_2d, success);
-    cv::resize(drawing, drawing, {}, 0.5, 0.5);  // 缩小图片尺寸便于显示完全
-    cv::imshow("Press any to continue", drawing);
-    cv::waitKey(0);
-
     // 输出识别结果
     fmt::print("[{}] {}\n", success ? "success" : "failure", img_path);
     if (!success) continue;
@@ -100,6 +93,10 @@ int main(int argc, char * argv[])
   std::vector<std::vector<cv::Point3f>> obj_points;
   std::vector<std::vector<cv::Point2f>> img_points;
   load(input_folder, config_path, img_size, obj_points, img_points);
+  if (obj_points.empty()) {
+    fmt::print(stderr, "No valid calibration samples found in {}\n", input_folder);
+    return 2;
+  }
 
   // 相机标定
   cv::Mat camera_matrix, distort_coeffs;

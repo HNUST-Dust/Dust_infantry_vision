@@ -42,7 +42,7 @@ public:
 
   std::list<Armor> postprocess(
     const NetDetector::TicketPtr & ticket, int frame_count = -1,
-    std::optional<cv::Rect> light_roi = std::nullopt);
+    std::optional<cv::Rect> light_roi = std::nullopt, double * wait_ms = nullptr);
 
   cv::Mat source(const NetDetector::TicketPtr & ticket) const;
 

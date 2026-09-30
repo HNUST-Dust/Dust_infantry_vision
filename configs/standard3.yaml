@@ -4,9 +4,9 @@ enemy_color: "blue"
 #####-----运行模式-----#####
 runtime:
   simulate_gimbal: true  # 虚拟云台：姿态与串口都走模拟，不依赖真机（默认 false）
-  headless: false          # 关闭检测可视化与窗口事件，无桌面运行（如开机自启）时置 true（默认 false）
+  headless: true          # 关闭检测可视化与窗口事件，无桌面运行（如开机自启）时置 true（默认 false）
   verbose_ekf: false      # 每帧输出 EKF 11 维状态，165fps 下会刷满日志（默认 false）
-  foxglove: true         # 启用 Foxglove 图像与遥测推送，监听与编码参数见下面的 foxglove 段（默认 false）
+  foxglove: false         # 启用 Foxglove 图像与遥测推送，监听与编码参数见下面的 foxglove 段（默认 false）
   fire_timeout_ms: 30     # 最后一次真实匹配超过此时间后禁止开火
   control_timeout_ms: 80  # 最后一次真实匹配超过此时间后停止目标控制
   feedback_timeout_ms: 100 # 云台姿态反馈超时后停止目标控制
@@ -15,11 +15,14 @@ runtime:
 #####-----神经网络参数-----#####
 classify_model: assets/tiny_resnet.onnx
 yolov5_model_path: assets/yolov5.xml
+# CPU is the stable real-time default when GNOME shares the Intel iGPU.
+# Set to GPU only in headless mode or with a dedicated GPU.
 device: GPU
 # Number of reusable OpenVINO requests kept in flight by YOLO and MultiThreadDetector.
-infer_request_buffer_num: 2
+infer_request_buffer_num: 1
+performance_mode: LATENCY
 min_confidence: 0.8
-use_traditional: true
+use_traditional: false
 
 dynamic_roi:
   enabled: false
@@ -78,7 +81,7 @@ judge_distance: 2 #距离判断阈值
 auto_fire: true # 是否由自瞄控制射击
 
 camera_name: "hikrobot"
-exposure_ms: 6.0
+exposure_ms: 5.0
 gain: 16.9
 frame_rate: 250
 vid_pid: "2bdf:0001"
@@ -88,13 +91,13 @@ vid_pid: "2bdf:0001"
 #  0  0  1
 R_gimbal2imubody: [1, 0, 0, 0, 1, 0, 0, 0, 1]
 
-# 重投影误差: 0.0918px
-camera_matrix: [1850.0977161749593, 0, 710.63421936359202, 0, 1848.6943471449351, 549.13749846456096, 0, 0, 1]
-distort_coeffs: [-0.060913344604850199, 0.11774786267506449, -0.0019223400180306367, -0.0019701464715510902, 0]
+# 重投影误差: 0.0595px
+camera_matrix: [1808.8304696430803, 0, 713.70459283498224, 0, 1808.0411873540195, 566.09347726083934, 0, 0, 1]
+distort_coeffs: [-0.073241403353599299, 0.14495759982904788, 0.00028937879061362732, -0.00026770913811837289, 0]
 
-# 相机同理想情况的偏角: yaw-0.25 pitch1.75 roll-7.12 degree
-R_camera2gimbal: [0.00048622843439272145, 0.030851393170502468, 0.99952386420802819, -0.99230239509046125, -0.12376365571495085, 0.0043028155671873238, 0.12383747526352322, -0.9918320165549761, 0.030553733926414139]
-t_camera2gimbal: [0.092605722425708623, 0.092642888073632274, 0.02746801555779475]
+# 相机同理想情况的偏角: yaw75.63 pitch5.30 roll-1.96 degree
+R_camera2gimbal: [-0.96889770499671424, -0.010257585282489877, 0.24724890130448027, -0.24510201422675804, -0.097867928316508035, -0.96454490368723678, 0.034091639357565068, -0.99514654727392149, 0.092309856324806816]
+t_camera2gimbal: [0.11496631300454371, -0.12470023691424111, 0.025376551288643197]
 
 #####-----gimbal参数-----#####
 com_port: "/dev/gimbal"

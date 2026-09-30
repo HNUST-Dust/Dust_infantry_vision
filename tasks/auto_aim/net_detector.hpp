@@ -26,6 +26,8 @@ public:
     int input_width;
     int input_height;
     int infer_request_buffer_num = 2;
+    // LATENCY avoids queueing on shared GPUs; THROUGHPUT is for offline benchmarks.
+    std::string performance_mode = "LATENCY";
     bool use_roi = false;
     cv::Rect roi;
   };
@@ -37,6 +39,7 @@ public:
     double scale = 1.0;
     cv::Rect roi;
     bool has_roi = false;
+    double wait_ms = 0.0;
   };
 
 private:

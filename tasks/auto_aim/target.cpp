@@ -249,8 +249,8 @@ void Target::update(
 
   last_id = id;
   virtual_update_count_ = 0;
-  tools::logger()->debug(
-    "[Target] tracking id: {}, name: {}, dist: {:.3f}", id, ARMOR_NAMES[this->name], distance);
+  // tools::logger()->debug(
+  //   "[Target] tracking id: {}, name: {}, dist: {:.3f}", id, ARMOR_NAMES[this->name], distance);
   update_count_++;
 
   const bool image_updated =

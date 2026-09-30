@@ -13,6 +13,8 @@ YOLO::YOLO(const std::string & config_path, bool debug)
     config.device = yaml["device"].as<std::string>();
     config.infer_request_buffer_num =
       yaml["infer_request_buffer_num"] ? yaml["infer_request_buffer_num"].as<int>() : 2;
+    config.performance_mode = yaml["performance_mode"] ?
+      yaml["performance_mode"].as<std::string>() : "LATENCY";
     const auto roi = yaml["roi"];
     config.use_roi = yaml["use_roi"].as<bool>();
     config.roi = {roi["x"].as<int>(), roi["y"].as<int>(), roi["width"].as<int>(),
@@ -46,9 +48,10 @@ NetDetector::TicketPtr YOLO::try_start_async(
 }
 
 std::list<Armor> YOLO::postprocess(
-  const NetDetector::TicketPtr & ticket, int frame_count, std::optional<cv::Rect> light_roi)
+  const NetDetector::TicketPtr & ticket, int frame_count, std::optional<cv::Rect> light_roi, double * wait_ms)
 {
   auto result = net_detector_.wait(ticket);
+  if (wait_ms) *wait_ms = result.wait_ms;
   return yolo_->postprocess(result, frame_count, light_roi);
 }
 

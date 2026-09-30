@@ -215,7 +215,13 @@ void MultiThreadDetector::worker_loop()
     detection.capture_ms = pending.capture_ms;
     detection.submit_ms = pending.submit_ms;
     try {
-      detection.armors = yolo_.postprocess(pending.ticket, -1, pending.light_roi);
+      const auto postprocess_started = std::chrono::steady_clock::now();
+      detection.armors = yolo_.postprocess(
+        pending.ticket, -1, pending.light_roi, &detection.inference_wait_ms);
+      detection.postprocess_ms = std::chrono::duration<double, std::milli>(
+                                   std::chrono::steady_clock::now() - postprocess_started)
+                                   .count() -
+                               detection.inference_wait_ms;
       if (keep_source_.load()) detection.source = yolo_.source(pending.ticket);
     } catch (const std::exception & e) {
       detection.inferred = false;

@@ -4,6 +4,8 @@
 #include <stdexcept>
 #include <utility>
 
+#include <openvino/runtime/intel_gpu/properties.hpp>
+
 #include "tools/logger.hpp"
 
 namespace auto_aim
@@ -44,9 +46,21 @@ struct NetDetector::Impl
       ppp.output(i).tensor().set_element_type(ov::element::f32);
     }
 
-    compiled_model_ = core_.compile_model(
-      ppp.build(), config_.device,
-      ov::hint::performance_mode(ov::hint::PerformanceMode::THROUGHPUT));
+    ov::AnyMap compile_properties;
+    if (config_.performance_mode == "LATENCY") {
+      compile_properties[ov::hint::performance_mode.name()] = ov::hint::PerformanceMode::LATENCY;
+    } else if (config_.performance_mode == "THROUGHPUT") {
+      compile_properties[ov::hint::performance_mode.name()] = ov::hint::PerformanceMode::THROUGHPUT;
+    } else {
+      throw std::invalid_argument(
+        "performance_mode must be LATENCY or THROUGHPUT, got: " + config_.performance_mode);
+    }
+    if (config_.device == "GPU" || config_.device == "gpu") {
+      // Keep inference ahead of desktop/compositor work on the shared iGPU.
+      compile_properties[ov::intel_gpu::hint::queue_priority.name()] = ov::hint::Priority::HIGH;
+      compile_properties[ov::intel_gpu::hint::queue_throttle.name()] = ov::hint::Priority::LOW;
+    }
+    compiled_model_ = core_.compile_model(ppp.build(), config_.device, compile_properties);
 
     slots_.reserve(config_.infer_request_buffer_num);
     for (int i = 0; i < config_.infer_request_buffer_num; ++i) {
@@ -199,8 +213,12 @@ NetDetector::Result NetDetector::wait(const TicketPtr & ticket) const
     throw std::invalid_argument("Invalid NetDetector ticket");
   }
 
+  const auto wait_started = std::chrono::steady_clock::now();
   auto & request = impl_->slots_[ticket->slot_index_].infer_request;
   request.wait();
+  const double wait_ms = std::chrono::duration<double, std::milli>(
+                           std::chrono::steady_clock::now() - wait_started)
+                           .count();
   ticket->completed_ = true;
 
   const auto output_tensor = request.get_output_tensor(0);
@@ -209,13 +227,13 @@ NetDetector::Result NetDetector::wait(const TicketPtr & ticket) const
     return {ticket->source_,
       cv::Mat(static_cast<int>(output_shape[0]), static_cast<int>(output_shape[1]), CV_32F,
         output_tensor.data<float>()),
-      ticket->scale_, ticket->roi_, ticket->has_roi_};
+      ticket->scale_, ticket->roi_, ticket->has_roi_, wait_ms};
   }
   if (output_shape.size() == 3) {
     return {ticket->source_,
       cv::Mat(static_cast<int>(output_shape[1]), static_cast<int>(output_shape[2]), CV_32F,
         output_tensor.data<float>()),
-      ticket->scale_, ticket->roi_, ticket->has_roi_};
+      ticket->scale_, ticket->roi_, ticket->has_roi_, wait_ms};
   }
   throw std::runtime_error("NetDetector supports only 2D or 3D output tensors");
 }
