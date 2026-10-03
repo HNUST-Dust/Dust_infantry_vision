@@ -51,8 +51,6 @@ public:
   // Prediction-only gap handling must not advance this value.
   std::chrono::steady_clock::time_point last_observed_timestamp() const;
 
-  bool dynamic_roi_enabled() const;
-
   FocusRois focus_rois(
     const cv::Size & image_size, std::chrono::steady_clock::time_point t,
     const Eigen::Matrix3d & R_gimbal2world) const;

@@ -15,10 +15,6 @@ YOLO::YOLO(const std::string & config_path, bool debug)
       yaml["infer_request_buffer_num"] ? yaml["infer_request_buffer_num"].as<int>() : 2;
     config.performance_mode = yaml["performance_mode"] ?
       yaml["performance_mode"].as<std::string>() : "LATENCY";
-    const auto roi = yaml["roi"];
-    config.use_roi = yaml["use_roi"].as<bool>();
-    config.roi = {roi["x"].as<int>(), roi["y"].as<int>(), roi["width"].as<int>(),
-      roi["height"].as<int>()};
     config.model_path = yaml["yolov5_model_path"].as<std::string>();
     config.input_width = 640;
     config.input_height = 640;

@@ -86,16 +86,7 @@ struct NetDetector::Impl
       }
       return *roi_override;
     }
-    if (!config_.use_roi) return {0, 0, image.cols, image.rows};
-
-    const int width = config_.roi.width == -1 ? image.cols - config_.roi.x : config_.roi.width;
-    const int height = config_.roi.height == -1 ? image.rows - config_.roi.y : config_.roi.height;
-    const cv::Rect roi(config_.roi.x, config_.roi.y, width, height);
-    if (roi.x < 0 || roi.y < 0 || roi.width <= 0 || roi.height <= 0 ||
-        roi.x + roi.width > image.cols || roi.y + roi.height > image.rows) {
-      throw std::runtime_error("Configured ROI is outside the input image");
-    }
-    return roi;
+    return {0, 0, image.cols, image.rows};
   }
 
   void release(std::size_t slot_index) noexcept
@@ -199,8 +190,7 @@ NetDetector::TicketPtr NetDetector::start_impl(
     slot.infer_request.start_async();
 
     return std::shared_ptr<Ticket>(new Ticket(
-      impl_, slot_index, std::move(source), scale, roi,
-      impl_->config_.use_roi || roi_override.has_value()));
+      impl_, slot_index, std::move(source), scale, roi, roi_override.has_value()));
   } catch (...) {
     impl_->release(slot_index);
     throw;

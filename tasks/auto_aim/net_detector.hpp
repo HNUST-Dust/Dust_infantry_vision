@@ -28,8 +28,6 @@ public:
     int infer_request_buffer_num = 2;
     // LATENCY avoids queueing on shared GPUs; THROUGHPUT is for offline benchmarks.
     std::string performance_mode = "LATENCY";
-    bool use_roi = false;
-    cv::Rect roi;
   };
 
   struct Result

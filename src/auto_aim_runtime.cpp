@@ -430,9 +430,7 @@ int run(const RuntimeOptions & options)
         continue;
       }
       const auto & q = orientation->q;
-      const auto rois = tracker.dynamic_roi_enabled()
-                          ? tracker.focus_rois(image.size(), timestamp, solver.R_gimbal2world(q))
-                          : FocusRois{cv::Rect(0, 0, image.cols, image.rows), std::nullopt};
+      const auto rois = tracker.focus_rois(image.size(), timestamp, solver.R_gimbal2world(q));
       detector.submit(image, timestamp, rois.net, rois.light, q, capture_ms);
     }
   });

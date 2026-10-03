@@ -454,8 +454,6 @@ tests/                    调试和测试程序
 | 识别 | `infer_request_buffer_num` | 可并行复用的 OpenVINO 请求数，缺省 `2`，当前配置 `5` |
 | 识别 | `min_confidence` | 目标最低置信度 |
 | 识别 | `use_traditional` | YOLOv5 是否用传统方法细化角点 |
-| ROI | `use_roi` | 是否使用固定网络 ROI |
-| ROI | `roi.x` / `roi.y` / `roi.width` / `roi.height` | 固定 ROI，像素；`width` / `height` 为 `-1` 时延伸到画面边缘 |
 | 动态 ROI | `dynamic_roi.enabled` | 是否启用基于 Tracker 预测的动态 ROI |
 | 动态 ROI | `dynamic_roi.expand_ratio` | 普通装甲/前哨站目标的 ROI 放大倍率，默认 `1.4` |
 | 动态 ROI | `dynamic_roi.base_expand_ratio` | **仅基地**目标的 ROI 放大倍率，默认 `3.0` |

@@ -223,8 +223,8 @@ void Gimbal::read_thread()
     // 按一般情况解算欧拉角：ZYX（Yaw-Pitch-Roll）
     Eigen::Vector3d ypr = q.toRotationMatrix().eulerAngles(2, 1, 0);
     double yaw_angle   = ypr[0];  // Z
-    double pitch_angle = ypr[1];  // Y
-    // double roll_angle  = ypr[2];  // X
+    double pitch_angle = ypr[2];  // X
+    // double roll_angle  = ypr[1];  // Y
 
     // tools::logger()->info(
     //   "[Gimbal] Euler from q (ZYX) -> Yaw(Z): {:.4f} rad ({:.2f} deg), Pitch(Y): {:.4f} rad ({:.2f} deg), Roll(X): {:.4f} rad ({:.2f} deg)",

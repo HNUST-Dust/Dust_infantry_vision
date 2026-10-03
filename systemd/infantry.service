@@ -1,6 +1,7 @@
 [Unit]
 Description=Dust Infantry Vision
-After=local-fs.target
+After=local-fs.target dev-gimbal.device
+Requires=dev-gimbal.device
 
 [Service]
 Type=exec
@@ -15,6 +16,7 @@ Environment="ALLUSERSPROFILE=/opt/MVS/MVFG"
 # 命令行上已没有对应参数。无桌面开机自启用这份模板时，务必把该段的 headless 置为 true，否则进程会去创建
 # OpenCV 窗口并在没有 DISPLAY 的环境下失败。
 ExecStart=/home/rmul/Dust_infantry_vision/build-ninja/infantry /home/rmul/Dust_infantry_vision/configs/standard3.yaml
+ExecStartPre=/home/rmul/Dust_infantry_vision/systemd/wait-camera.sh /home/rmul/Dust_infantry_vision/configs/standard3.yaml
 KillSignal=SIGINT
 TimeoutStopSec=10
 Restart=no

@@ -107,11 +107,6 @@ std::chrono::steady_clock::time_point Tracker::last_observed_timestamp() const
   return last_observed_timestamp_;
 }
 
-bool Tracker::dynamic_roi_enabled() const
-{
-  return dynamic_roi_enabled_;
-}
-
 FocusRois Tracker::focus_rois(
   const cv::Size & image_size, std::chrono::steady_clock::time_point t,
   const Eigen::Matrix3d & R_gimbal2world) const

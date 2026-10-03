@@ -101,8 +101,8 @@ void Target::predict(double dt)
   // https://github.com/rlabbe/Kalman-and-Bayesian-Filters-in-Python/blob/master/07-Kalman-Filter-Math.ipynb
   double v1, v2;
   if (name == ArmorName::outpost) {
-    v1 = 10;   // 前哨站加速度方差
-    v2 = 100;  // 前哨站角加速度方差（先提到和普通车一致，排除过程噪声因素）
+    v1 = 5;   // 前哨站加速度方差
+    v2 = 10;  // 前哨站角加速度方差（先提到和普通车一致，排除过程噪声因素）
   } else {
     v1 = 10;  // 加速度方差
     v2 = 100;  // 角加速度方差
