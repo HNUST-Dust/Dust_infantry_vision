@@ -2,6 +2,8 @@
 
 #include <yaml-cpp/yaml.h>
 
+#include <cmath>
+#include <optional>
 #include <vector>
 
 #include "tools/logger.hpp"
@@ -88,6 +90,11 @@ void Solver::solve(Armor & armor) const
   armor.ypr_in_world = tools::eulers(R_armor2world, 2, 1, 0);
 
   armor.ypd_in_world = tools::xyz2ypd(armor.xyz_in_world);
+
+  // 相机系位姿：供 ypda_measurement_covariance() 的一阶传播使用。
+  // 必须在 optimize_yaw() 与 balance 提前 return 之前写入（optimize_yaw 只改 ypr_in_world[0]）。
+  armor.R_armor2camera = R_armor2camera;
+  armor.t_armor2camera = xyz_in_camera;
 
   // 平衡不做yaw优化，因为pitch假设不成立
   auto is_balance = (armor.type == ArmorType::big) &&
@@ -216,10 +223,12 @@ double Solver::oupost_reprojection_error(Armor armor, const double & pitch)
 
 void Solver::optimize_yaw(Armor & armor, const Eigen::Matrix3d & R_gimbal2world) const
 {
-  Eigen::Vector3d gimbal_ypr = tools::eulers(R_gimbal2world, 2, 1, 0);
+  // 相机光轴是相机系 +Z；搜索中心必须包含手眼旋转，不能假设相机与云台同向。
+  const Eigen::Vector3d camera_forward_world = R_gimbal2world * R_camera2gimbal_.col(2);
+  const double camera_yaw = std::atan2(camera_forward_world.y(), camera_forward_world.x());
 
   constexpr double SEARCH_RANGE = 140;  // degree
-  auto yaw0 = tools::limit_rad(gimbal_ypr[0] - SEARCH_RANGE / 2 * CV_PI / 180.0);
+  const double yaw0 = tools::limit_rad(camera_yaw - SEARCH_RANGE / 2 * CV_PI / 180.0);
 
   auto min_error = 1e10;
   auto best_yaw = armor.ypr_in_world[0];
@@ -314,5 +323,107 @@ std::vector<cv::Point2f> Solver::world2pixel(const std::vector<cv::Point3f> & wo
   std::vector<cv::Point2f> pixelPoints;
   cv::projectPoints(valid_world_points, rvec, tvec, camera_matrix_, distort_coeffs_, pixelPoints);
   return pixelPoints;
+}
+
+std::vector<cv::Point2f> Solver::project_armor_camera(
+  const Eigen::Matrix3d & R_armor2camera, const Eigen::Vector3d & t_armor2camera,
+  ArmorType type) const
+{
+  const auto & object_points = (type == ArmorType::big) ? BIG_ARMOR_POINTS : SMALL_ARMOR_POINTS;
+
+  cv::Mat R_armor2camera_cv;
+  cv::eigen2cv(R_armor2camera, R_armor2camera_cv);
+  cv::Vec3d rvec;
+  cv::Rodrigues(R_armor2camera_cv, rvec);
+  cv::Vec3d tvec(t_armor2camera[0], t_armor2camera[1], t_armor2camera[2]);
+
+  std::vector<cv::Point2f> image_points;
+  cv::projectPoints(object_points, rvec, tvec, camera_matrix_, distort_coeffs_, image_points);
+  return image_points;
+}
+
+std::optional<Eigen::Matrix4d> Solver::ypda_measurement_covariance(
+  const Armor & armor, double point_sigma_px, double angle_prior_rad) const
+{
+  // 位姿扰动 xi = [dt(3), dtheta(3)]，旋转绕装甲板自身轴右乘。
+  constexpr int k_pose_dim = 6;
+  constexpr double k_translation_step = 1e-4;  // m
+  constexpr double k_rotation_step = 1e-5;     // rad
+  // 平移方向只给极弱先验，仅用于保证信息矩阵可逆；它不约束良态方向。
+  constexpr double k_translation_prior = 10.0;  // m
+
+  if (armor.points.size() != 4) return std::nullopt;
+  if (!(point_sigma_px > 0.0) || !std::isfinite(point_sigma_px)) return std::nullopt;
+  if (!(angle_prior_rad > 0.0) || !std::isfinite(angle_prior_rad)) return std::nullopt;
+
+  const Eigen::Matrix3d R_gimbal2world = this->R_gimbal2world();
+  const Eigen::Matrix3d R_armor2camera = armor.R_armor2camera;
+  const Eigen::Vector3d t_armor2camera = armor.t_armor2camera;
+
+  // 相机系位姿 -> 世界系观测 z = [yaw, pitch, distance, armor_yaw]
+  const auto z_of = [&](const Eigen::Matrix3d & R_a2c, const Eigen::Vector3d & t_a2c) {
+    const Eigen::Vector3d xyz_in_world =
+      R_gimbal2world * (R_camera2gimbal_ * t_a2c + t_camera2gimbal_);
+    const Eigen::Vector3d ypd = tools::xyz2ypd(xyz_in_world);
+    const Eigen::Matrix3d R_armor2world = R_gimbal2world * R_camera2gimbal_ * R_a2c;
+    return Eigen::Vector4d{
+      ypd[0], ypd[1], ypd[2], std::atan2(R_armor2world(1, 0), R_armor2world(0, 0))};
+  };
+
+  Eigen::MatrixXd G = Eigen::MatrixXd::Zero(8, k_pose_dim);    // d(像素) / d(xi)
+  Eigen::MatrixXd J_z = Eigen::MatrixXd::Zero(4, k_pose_dim);  // d(z)    / d(xi)
+  for (int k = 0; k < k_pose_dim; k++) {
+    Eigen::Matrix3d R_plus = R_armor2camera;
+    Eigen::Matrix3d R_minus = R_armor2camera;
+    Eigen::Vector3d t_plus = t_armor2camera;
+    Eigen::Vector3d t_minus = t_armor2camera;
+    double step = k_translation_step;
+    if (k < 3) {
+      t_plus[k] += k_translation_step;
+      t_minus[k] -= k_translation_step;
+    } else {
+      Eigen::Vector3d axis = Eigen::Vector3d::Zero();
+      axis[k - 3] = 1.0;
+      R_plus = R_armor2camera * Eigen::AngleAxisd(k_rotation_step, axis).toRotationMatrix();
+      R_minus = R_armor2camera * Eigen::AngleAxisd(-k_rotation_step, axis).toRotationMatrix();
+      step = k_rotation_step;
+    }
+
+    const auto points_plus = project_armor_camera(R_plus, t_plus, armor.type);
+    const auto points_minus = project_armor_camera(R_minus, t_minus, armor.type);
+    if (points_plus.size() != 4 || points_minus.size() != 4) return std::nullopt;
+
+    const Eigen::Vector4d z_plus = z_of(R_plus, t_plus);
+    const Eigen::Vector4d z_minus = z_of(R_minus, t_minus);
+    if (!z_plus.allFinite() || !z_minus.allFinite()) return std::nullopt;
+
+    for (int i = 0; i < 4; i++) {
+      G(2 * i, k) = (points_plus[i].x - points_minus[i].x) / (2 * step);
+      G(2 * i + 1, k) = (points_plus[i].y - points_minus[i].y) / (2 * step);
+    }
+    for (int row = 0; row < 3; row++) J_z(row, k) = (z_plus[row] - z_minus[row]) / (2 * step);
+    J_z(3, k) = std::remainder(z_plus[3] - z_minus[3], 2 * CV_PI) / (2 * step);
+  }
+
+  // Sigma_uv = sigma^2 * I  =>  数据信息矩阵 = G^T G / sigma^2
+  const Eigen::MatrixXd information = G.transpose() * G / (point_sigma_px * point_sigma_px);
+
+  // 先验信息：平移极弱，旋转各向同性（压制平面靶不可观测的法向方向，第 4 维由此落到先验上）
+  Eigen::MatrixXd prior_information = Eigen::MatrixXd::Zero(k_pose_dim, k_pose_dim);
+  prior_information.block<3, 3>(0, 0) =
+    Eigen::Matrix3d::Identity() / (k_translation_prior * k_translation_prior);
+  prior_information.block<3, 3>(3, 3) =
+    Eigen::Matrix3d::Identity() / (angle_prior_rad * angle_prior_rad);
+
+  const Eigen::LDLT<Eigen::MatrixXd> information_solver(information + prior_information);
+  if (information_solver.info() != Eigen::Success) return std::nullopt;
+  const Eigen::MatrixXd pose_covariance =
+    information_solver.solve(Eigen::MatrixXd::Identity(k_pose_dim, k_pose_dim));
+  if (!pose_covariance.allFinite()) return std::nullopt;
+
+  Eigen::Matrix4d R = J_z * pose_covariance * J_z.transpose();
+  R = 0.5 * (R + R.transpose());  // 数值对称化
+  if (!R.allFinite()) return std::nullopt;
+  return R;
 }
 }  // namespace auto_aim

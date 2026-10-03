@@ -5,7 +5,7 @@
 #include <nlohmann/json.hpp>
 #include <opencv2/opencv.hpp>
 
-#include "tasks/auto_aim/aimer.hpp"
+#include "tasks/auto_aim/planner/planner.hpp"
 #include "tasks/auto_aim/solver.hpp"
 #include "tasks/auto_aim/tracker.hpp"
 #include "tasks/auto_aim/yolo.hpp"
@@ -46,13 +46,12 @@ int main(int argc, char * argv[])
   auto_aim::YOLO yolo(config_path);
   auto_aim::Solver solver(config_path);
   auto_aim::Tracker tracker(config_path, solver);
-  auto_aim::Aimer aimer(config_path);
+  auto_aim::Planner planner(config_path);
 
   cv::Mat img, drawing;
   auto t0 = std::chrono::steady_clock::now();
 
   auto_aim::Target last_target;
-  io::Command last_command;
   double last_t = -1;
 
   video.set(cv::CAP_PROP_POS_FRAMES, start_index);
@@ -81,29 +80,25 @@ int main(int argc, char * argv[])
     auto tracker_start = std::chrono::steady_clock::now();
     auto targets = tracker.track(armors, timestamp);
 
-    auto aimer_start = std::chrono::steady_clock::now();
-    auto command = aimer.aim(targets, timestamp, 27, false);
-
-    if (
-      !targets.empty() && aimer.debug_aim_point.valid &&
-      std::abs(command.yaw - last_command.yaw) < (2.0 * M_PI / 180.0))
-      command.shoot = true;
-
-    if (command.control) last_command = command;
+    const std::optional<auto_aim::Target> plan_target =
+      targets.empty() ? std::nullopt : std::optional<auto_aim::Target>(targets.front());
+    // 离线回放：基准时刻取视频时间戳 + 5ms 的 detector/planner 预算，对应旧 Aimer 的 to_now=false
+    auto planner_start = std::chrono::steady_clock::now();
+    auto plan = planner.plan_at(
+      plan_target, timestamp + std::chrono::milliseconds(5), 27.0, solver.R_gimbal2world());
     /// 调试输出
 
     auto finish = std::chrono::steady_clock::now();
     tools::logger()->info(
-      "[{}] yolo: {:.1f}ms, tracker: {:.1f}ms, aimer: {:.1f}ms", frame_count,
+      "[{}] yolo: {:.1f}ms, tracker: {:.1f}ms, planner: {:.1f}ms", frame_count,
       tools::delta_time(tracker_start, yolo_start) * 1e3,
-      tools::delta_time(aimer_start, tracker_start) * 1e3,
-      tools::delta_time(finish, aimer_start) * 1e3);
+      tools::delta_time(planner_start, tracker_start) * 1e3,
+      tools::delta_time(finish, planner_start) * 1e3);
 
     tools::draw_text(
       img,
       fmt::format(
-        "command is {},{:.4f},{:.4f},shoot:{}", command.control, command.yaw, command.pitch,
-        command.shoot),
+        "plan is {},{:.4f},{:.4f},fire:{}", plan.control, plan.yaw, plan.pitch, plan.fire),
       {10, 60}, {154, 50, 205});
 
     Eigen::Quaternion gimbal_q = {w, x, y, z};
@@ -130,8 +125,8 @@ int main(int argc, char * argv[])
     Eigen::Quaternion q{w, x, y, z};
     auto yaw = tools::eulers(q, 2, 1, 0)[0];
   data["gimbal_yaw"] = yaw;
-  data["cmd_yaw"] = command.yaw;
-    data["shoot"] = command.shoot;
+  data["cmd_yaw"] = plan.yaw;
+    data["fire"] = plan.fire;
 
     if (!targets.empty()) {
       auto target = targets.front();
@@ -152,12 +147,11 @@ int main(int argc, char * argv[])
         tools::draw_points(img, image_points, {0, 255, 0});
       }
 
-      // aimer瞄准位置
-      auto aim_point = aimer.debug_aim_point;
-      Eigen::Vector4d aim_xyza = aim_point.xyza;
+      // planner 的瞄准位置（决策时刻策略选中的那块装甲板）
+      Eigen::Vector4d aim_xyza = planner.debug_xyza();
       auto image_points =
         solver.reproject_armor(aim_xyza.head(3), aim_xyza[3], target.armor_type, target.name);
-      if (aim_point.valid) tools::draw_points(img, image_points, {0, 0, 255});
+      if (planner.debug_aim_valid()) tools::draw_points(img, image_points, {0, 0, 255});
 
       // 观测器内部数据
       Eigen::VectorXd x = target.ekf_x();

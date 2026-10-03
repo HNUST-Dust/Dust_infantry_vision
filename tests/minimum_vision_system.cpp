@@ -4,9 +4,8 @@
 
 #include "io/camera.hpp"
 #include "io/dm_imu/dm_imu.hpp"
-#include "tasks/auto_aim/aimer.hpp"
 #include "tasks/auto_aim/multithread/mt_detector.hpp"
-#include "tasks/auto_aim/shooter.hpp"
+#include "tasks/auto_aim/planner/planner.hpp"
 #include "tasks/auto_aim/solver.hpp"
 #include "tasks/auto_aim/tracker.hpp"
 #include "tools/exiter.hpp"
@@ -36,8 +35,7 @@ int main(int argc, char * argv[])
   auto_aim::multithread::MultiThreadDetector detector(config_path);
   auto_aim::Solver solver(config_path);
   auto_aim::Tracker tracker(config_path, solver);
-  auto_aim::Aimer aimer(config_path);
-  auto_aim::Shooter shooter(config_path);
+  auto_aim::Planner planner(config_path);
 
   auto detect_thread = std::thread([&]() {
     while (!exiter.exit()) {
@@ -68,15 +66,18 @@ int main(int argc, char * argv[])
 
     auto targets = tracker.track(armors, t);
 
-    auto command = aimer.aim(targets, t, 22);
-
-    shooter.shoot(command, aimer, targets, gimbal_pos);
+    const std::optional<auto_aim::Target> plan_target =
+      targets.empty() ? std::nullopt : std::optional<auto_aim::Target>(targets.front());
+    auto plan = planner.plan_at(plan_target, t, 22.0, solver.R_gimbal2world(), gimbal_pos[0]);
 
     auto dt = tools::delta_time(t, last_t);
     last_t = t;
 
     data["dt"] = dt;
     data["fps"] = 1 / dt;
+    data["plan_yaw"] = plan.yaw;
+    data["plan_pitch"] = plan.pitch;
+    data["fire"] = plan.fire ? 1 : 0;
     plotter.plot(data);
     // 装甲板原始观测数据
     data["armor_num"] = armors.size();
@@ -108,12 +109,11 @@ int main(int argc, char * argv[])
         tools::draw_points(img, image_points, {0, 255, 0});
       }
 
-      // aimer瞄准位置
-      auto aim_point = aimer.debug_aim_point;
-      Eigen::Vector4d aim_xyza = aim_point.xyza;
+      // planner 的瞄准位置
+      Eigen::Vector4d aim_xyza = planner.debug_xyza();
       auto image_points =
         solver.reproject_armor(aim_xyza.head(3), aim_xyza[3], target.armor_type, target.name);
-      if (aim_point.valid)
+      if (planner.debug_aim_valid())
         tools::draw_points(img, image_points, {0, 0, 255});  // red
       else
         tools::draw_points(img, image_points, {255, 0, 0});  // blue

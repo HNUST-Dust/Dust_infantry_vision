@@ -245,7 +245,7 @@ int run(const RuntimeOptions & options)
         const auto gs = gimbal.state();
         // Planner::plan() owns the single prediction-to-control-time step. The target
         // copied from the snapshot is never written back to Tracker.
-        plan = planner.plan(update.target, gs.bullet_speed, solver.R_gimbal2world());
+        plan = planner.plan(update.target, gs.bullet_speed, solver.R_gimbal2world(), gs.yaw);
         plan_ok = true;
       } catch (const std::exception & e) {
         tools::logger()->warn("[Planner] plan failed: {}", e.what());
@@ -508,6 +508,7 @@ int run(const RuntimeOptions & options)
       if (!targets.empty()) {
         overlay.target = &targets.front();
         overlay.aim_xyza = planner.debug_xyza();
+        overlay.aim_valid = planner.debug_aim_valid();
       }
       visualization::draw_vision_overlay(img_det, overlay, solver);
 

@@ -111,6 +111,10 @@ struct Armor
 
   double yaw_raw = 0.0;  // rad
 
+  // solvePnP 解出的装甲板在相机系下的位姿，供 ypda_measurement_covariance() 做一阶传播
+  Eigen::Matrix3d R_armor2camera = Eigen::Matrix3d::Identity();
+  Eigen::Vector3d t_armor2camera = Eigen::Vector3d::Zero();
+
   Armor(const Lightbar & left, const Lightbar & right);
   Armor(
     int class_id, float confidence, const cv::Rect & box, std::vector<cv::Point2f> armor_keypoints);

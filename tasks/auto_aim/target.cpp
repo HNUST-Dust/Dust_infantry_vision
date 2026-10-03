@@ -162,7 +162,8 @@ void Target::predict(double dt)
 }
 
 void Target::update(
-  const Armor & armor, int matched_id, const Solver * solver, double image_point_sigma_px)
+  const Armor & armor, int matched_id, const Solver * solver, double image_point_sigma_px,
+  double pnp_point_sigma_px, double pnp_angle_prior_rad)
 {
   // 装甲板匹配
   int id = matched_id;
@@ -256,7 +257,8 @@ void Target::update(
   const bool image_updated =
     solver && image_point_sigma_px > 0
     && update_image_points(armor, id, *solver, image_point_sigma_px);
-  if (!image_updated) update_ypda(armor, id);
+  if (!image_updated)
+    update_ypda(armor, id, solver, pnp_point_sigma_px, pnp_angle_prior_rad);
   if (image_updated) apply_state_limits(id);
 
   // 前哨站 ID 映射校正：累积每类 ID 的 obs_z，检测高度排列是否正确
@@ -289,19 +291,28 @@ void Target::update(
   }
 }
 
-void Target::update_ypda(const Armor & armor, int id)
+void Target::update_ypda(
+  const Armor & armor, int id, const Solver * solver, double point_sigma_px, double angle_prior_rad)
 {
   //观测jacobi
   Eigen::MatrixXd H = h_jacobian(ekf_.x, id);
-  // Eigen::VectorXd R_dig{{4e-3, 4e-3, 1, 9e-2}};
-  auto center_yaw = std::atan2(armor.xyz_in_world[1], armor.xyz_in_world[0]);
-  auto delta_angle = tools::limit_rad(armor.ypr_in_world[0] - center_yaw);
-  Eigen::VectorXd R_dig{
-    {4e-3, 4e-3, log(std::abs(delta_angle) + 1) + 1,
-     log(std::abs(armor.ypd_in_world[2]) + 1) / 200 + 1e-2}};
 
-  //测量过程噪声偏差的方差
-  Eigen::MatrixXd R = R_dig.asDiagonal();
+  // 测量噪声：优先用 solvePnP 的像素噪声一阶传播 + 位姿先验（距离/视角自适应、满秩带相关性），
+  // 传播不可用时回退到内置对角阵，保持旧行为。
+  Eigen::MatrixXd R;
+  const std::optional<Eigen::Matrix4d> propagated =
+    solver ? solver->ypda_measurement_covariance(armor, point_sigma_px, angle_prior_rad)
+           : std::nullopt;
+  if (propagated) {
+    R = *propagated;
+  } else {
+    auto center_yaw = std::atan2(armor.xyz_in_world[1], armor.xyz_in_world[0]);
+    auto delta_angle = tools::limit_rad(armor.ypr_in_world[0] - center_yaw);
+    Eigen::VectorXd R_dig{
+      {4e-3, 4e-3, log(std::abs(delta_angle) + 1) + 1,
+       log(std::abs(armor.ypd_in_world[2]) + 1) / 200 + 1e-2}};
+    R = R_dig.asDiagonal();
+  }
 
   // 定义非线性转换函数h: x -> z
   auto h = [&](const Eigen::VectorXd & x) -> Eigen::Vector4d {
@@ -519,20 +530,16 @@ Eigen::MatrixXd Target::h_jacobian(const Eigen::VectorXd & x, int id) const
   auto dx_dl = (use_l_h) ? -std::cos(angle) : 0.0;
   auto dy_dl = (use_l_h) ? -std::sin(angle) : 0.0;
 
-  double dz_dh;
-  bool is_outpost_3 = (armor_num_ == 3 && this->name == ArmorName::outpost);
-  if (is_outpost_3) {
-    dz_dh = 1.0;
-  } else {
-    dz_dh = (use_l_h) ? 1.0 : 0.0;
-  }
+  // armor_z = x[4]（旋转中心高度）恒成立；只有 4 装甲板目标的 id 1/3 额外叠加
+  // h = x[10]（见 h_armor_xyz）。前哨站/基地的高度差是固定常数，不进状态。
+  auto dz_dh = (use_l_h) ? 1.0 : 0.0;
 
   // clang-format off
   Eigen::MatrixXd H_armor_xyza{
-    {1, 0, 0, 0, 0, 0, dx_da, 0, dx_dr, dx_dl,     0},
-    {0, 0, 1, 0, 0, 0, dy_da, 0, dy_dr, dy_dl,     0},
-    {0, 0, 0, 0, dz_dh, 0,     0, 0,     0,     0,     0},
-    {0, 0, 0, 0, 0, 0,     1, 0,     0,     0,     0}
+    {1, 0, 0, 0, 0, 0, dx_da, 0, dx_dr, dx_dl,      0},
+    {0, 0, 1, 0, 0, 0, dy_da, 0, dy_dr, dy_dl,      0},
+    {0, 0, 0, 0,     1, 0,     0, 0,     0,     0, dz_dh},
+    {0, 0, 0, 0, 0, 0,     1, 0,     0,     0,      0}
   };
   // clang-format on
 

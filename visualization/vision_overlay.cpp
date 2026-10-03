@@ -36,9 +36,11 @@ void draw_vision_overlay(
         solver.reproject_armor(xyza.head(3), xyza[3], target.armor_type, target.name);
       tools::draw_points(image, image_points, {0, 255, 0});
     }
-    auto aim_points = solver.reproject_armor(
-      input.aim_xyza.head(3), input.aim_xyza[3], target.armor_type, target.name);
-    tools::draw_points(image, aim_points, {0, 0, 255});
+    if (input.aim_valid) {
+      auto aim_points = solver.reproject_armor(
+        input.aim_xyza.head(3), input.aim_xyza[3], target.armor_type, target.name);
+      tools::draw_points(image, aim_points, {0, 0, 255});
+    }
   }
 
   cv::putText(

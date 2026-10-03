@@ -51,6 +51,14 @@ Tracker::Tracker(const std::string & config_path, Solver & solver)
         armor_association_config_.image_point_sigma_px =
           image_observation["point_sigma_px"].as<double>();
     }
+    if (const auto pnp_observation = association["pnp_observation"]; pnp_observation) {
+      if (pnp_observation["point_sigma_px"])
+        armor_association_config_.pnp_point_sigma_px =
+          pnp_observation["point_sigma_px"].as<double>();
+      if (pnp_observation["angle_prior_rad"])
+        armor_association_config_.pnp_angle_prior_rad =
+          pnp_observation["angle_prior_rad"].as<double>();
+    }
   }
   if (const auto roi_config = yaml["dynamic_roi"]; roi_config) {
     dynamic_roi_enabled_ = roi_config["enabled"].as<bool>();
@@ -414,7 +422,11 @@ bool Tracker::update_target(std::list<Armor> & armors, std::chrono::steady_clock
     for (auto & armor : armors) {
       if (armor.name != target_.name || armor.type != target_.armor_type) continue;
       solver_.solve(armor);
-      target_.update(armor);
+      // 该分支（armor_association.enabled=false）保持只走 PnP 观测，
+      // 但同样使用 PnP 路径自己的噪声，而不是被 uv 观测的开关连带关掉。
+      target_.update(
+        armor, -1, &solver_, 0.0, armor_association_config_.pnp_point_sigma_px,
+        armor_association_config_.pnp_angle_prior_rad);
       updated = true;
     }
     last_update_real_observation_ = updated;
@@ -516,10 +528,15 @@ bool Tracker::update_target(std::list<Armor> & armors, std::chrono::steady_clock
 
   for (const auto & match : matches) {
     solver_.solve(*match.armor);
+    // 两条观测路径的噪声互不复用：image_point_sigma_px 只门控 8 维像素观测，
+    // PnP 路径的传播 R 由 pnp_point_sigma_px 决定，关掉 uv 观测不再连带停用传播 R。
     target_.update(
-      *match.armor, match.predicted_id,
-      armor_association_config_.image_observation_enabled ? &solver_ : nullptr,
-      armor_association_config_.image_point_sigma_px);
+      *match.armor, match.predicted_id, &solver_,
+      armor_association_config_.image_observation_enabled
+        ? armor_association_config_.image_point_sigma_px
+        : 0.0,
+      armor_association_config_.pnp_point_sigma_px,
+      armor_association_config_.pnp_angle_prior_rad);
   }
   last_update_real_observation_ = !matches.empty();
   return last_update_real_observation_;

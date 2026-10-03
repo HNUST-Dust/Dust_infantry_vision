@@ -53,10 +53,13 @@ armor_association:
   angle_gate_rad: 0.8
   perimeter_ratio_gate: 0.6
   image_observation:
-    enabled: true
+    enabled: false
     point_sigma_px: 8.0
+  pnp_observation:
+    point_sigma_px: 8.0
+    angle_prior_rad: 0.15
 
-#####-----aimer参数-----#####
+#####-----planner 瞄准/弹道参数（原 aimer，2026-10-03 并入）-----#####
 yaw_offset: -9.0 # degree -2.5  向右为负
 pitch_offset: 1.0 # degree 2  向上为正
 comming_angle: 55 # degree
@@ -65,7 +68,7 @@ decision_speed: 8 # rad/s
 high_speed_delay_time: 0.01 # s  规划，下发，云台到达，发弹延迟
 low_speed_delay_time: 0.01 # s 
 
-#####-----shooter参数-----#####
+#####-----planner 开火参数（原 shooter，2026-10-03 并入）-----#####
 first_tolerance: 3 # 近距离射击容差，degree
 second_tolerance: 2 # 远距离射击容差，degree
 judge_distance: 2 #距离判断阈值
@@ -105,7 +108,7 @@ foxglove:
   sched: auto         # 发布线程降级让出 CPU 给推理 (auto/off)
   jpeg_quality: 80    # JPEG 质量 (1-100)
 
-#####-----planner-----#####
+#####-----planner TinyMPC-----#####
 fire_thresh_high_speed: 1e-3   # 高速旋转时使用较宽松的阈值
 fire_thresh_low_speed: 1e-4    # 低速/静止时使用较严格的阈值
 

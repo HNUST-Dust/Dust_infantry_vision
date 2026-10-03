@@ -13,12 +13,10 @@ Use recorded inputs before using a camera or gimbal. The goal is a tight, repeat
 2. Verify `assets/demo/demo.avi` and `assets/demo/demo.txt`, select a small frame range, and run from the repository root.
 3. Choose the narrowest executable:
    - `detector_video_test` for YOLO versus traditional detection and corner geometry;
-   - `auto_aim_test` for YOLO, Solver, Tracker, and Aimer together — the widest offline replay;
-   - there is **no** standalone offline planner executable in this checkout. `Planner`
-     (`tasks/auto_aim/planner/planner.cpp`) is reachable only through `src/auto_aim_runtime.cpp`,
-     the shared runtime behind the single entry `src/infantry.cpp`, and that runtime requires a
-     live camera — `runtime.simulate_gimbal: true` in the config only swaps the gimbal for a
-     simulated pose/serial path, not the camera. Observe trajectory and fire values instead through
+   - `auto_aim_test` for YOLO, Solver, Tracker, and Planner together — the widest offline replay;
+   - the full runtime (`src/auto_aim_runtime.cpp`, behind the single entry `src/infantry.cpp`) still
+     needs a live camera — `runtime.simulate_gimbal: true` in the config only swaps the gimbal for a
+     simulated pose/serial path, not the camera. Observe live trajectory and fire values through
      the `Plotter` UDP stream or the Foxglove `/vision/telemetry` keys `plan_yaw`, `plan_yaw_vel`,
      `plan_yaw_acc`, `plan_pitch`, `plan_pitch_vel`, `plan_pitch_acc`, `fire`, and `mode`
      (0 = IDLE, 1 = AUTO_AIM, 2 = FIRE); the Foxglove stream itself needs `runtime.foxglove: true`
@@ -32,6 +30,6 @@ Use recorded inputs before using a camera or gimbal. The goal is a tight, repeat
 - `auto_aim_test` and `detector_video_test` use OpenCV windows and require a display; report headless limitations explicitly.
 - `Plotter` sends JSON to UDP `127.0.0.1:9870`; capture or disable that observer only when it is part of the repro.
 - Do not infer planner correctness from a process that merely stays alive. Check target yaw/pitch, trajectory values, and fire flag.
-- Remove temporary debug logging and rerun the original frame range after the fix. Use `$diagnosing-bugs` for difficult reproductions; add the retained regression test as a standalone executable under `tests/` following the existing pattern, and register it in `tests/CMakeLists.txt` (that file already carries the three CTest cases).
+- Remove temporary debug logging and rerun the original frame range after the fix. Use `$diagnosing-bugs` for difficult reproductions; add the retained regression test as a standalone executable under `tests/` following the existing pattern, and register it in `tests/CMakeLists.txt` (that file already carries the CTest cases).
 
 Read [replay-matrix.md](references/replay-matrix.md) for command syntax and pipeline facts.

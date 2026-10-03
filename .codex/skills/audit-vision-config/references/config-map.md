@@ -17,7 +17,7 @@
 | Traditional detector | threshold, light-bar/armor geometry limits, ROI fields when enabled |
 | Solver | `camera_matrix`, `distort_coeffs`, `R_camera2gimbal`, `t_camera2gimbal`, `R_gimbal2imubody` |
 | Tracker | detection and temporary-lost limits, enemy color |
-| Planner/Aimer | offsets, delay/speed thresholds, TinyMPC weights and acceleration limits |
+| Planner | offsets, armour-selection angles (`comming_angle`/`leaving_angle`), delay/speed thresholds, fire tolerances (`first_tolerance`/`second_tolerance`/`judge_distance`/`auto_fire`), TinyMPC weights and acceleration limits. Aimer/Shooter were merged into Planner on 2026-10-03 |
 
 ## Structural checks
 

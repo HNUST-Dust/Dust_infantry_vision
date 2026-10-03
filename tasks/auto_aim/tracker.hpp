@@ -73,6 +73,9 @@ private:
     double perimeter_ratio_gate = 0.6;
     bool image_observation_enabled = true;
     double image_point_sigma_px = 8.0;
+    // PnP 观测路径的测量噪声：像素噪声 + 装甲板法向角先验（弧度）
+    double pnp_point_sigma_px = 8.0;
+    double pnp_angle_prior_rad = 0.15;
   };
 
   Solver & solver_;

@@ -14,13 +14,13 @@
 ./build-ninja/auto_aim_test configs/standard3.yaml assets/demo/demo --start-index=0 --end-index=100
 ```
 
-**There is no offline planner binary.** The only `Planner` caller is `src/auto_aim_runtime.cpp`
-(the shared runtime behind the single entry `src/infantry.cpp`), which needs a live camera —
-verified: the runtime constructs `io::Camera`, and `runtime.simulate_gimbal: true` in the config only
-swaps the gimbal for a simulated pose/serial path. Read trajectory and fire values from the `Plotter` UDP stream
-(`127.0.0.1:9870`) or the Foxglove `/vision/telemetry` keys listed in `SKILL.md`. `Aimer`/`Shooter`,
-which `auto_aim_test` and `minimum_vision_system` replay, are **not** the production planning path —
-`readme.md` says so explicitly.
+The live `Planner` caller is `src/auto_aim_runtime.cpp` (the shared runtime behind the single entry
+`src/infantry.cpp`), which needs a live camera: the runtime constructs `io::Camera`, and
+`runtime.simulate_gimbal: true` in the config only swaps the gimbal for a simulated pose/serial
+path, not the camera. For live runs read trajectory and fire values from the `Plotter` UDP stream
+(`127.0.0.1:9870`) or the Foxglove `/vision/telemetry` keys listed in `SKILL.md`. `Aimer` and
+`Shooter` no longer exist — they were merged into `Planner` on 2026-10-03, so `auto_aim_test` and
+`minimum_vision_system` now replay the production planning path itself.
 
 ### Command-line form (verified 2026-09-24)
 
@@ -41,7 +41,7 @@ misbehaves — it does not error, it corrupts the positional list:
 
 So: put both paths positionally, write every value-taking flag as `--key=value`, and write boolean
 switches alone. The corrected form runs the full chain headlessly on the demo clip (model loads,
-per-frame `yolo/tracker/aimer` timing is logged, exit 0); it only needs a display for its
+per-frame `yolo/tracker/planner` timing is logged, exit 0); it only needs a display for its
 `cv::imshow` overlay, matching the "requires a display" note in `readme.md`.
 
 ## Pipeline ownership
@@ -50,8 +50,12 @@ per-frame `yolo/tracker/aimer` timing is logged, exit 0); it only needs a displa
 - `tasks/auto_aim/detector.cpp`: traditional light-bar/armor geometry.
 - `tasks/auto_aim/solver.cpp`: camera-to-gimbal/world pose and reprojection.
 - `tasks/auto_aim/tracker.cpp`: lost/detecting/tracking/temp_lost/switching state machine and EKF updates.
-- `tasks/auto_aim/aimer.cpp`: aim point and command/fire decision inputs. Replayed offline by
-  `auto_aim_test` and `minimum_vision_system`; **not** used by the production entry.
-- `tasks/auto_aim/planner/planner.cpp`: TinyMPC trajectory and fire thresholds. Its only caller is
-  `src/auto_aim_runtime.cpp`, reached from the single application entry `src/infantry.cpp` (a thin
-  argument parser that fills `auto_aim::runtime::RuntimeOptions` and calls `run()`).
+- `tasks/auto_aim/planner/planner.cpp`: the production planning path. Since 2026-10-03 it also
+  owns the armour selection and fire decision that used to live in the deleted `aimer.cpp` /
+  `shooter.cpp`: `choose_aim_point()` (jumped/±60° lock/small-gyro coming-leaving angles), the
+  fly-time iteration in `resolve_aim_time()`, and a fire flag that ANDs the reference-tracking
+  threshold with "command not jumping + gimbal reached the last command". `Planner::plan_at()` takes
+  an explicit "now" for offline replay; the wall-clock entry is `plan(optional<Target>, ...)`. Live
+  caller: `src/auto_aim_runtime.cpp`, reached from the single application entry `src/infantry.cpp`
+  (a thin argument parser that fills `auto_aim::runtime::RuntimeOptions` and calls `run()`).
+  Offline callers: `auto_aim_test` and `minimum_vision_system`.

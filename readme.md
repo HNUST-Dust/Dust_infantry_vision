@@ -54,7 +54,7 @@ cmake --build build-ninja --target auto_aim_test -j$(nproc)
 
 ### 3. 无硬件快速验证
 
-先跑不依赖任何硬件的自动回归（CTest 只注册了两个用例）：
+先跑不依赖任何硬件的自动回归（CTest 始终注册 `quaternion_buffer`，另外两个 Foxglove 用例取决于构建选项）：
 
 ```bash
 ctest --test-dir build-ninja --output-on-failure
@@ -69,7 +69,7 @@ ctest --test-dir build-ninja --output-on-failure
 ./build-ninja/auto_aim_test -h
 ```
 
-用仓库内置视频验证 YOLO、分类器、Tracker 和 Aimer 主链路。此命令会打开 OpenCV 显示窗口，需要桌面环境或远程桌面：
+用仓库内置视频验证 YOLO、分类器、Tracker 和 Planner 主链路。此命令会打开 OpenCV 显示窗口，需要桌面环境或远程桌面：
 
 ```bash
 ./build-ninja/auto_aim_test configs/standard3.yaml assets/demo/demo
@@ -113,7 +113,7 @@ source /opt/intel/openvino_2024.6.0/setupvars.sh
 
 ## 测试与调试程序
 
-`tests/` 中的程序均作为独立可执行文件构建，主要用于算法回放、性能测量和硬件联调。除 CTest 注册的两个用例外，其余不会被 `ctest` 自动执行。
+`tests/` 中的程序均作为独立可执行文件构建，主要用于算法回放、性能测量和硬件联调。除 CTest 注册的用例外，其余不会被 `ctest` 自动执行。
 
 多数程序的位置参数默认值非空（默认 `configs/standard3.yaml`，`handeye_test` 默认 `configs/calibration.yaml`），因此**不带参数直接运行会按默认配置启动，而不是打印帮助**；要查看帮助请显式传 `-h`。
 
@@ -354,12 +354,12 @@ src/                      主程序入口
 tasks/
   auto_aim/               自瞄核心算法
     armor / detector / classifier / solver / target / tracker
-    aimer / shooter / voter
+    voter
     dynamic_roi           动态 ROI：网络 ROI 与灯条 ROI
     yolo + net_detector   OpenVINO 推理与请求池
     yolos/yolov5          YOLOv5 输出解码适配器
     multithread/          有序异步检测（MultiThreadDetector）
-    planner/              TinyMPC 轨迹规划，tinympc/ 为内置求解器
+    planner/              TinyMPC 轨迹规划 + 装甲板选择与开火判定，tinympc/ 为内置求解器
   omniperception/         全向感知模块（保留源码，未接入默认构建）
 io/                       硬件和通信抽象
   camera.cpp              工业相机统一接口与工厂
@@ -368,7 +368,7 @@ io/                       硬件和通信抽象
   usbcamera/              USB/V4L2 相机驱动（未接入 io::Camera）
   gimbal/                 云台串口收发
   dm_imu/                 DM 系列 IMU
-  command.hpp             瞄准命令 POD，供 Aimer/Decider 与部分测试使用
+  command.hpp             瞄准命令 POD，供 Decider 与部分测试使用
   serial/                 跨平台串口库
   socketcan.hpp           SocketCAN 工具（当前无调用方）
 tools/                    通用工具
@@ -425,8 +425,8 @@ tests/                    调试和测试程序
 - `Classifier`：使用 `assets/tiny_resnet.onnx` 识别装甲板数字（OpenCV DNN，非 OpenVINO）。
 - `Solver`：唯一负责像素、云台、世界三者坐标转换的组件。持有 `camera_matrix`、`distort_coeffs`、`R_gimbal2imubody` 以及 `R_camera2gimbal` / `t_camera2gimbal`，同时提供 `solve(Armor&)`（像素 → 世界）与 `reproject_armor()` / `world2pixel()`（世界 → 像素）。装甲板俯仰角按固定值建模（普通装甲 +15°，前哨站 −15°），yaw 通过重投影搜索细化。
 - `Tracker`：维护 lost/detecting/tracking/temp_lost/switching 状态机，使用 11 维 EKF（含 2/3/4 装甲板模型与前哨站专用处理）预测旋转目标；`focus_rois()` 根据预测四角生成网络 ROI 与灯条 ROI。
-- `Aimer` / `Shooter`：用于 `auto_aim_test` 算法回放和 `minimum_vision_system` 的瞄准、射击判断；生产入口使用 `Planner`。`Aimer` 输出 `io::Command`。
-- `Planner`：生产链路使用的规划器。由目标预测构造 60 步 yaw/pitch 参考轨迹，用两个独立的 TinyMPC 问题分别求解 yaw 与 pitch，输出 `Plan{control, fire, target_yaw, yaw, yaw_vel, yaw_acc, target_pitch, pitch, pitch_vel, pitch_acc}`。控制量取预测时域中点（0.3 s 处），射击判定比较参考轨迹与求解结果在该点附近的偏差。
+- `Planner`：唯一的生产规划器。2026-10-03 起把原 `Aimer` / `Shooter` 的击打策略并了进来，两者的源文件已删除。选哪块装甲板由 `choose_aim_point()` 决定：装甲板未跳变时只认第 0 块；低速时用 ±60° 可射击扇形加 `lock_id_` 防抖（避免在两块 45° 板之间来回切）；转速超过 2 rad/s 的小陀螺以及前哨站（前哨站固定 70°/30°），按 `comming_angle` / `leaving_angle` 选「正在转过来的那块」。飞行时间沿用原来最多 10 次的迭代收敛。参考轨迹是 60 步 yaw/pitch，由两个独立 TinyMPC 问题分别求解 yaw 与 pitch，输出 `Plan{control, fire, target_yaw, yaw, yaw_vel, yaw_acc, target_pitch, pitch, pitch_vel, pitch_acc}`；控制量取预测时域中点（0.3 s 处）。开火 = 「参考轨迹在加速度约束下可达」（`fire_thresh_*`）**AND** 「上一条指令未跳变 + 云台已到达上一条指令」（`first/second_tolerance`、`judge_distance`）。
+- `Planner::plan_at(target, now, ...)`：显式传入基准时刻的入口，供 `auto_aim_test` 这类离线回放使用，避免预测依赖墙钟（对应原 `Aimer` 的 `to_now=false`）；`plan(optional<Target>, ...)` 是取 `steady_clock::now()` 的生产入口。`gimbal_yaw` 有值（运行时传 `GimbalState::yaw`）才启用「云台已到位」判定，不传就只保留 `fire_thresh` 判据。
 - `Gimbal`：通过串口读取四元数、云台状态和弹速，发送视觉控制帧。
 - `Camera`：统一工业相机取流接口，`stop()` 提供安全的停止与 SDK 清理入口（HikRobot 启动失败时清理流程无操作兜底）。取流结束后队列关闭，`read()` 返回空图。
 - `Plotter`：将 JSON 调试数据发送到 UDP `127.0.0.1:9870`，无需接收端即可运行。
@@ -476,6 +476,8 @@ tests/                    调试和测试程序
 | 关联 | `armor_association.perimeter_ratio_gate` | 周长比门限，默认 `0.6` |
 | 关联 | `armor_association.image_observation.enabled` | 是否使用 8 维像素观测更新 EKF |
 | 关联 | `armor_association.image_observation.point_sigma_px` | 像素观测噪声（像素），默认 `8.0` |
+| 关联 | `armor_association.pnp_observation.point_sigma_px` | PnP 观测路径的像素噪声（像素），默认 `8.0` |
+| 关联 | `armor_association.pnp_observation.angle_prior_rad` | 装甲板法向角先验（弧度），默认 `0.15` |
 | 相机 | `camera_name` | `hikrobot` 或 `mindvision` |
 | 相机 | `exposure_ms` / `gain` / `frame_rate` | 相机曝光、增益、帧率（HikRobot 用；`frame_rate` 缺省 `165`） |
 | 相机 | `gamma` | MindVision 专用 |
@@ -489,7 +491,7 @@ tests/                    调试和测试程序
 | 瞄准 | `comming_angle` / `leaving_angle` | 旋转目标的进入/离开角门限（度，拼写与源码一致） |
 | 瞄准 | `decision_speed` | 高/低速判定阈值（rad/s） |
 | 瞄准 | `high_speed_delay_time` / `low_speed_delay_time` | 高/低速下的额外预测时延（秒） |
-| 射击 | `auto_fire` | 是否由视觉控制射击（`Shooter` 使用） |
+| 射击 | `auto_fire` | 是否由视觉控制射击（`Planner` 使用） |
 | 射击 | `first_tolerance` / `second_tolerance` | 近距离/远距离射击角度容差（度） |
 | 射击 | `judge_distance` | 近/远距离判定阈值（米） |
 | 规划 | `fire_thresh_high_speed` / `fire_thresh_low_speed` | 高/低速下的射击阈值 |
@@ -507,7 +509,7 @@ tests/                    调试和测试程序
 | Foxglove | `foxglove.sched` | `auto`（默认，发布线程降级让出 CPU）或 `off` |
 | Foxglove | `foxglove.jpeg_quality` | JPEG 质量，默认 `80`，范围 `1-100` |
 
-`yaw_offset`、`pitch_offset`、`decision_speed`、`high_speed_delay_time`、`low_speed_delay_time` 同时被 `Aimer` 和 `Planner` 读取。
+`yaw_offset`、`pitch_offset`、`comming_angle`、`leaving_angle`、`decision_speed`、`high_speed_delay_time`、`low_speed_delay_time`、`first_tolerance`、`second_tolerance`、`judge_distance`、`auto_fire` 全部由 `Planner` 读取（原 `Aimer` / `Shooter` 的键名与取值不变，只是 2026-10-03 起并入 `Planner`）。
 
 ### `configs/calibration.yaml`
 

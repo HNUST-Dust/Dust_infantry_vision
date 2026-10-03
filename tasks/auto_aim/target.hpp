@@ -33,9 +33,12 @@ public:
   void predict(std::chrono::steady_clock::time_point t);
   void predict(double dt);
   // matched_id comes from image-space association. A negative value keeps legacy yaw matching.
+  // 两条观测路径各有独立开关：image_point_sigma_px > 0 才走 8 维像素观测；
+  // pnp_point_sigma_px > 0 才为 PnP 观测构造传播 R（<= 0 表示回退内置对角噪声）。
   void update(
     const Armor & armor, int matched_id = -1, const Solver * solver = nullptr,
-    double image_point_sigma_px = 0.0);
+    double image_point_sigma_px = 0.0, double pnp_point_sigma_px = 0.0,
+    double pnp_angle_prior_rad = 0.0);
 
   Eigen::VectorXd ekf_x() const;
   const tools::ExtendedKalmanFilter & ekf() const;
@@ -71,7 +74,11 @@ private:
   tools::ExtendedKalmanFilter ekf_;
   std::chrono::steady_clock::time_point t_;
 
-  void update_ypda(const Armor & armor, int id);  // yaw pitch distance angle
+  // PnP 观测：[yaw, pitch, distance, armor_yaw]。solver 可用时用像素噪声一阶传播 + 位姿先验
+  // 构造 R；否则回退到内置对角噪声。
+  void update_ypda(
+    const Armor & armor, int id, const Solver * solver = nullptr, double point_sigma_px = 0.0,
+    double angle_prior_rad = 0.0);
   bool update_image_points(
     const Armor & armor, int id, const Solver & solver, double point_sigma_px);
   void apply_state_limits(int id, const Armor * armor = nullptr);
