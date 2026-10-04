@@ -243,14 +243,28 @@ int run(const RuntimeOptions & options)
       bool plan_ok = false;
       try {
         const auto gs = gimbal.state();
+        const auto feedback_at = gimbal.feedback_timestamp();
+        const bool feedback_fresh =
+          feedback_at != epoch && started - feedback_at <= runtime_config.feedback_timeout;
         // Planner::plan() owns the single prediction-to-control-time step. The target
         // copied from the snapshot is never written back to Tracker.
-        plan = planner.plan(update.target, gs.bullet_speed, solver.R_gimbal2world(), gs.yaw);
+        plan = planner.plan(
+          update.target, gs.bullet_speed, solver.R_gimbal2world(),
+          feedback_fresh ? std::optional<double>(gs.yaw) : std::nullopt);
         plan_ok = true;
       } catch (const std::exception & e) {
         tools::logger()->warn("[Planner] plan failed: {}", e.what());
       }
       const auto generated_at = std::chrono::steady_clock::now();
+      if (plan_ok && plan.control) {
+        const auto generated_state = gimbal.state();
+        const auto generated_feedback_at = gimbal.feedback_timestamp();
+        const bool generated_feedback_fresh =
+          generated_feedback_at != epoch &&
+          generated_at - generated_feedback_at <= runtime_config.feedback_timeout;
+        planner.record_command_gimbal_yaw(
+          generated_feedback_fresh ? std::optional<double>(generated_state.yaw) : std::nullopt);
+      }
       const double planning_ms =
         std::chrono::duration<double, std::milli>(generated_at - started).count();
       planning_stats.add(planning_ms);

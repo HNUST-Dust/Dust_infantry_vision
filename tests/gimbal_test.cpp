@@ -55,7 +55,7 @@ int main(int argc, char * argv[])
       gimbal.send(false, false, 0, 0, 0, 0, 0, 0);
       continue;
     }
-    auto ypr = tools::eulers(orientation->q, 2, 1, 0);
+    auto ypr = tools::eulers(orientation->q, 2, 0, 1);
 
     auto fired = state.bullet_count > last_bullet_count;
     last_bullet_count = state.bullet_count;

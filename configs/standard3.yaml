@@ -19,8 +19,8 @@ yolov5_model_path: assets/yolov5.xml
 # Set to GPU only in headless mode or with a dedicated GPU.
 device: GPU
 # Number of reusable OpenVINO requests kept in flight by YOLO and MultiThreadDetector.
-infer_request_buffer_num: 2
-performance_mode: THROUGHPUT
+infer_request_buffer_num: 1
+performance_mode: LATENCY
 min_confidence: 0.8
 use_traditional: true
 
@@ -53,15 +53,15 @@ armor_association:
   angle_gate_rad: 0.8
   perimeter_ratio_gate: 0.6
   image_observation:
-    enabled: false
+    enabled: true
     point_sigma_px: 8.0
   pnp_observation:
     point_sigma_px: 8.0
     angle_prior_rad: 0.15
 
 #####-----planner 瞄准/弹道参数（原 aimer，2026-10-03 并入）-----#####
-yaw_offset: -9.0 # degree -2.5  向右为负
-pitch_offset: 1.0 # degree 2  向上为正
+yaw_offset: 0.0 # degree -2.5  向右为负
+pitch_offset: 0.0 # degree 2  向上为正
 comming_angle: 55 # degree
 leaving_angle: 20 # degree
 decision_speed: 8 # rad/s
@@ -89,9 +89,11 @@ R_gimbal2imubody: [1, 0, 0, 0, 1, 0, 0, 0, 1]
 camera_matrix: [1808.8304696430803, 0, 713.70459283498224, 0, 1808.0411873540195, 566.09347726083934, 0, 0, 1]
 distort_coeffs: [-0.073241403353599299, 0.14495759982904788, 0.00028937879061362732, -0.00026770913811837289, 0]
 
-# 相机同理想情况的偏角: yaw75.63 pitch5.30 roll-1.96 degree
-R_camera2gimbal: [-0.96889770499671424, -0.010257585282489877, 0.24724890130448027, -0.24510201422675804, -0.097867928316508035, -0.96454490368723678, 0.034091639357565068, -0.99514654727392149, 0.092309856324806816]
-t_camera2gimbal: [0.11496631300454371, -0.12470023691424111, 0.025376551288643197]
+# 相机同理想情况的偏角: yaw90.10 pitch0.78 roll1.56 degree
+# 标定板到世界坐标系原点的水平距离: 1.26 m
+# 标定板同竖直摆放时的偏角: yaw-86.09 pitch-0.09 roll1.85 degree
+R_camera2gimbal: [-0.99962688299962077, 0.027268151560170234, -0.0015945830030401275, 0.0012240622052079272, -0.0135993399177419, -0.99990677546735285, -0.027287294775770264, -0.99953564511941884, 0.013560887859094005]
+t_camera2gimbal: [0.076416730363673566, -0.1704168318728064, 0.015959285960569919]
 
 #####-----gimbal参数-----#####
 com_port: "/dev/gimbal"

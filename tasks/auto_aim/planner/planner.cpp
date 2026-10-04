@@ -144,19 +144,33 @@ std::optional<Planner::AimSolution> Planner::solve_xyza(
   const Eigen::Vector4d & xyza, double bullet_speed, const Eigen::Matrix3d & R_gimbal2world) const
 {
   const Eigen::Vector3d xyz = xyza.head<3>();
-  // 保留 Planner 原有约定：水平距离取世界系，高度取云台系
+  // 重力沿世界系 z 轴，弹道的水平距离和高度必须使用同一世界参考系。
   const double dist = xyz.head<2>().norm();
-  const Eigen::Vector3d xyz_in_gimbal = R_gimbal2world.transpose() * xyz;
-  const double azim = std::atan2(xyz_in_gimbal.y(), xyz_in_gimbal.x());
-
-  const tools::Trajectory bullet_traj(bullet_speed, dist, xyz_in_gimbal.z());
+  const tools::Trajectory bullet_traj(bullet_speed, dist, xyz.z());
   if (bullet_traj.unsolvable) return std::nullopt;
+
+  // 先在世界系求出包含重力补偿的发射方向，再变换到当前云台系。
+  // 云台的关节轴为 Z(yaw)-X(pitch)-Y(roll)，其默认瞄准方向是 -Y：
+  //   dir_g = Rz(yaw) Rx(pitch) (-Y)
+  // 因此 pitch 必须从变换后的方向分解，不能直接把世界系弹道仰角当作 X 轴角度。
+  const Eigen::Vector2d horizontal = xyz.head<2>();
+  const double cos_pitch = std::cos(bullet_traj.pitch);
+  const Eigen::Vector3d ballistic_dir_world{
+    horizontal.x() / dist * cos_pitch,
+    horizontal.y() / dist * cos_pitch,
+    std::sin(bullet_traj.pitch)};
+  const Eigen::Vector3d ballistic_dir_gimbal = R_gimbal2world.transpose() * ballistic_dir_world;
+
+  // 云台 -Y 为零 yaw，绕 X 轴正方向抬头为负（与控制帧约定一致）。
+  const double azim = std::atan2(ballistic_dir_gimbal.x(), -ballistic_dir_gimbal.y());
+  const double pitch = std::atan2(
+    -ballistic_dir_gimbal.z(),
+    std::hypot(ballistic_dir_gimbal.x(), ballistic_dir_gimbal.y()));
 
   AimSolution solution;
   solution.fly_time = bullet_traj.fly_time;
   solution.yaw = tools::limit_rad(azim + yaw_offset_);
-  // 世界坐标系下 pitch 向上为负
-  solution.pitch = -bullet_traj.pitch - pitch_offset_;
+  solution.pitch = tools::limit_rad(pitch - pitch_offset_);
   return solution;
 }
 
@@ -168,6 +182,8 @@ bool Planner::resolve_aim_time(
   int last_id = -1;
   bool selected = false;
   double used = 0.0;
+  double evaluated_time = 0.0;
+  bool converged = false;
 
   {
     const AimPoint p = choose_aim_point(base, lock);
@@ -179,14 +195,16 @@ bool Planner::resolve_aim_time(
     if (!solution) return false;
 
     used = solution->fly_time;
+    evaluated_time = used;
     last_id = id;
     selected = p.valid;
   }
 
   // 迭代求解飞行时间：每次都从 base 副本重新预测，误差不累积，只有标量 fly_time 在收敛
   for (int iter = 0; iter < 10; iter++) {
+    const double current_time = used;
     Target predicted = base;
-    predicted.predict(used);  // 绝对时刻 T1 + used
+    predicted.predict(current_time);  // 绝对时刻 T1 + current_time
 
     const AimPoint p = choose_aim_point(predicted, lock);
     const auto armor_xyza_list = predicted.armor_xyza_list();
@@ -199,66 +217,108 @@ bool Planner::resolve_aim_time(
 
     last_id = id;
     selected = p.valid;
-    if (std::abs(solution->fly_time - used) < 0.001) break;
+    evaluated_time = current_time;
+    if (std::abs(solution->fly_time - current_time) < 0.001) {
+      converged = true;
+      used = current_time;
+      break;
+    }
     used = solution->fly_time;
   }
 
   if (last_id < 0) return false;
 
-  lock_id_ = lock;
+  // On exhaustion or a failed iteration, keep the last internally consistent candidate for
+  // tracking, but do not publish its lock as a settled decision or allow it to fire.
+  if (!converged) used = evaluated_time;
+  if (converged) lock_id_ = lock;
   decision.valid = selected;
+  decision.converged = converged;
   decision.id = last_id;
+  decision.lock = lock;
   decision.fly_time = used;
   return true;
 }
 
 bool Planner::get_trajectory(
-  Target & target, double yaw0, double bullet_speed, const Eigen::Matrix3d & R_gimbal2world,
-  int lookahead_lock, int decision_id, Trajectory & out)
+  const Target & hit_target, double yaw0, double bullet_speed,
+  const Eigen::Matrix3d & R_gimbal2world, int decision_lock, int decision_id, Trajectory & out)
 {
-  // lookahead_lock 是按值传入的副本：60 列内部自己演进，不回写 lock_id_
-  int lock = lookahead_lock;
-  int last_id = decision_id;
+  // 列索引 i 对应时刻 T_hit + (i - HALF_HORIZON) * DT，第 HALF_HORIZON 列就是命中列。
+  //
+  // 旧实现把目标从命中时刻倒退 310ms，再让局部锁从过去重新演进：单候选区会把锁清成 -1，
+  // 到了双候选区就可能选到另一块板，使第 HALF_HORIZON 列偏离 resolve_aim_time 的决策
+  // （3m / r=0.25m / w=±1.5rad/s 下实测约 7°）。现在以命中列的决策板为锚点，
+  // 前向（未来）与后向（过去）各持一份锁副本演进，中心板 ID 与参考方向由构造保证一致。
+  std::vector<Eigen::Matrix<double, 2, 1>> columns(HORIZON + 2);
+  auto column = [&](int i) -> Eigen::Matrix<double, 2, 1> & { return columns[i + 1]; };
   bool any_solved = false;
-  Eigen::Matrix<double, 2, 1> last_yaw_pitch = Eigen::Matrix<double, 2, 1>::Zero();
 
-  // 逐列重新过一遍击打策略。策略给不出结果时沿用上一列的装甲板，弹道不可解时沿用上一列的
-  // 角度，两者都不让参考轨迹断掉。
-  auto solve_column = [&]() -> Eigen::Matrix<double, 2, 1> {
+  // 命中列：直接用决策板与它的弹道解，不重新过一遍策略
+  {
+    const auto armor_xyza_list = hit_target.armor_xyza_list();
+    if (decision_id < 0 || decision_id >= static_cast<int>(armor_xyza_list.size())) return false;
+    const auto solution = solve_xyza(armor_xyza_list[decision_id], bullet_speed, R_gimbal2world);
+    if (!solution) return false;
+    column(HALF_HORIZON) << solution->yaw, solution->pitch;
+    any_solved = true;
+  }
+
+  // 单列求解：过一遍击打策略再解弹道。lock / last_id / fallback 由调用方持有，
+  // 前向与后向各持一份，互不干扰。策略给不出结果时沿用上一列的装甲板，无装甲板或弹道
+  // 不可解时沿用上一列的角度，都不让参考轨迹断掉。
+  auto solve_column = [&](
+                        const Target & target, int & lock, int & last_id,
+                        Eigen::Matrix<double, 2, 1> & fallback) -> Eigen::Matrix<double, 2, 1> {
     const auto armor_xyza_list = target.armor_xyza_list();
-    if (armor_xyza_list.empty()) return last_yaw_pitch;
+    if (armor_xyza_list.empty()) return fallback;
 
     const AimPoint p = choose_aim_point(target, lock);
     int id = p.valid ? p.id : last_id;
     if (id < 0 || id >= static_cast<int>(armor_xyza_list.size())) id = nearest_armor_id(target);
-    if (id < 0 || id >= static_cast<int>(armor_xyza_list.size())) return last_yaw_pitch;
+    if (id < 0 || id >= static_cast<int>(armor_xyza_list.size())) return fallback;
 
     const auto solution = solve_xyza(armor_xyza_list[id], bullet_speed, R_gimbal2world);
-    if (!solution) return last_yaw_pitch;
+    if (!solution) return fallback;
 
     last_id = id;
     any_solved = true;
-    last_yaw_pitch << solution->yaw, solution->pitch;
-    return last_yaw_pitch;
+    fallback << solution->yaw, solution->pitch;
+    return fallback;
   };
 
-  target.predict(-DT * (HALF_HORIZON + 1));
-  auto yaw_pitch_last = solve_column();
+  // 命中列之后：从命中列连续前向预测
+  {
+    Target target = hit_target;
+    int lock = decision_lock;  // 锁副本，只在本次构造内演进，不回写 lock_id_
+    int last_id = decision_id;
+    auto fallback = column(HALF_HORIZON);
+    for (int i = HALF_HORIZON + 1; i <= HORIZON; i++) {
+      target.predict(DT);
+      column(i) = solve_column(target, lock, last_id, fallback);
+    }
+  }
 
-  target.predict(DT);  // [0] = -HALF_HORIZON * DT -> [HALF_HORIZON] = 0
-  auto yaw_pitch = solve_column();
+  // 命中列之前：每一列都从命中列单独倒退，不做连续负向预测 —— dt < 0 时过程噪声项
+  // Q 的符号会翻转，连续倒退会把协方差越推越歪；旧实现也只做一次 -310ms。
+  {
+    int lock = decision_lock;  // 与上一步独立的一份锁副本
+    int last_id = decision_id;
+    auto fallback = column(HALF_HORIZON);
+    for (int i = HALF_HORIZON - 1; i >= -1; i--) {
+      Target target = hit_target;
+      target.predict(-DT * (HALF_HORIZON - i));
+      column(i) = solve_column(target, lock, last_id, fallback);
+    }
+  }
 
+  // 中心差分求角速度，两端（i=0 与 i=HORIZON-1）用列 -1 与列 HORIZON 的单侧差分
   for (int i = 0; i < HORIZON; i++) {
-    target.predict(DT);
-    const auto yaw_pitch_next = solve_column();
-
-    const auto yaw_vel = tools::limit_rad(yaw_pitch_next(0) - yaw_pitch_last(0)) / (2 * DT);
-    const auto pitch_vel = (yaw_pitch_next(1) - yaw_pitch_last(1)) / (2 * DT);
-
-    out.col(i) << tools::limit_rad(yaw_pitch(0) - yaw0), yaw_vel, yaw_pitch(1), pitch_vel;
-
-    yaw_pitch_last = yaw_pitch;
-    yaw_pitch = yaw_pitch_next;
+    const auto & prev = column(i - 1);
+    const auto & next = column(i + 1);
+    const double yaw_vel = tools::limit_rad(next(0) - prev(0)) / (2 * DT);
+    const double pitch_vel = (next(1) - prev(1)) / (2 * DT);
+    out.col(i) << tools::limit_rad(column(i)(0) - yaw0), yaw_vel, column(i)(1), pitch_vel;
   }
 
   return any_solved;
@@ -296,10 +356,11 @@ Plan Planner::plan(
   const auto aim_solution = solve_xyza(aim_xyza, bullet_speed, R_gimbal2world);
   if (!aim_solution) return Plan{};
 
-  // 2. 参考轨迹：每一列都重新过一遍击打策略
+  // 2. 参考轨迹：以命中列的决策板为锚点向两侧构造
   const double yaw0 = aim_solution->yaw;
   Trajectory traj;
-  if (!get_trajectory(aim_target, yaw0, bullet_speed, R_gimbal2world, lock_id_, decision.id, traj))
+  if (!get_trajectory(
+        aim_target, yaw0, bullet_speed, R_gimbal2world, decision.lock, decision.id, traj))
     return Plan{};
 
   // 3. Solve yaw
@@ -329,30 +390,40 @@ Plan Planner::plan(
   plan.pitch_vel = pitch_solver_->work->x(1, HALF_HORIZON);
   plan.pitch_acc = pitch_solver_->work->u(0, HALF_HORIZON);
 
-  // 5. 开火 = Planner 原有的"参考可达"判据 AND 原 Shooter 的"指令未跳变 + 云台已到位"
+  // 5. 开火 = "参考可达" AND ("总开关 + 指令未跳变 + 决策有效 + 云台已到位")
   const auto shoot_offset = 2;
   const bool track_ok = std::hypot(
                           traj(0, HALF_HORIZON + shoot_offset) -
                             yaw_solver_->work->x(0, HALF_HORIZON + shoot_offset),
                           traj(2, HALF_HORIZON + shoot_offset) -
                             pitch_solver_->work->x(0, HALF_HORIZON + shoot_offset)) < fire_thresh;
-  plan.fire = track_ok;
 
-  if (gimbal_yaw) {
-    // 原 Shooter：指令未突变 + 云台已到达上一条指令 + 瞄准点有效
-    bool settled = auto_fire_ && have_last_command_ && decision.valid;
-    if (settled) {
-      const double tolerance =
-        std::hypot(ekf_x[0], ekf_x[2]) > judge_distance_ ? second_tolerance_ : first_tolerance_;
-      settled = std::abs(last_target_yaw_ - plan.target_yaw) < tolerance * 2 &&
-                std::abs(*gimbal_yaw - last_plan_yaw_) < tolerance;
-    }
-    plan.fire = plan.fire && settled;
+  const double tolerance =
+    std::hypot(ekf_x[0], ekf_x[2]) > judge_distance_ ? second_tolerance_ : first_tolerance_;
+
+  // 这几项与云台反馈无关，缺反馈也必须照样生效：总开关、已有上一条指令、这一拍真的选中了
+  // 装甲板、指令没有跳变。角度差用 limit_rad 做环绕，避免 179°/-179° 被判成 358°。
+  bool shoot_ok =
+    auto_fire_ && have_last_command_ && decision.valid && decision.converged &&
+    std::abs(tools::limit_rad(last_target_yaw_ - plan.target_yaw)) < tolerance * 2;
+
+  // "云台已到位"是唯一依赖反馈的一项，没有反馈时跳过（回放/单测），不影响上面几项。
+  // 下位机按「目标 = 当前云台 yaw + 下发 yaw」解释控制帧，下发值是相对云台系的增量，
+  // 所以要比较的是"云台从上一条指令生成时刻到现在实际转过的角度"与"上一条指令增量"，
+  // 而不是把反馈的绝对 yaw 与相对命令直接相减（那样同向也会被判成相差很大）。
+  if (shoot_ok && gimbal_yaw && last_plan_gimbal_yaw_) {
+    const double moved = tools::limit_rad(*gimbal_yaw - *last_plan_gimbal_yaw_);
+    shoot_ok = std::abs(tools::limit_rad(moved - last_plan_yaw_)) < tolerance;
   }
+
+  plan.fire = track_ok && shoot_ok;
 
   if (plan.control) {
     last_plan_yaw_ = plan.yaw;
     last_target_yaw_ = plan.target_yaw;
+    // 与 last_plan_yaw_ 配套：记录生成这条指令时的云台绝对 yaw。没传反馈就清空，
+    // 免得下一拍拿过期角度做到位判定。
+    last_plan_gimbal_yaw_ = gimbal_yaw;
     have_last_command_ = true;
   }
 
@@ -363,6 +434,13 @@ Plan Planner::plan(
   }
 
   return plan;
+}
+
+void Planner::record_command_gimbal_yaw(std::optional<double> gimbal_yaw)
+{
+  // The production runtime samples once more after the expensive planning step so this baseline
+  // corresponds to the command's generation time rather than the start of planning.
+  last_plan_gimbal_yaw_ = gimbal_yaw;
 }
 
 Plan Planner::plan(

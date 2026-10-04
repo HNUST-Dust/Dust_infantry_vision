@@ -58,7 +58,9 @@ public:
     Target target, double bullet_speed,
     const Eigen::Matrix3d & R_gimbal2world = Eigen::Matrix3d::Identity(),
     std::optional<double> gimbal_yaw = std::nullopt);
-  // 生产入口：基准时刻取 steady_clock::now()。gimbal_yaw 有值时才启用"云台已到位"的开火判定。
+  // 生产入口：基准时刻取 steady_clock::now()。
+  // gimbal_yaw 传云台当前绝对 yaw（GimbalState::yaw）。开火判定里只有"云台已到位"这一项
+  // 依赖它；auto_fire、决策有效性和指令跳变检查与是否提供反馈无关。
   Plan plan(
     std::optional<Target> target, double bullet_speed,
     const Eigen::Matrix3d & R_gimbal2world = Eigen::Matrix3d::Identity(),
@@ -68,6 +70,10 @@ public:
     std::optional<Target> target, std::chrono::steady_clock::time_point now, double bullet_speed,
     const Eigen::Matrix3d & R_gimbal2world = Eigen::Matrix3d::Identity(),
     std::optional<double> gimbal_yaw = std::nullopt);
+
+  // Runtime hook: replace the feedback sample recorded for the command after planning has finished.
+  // The planner uses this as the baseline for the next settled check.
+  void record_command_gimbal_yaw(std::optional<double> gimbal_yaw);
 
 private:
   double yaw_offset_;
@@ -92,14 +98,21 @@ private:
 
   int lock_id_ = -1;                // 原 Aimer 的锁定装甲板，防止在两块 45 度板之间来回切
   bool have_last_command_ = false;  // 原 Shooter 的 last_command_ 是否已经存在
-  double last_plan_yaw_ = 0.0;      // 上一条下发的 yaw（Plan::yaw）
-  double last_target_yaw_ = 0.0;    // 上一条参考的 yaw（Plan::target_yaw）
+  double last_plan_yaw_ = 0.0;      // 上一条下发的 yaw（Plan::yaw），是相对云台系的增量
+  double last_target_yaw_ = 0.0;    // 上一条参考的 yaw（Plan::target_yaw），同样在云台系
+  // 上一条指令生成时刻的云台绝对 yaw（GimbalState::yaw，来自姿态四元数）。
+  // 下发值 plan.yaw 与它同框：下位机按「目标 = 当前云台 yaw + 下发 yaw」解释控制帧，
+  // 所以"云台已到位"要比较的是这一对（转过多少 vs 命令转多少），而不是两个绝对角直接相减。
+  // 没有反馈的那次规划会把这里清成 nullopt，避免用过期角度判定。
+  std::optional<double> last_plan_gimbal_yaw_;
 
   // 一次规划最终采用的瞄准决策
   struct AimDecision
   {
     bool valid = false;  // 策略真正选中了装甲板；false 表示走了回退
+    bool converged = false;  // 飞行时间迭代在容差内收敛；未收敛时禁止开火
     int id = 0;
+    int lock = -1;  // 决策时刻的局部锁，作为参考轨迹的锚点，不回流成员 lock_id_
     double fly_time = 0.0;
   };
   struct AimSolution
@@ -118,7 +131,7 @@ private:
   // 不会污染成员状态。
   AimPoint choose_aim_point(const Target & target, int & lock_id) const;
 
-  // 单块装甲板 -> 弹道飞行时间与云台角。保留 Planner 原有的"世界系水平距离 + 云台系高度"约定。
+  // 单块装甲板 -> 弹道飞行时间与云台角。弹道的水平距离和高度均取世界系；yaw 使用云台系。
   std::optional<AimSolution> solve_xyza(
     const Eigen::Vector4d & xyza, double bullet_speed,
     const Eigen::Matrix3d & R_gimbal2world) const;
@@ -128,9 +141,12 @@ private:
     Target base, double bullet_speed, const Eigen::Matrix3d & R_gimbal2world,
     AimDecision & decision);
 
+  // 以命中时刻的决策为锚点构造 60 列参考轨迹：第 HALF_HORIZON 列就是 decision_id 那块板，
+  // 再由它向两侧（未来 / 过去）各自演进一个锁副本，保证中心板 ID、飞行时间与参考方向一致。
+  // hit_target 必须已经推进到命中时刻 T1 + fly_time。
   bool get_trajectory(
-    Target & target, double yaw0, double bullet_speed, const Eigen::Matrix3d & R_gimbal2world,
-    int lookahead_lock, int decision_id, Trajectory & out);
+    const Target & hit_target, double yaw0, double bullet_speed,
+    const Eigen::Matrix3d & R_gimbal2world, int decision_lock, int decision_id, Trajectory & out);
 };
 
 }  // namespace auto_aim

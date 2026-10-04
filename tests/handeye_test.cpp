@@ -14,6 +14,7 @@
 #include "tools/exiter.hpp"
 #include "tools/img_tools.hpp"
 #include "tools/logger.hpp"
+#include "tools/math_tools.hpp"
 
 using namespace std::chrono_literals;
 
@@ -74,7 +75,7 @@ int main(int argc, char * argv[])
         cv::circle(result, point, 3, cv::Scalar(255, 255, 255), -1);
       }
     }
-    Eigen::Vector3d euler = solver.R_gimbal2world().eulerAngles(2, 1, 0) * 180.0 / M_PI;
+    Eigen::Vector3d euler = tools::eulers(solver.R_gimbal2world(), 2, 0, 1) * 180.0 / M_PI;
     tools::draw_text(result, fmt::format("yaw   {:.2f}", euler[0]), {40, 40}, {0, 0, 255});
     tools::draw_text(result, fmt::format("pitch {:.2f}", euler[1]), {40, 80}, {0, 0, 255});
     tools::draw_text(result, fmt::format("roll  {:.2f}", euler[2]), {40, 120}, {0, 0, 255});

@@ -425,8 +425,10 @@ tests/                    调试和测试程序
 - `Classifier`：使用 `assets/tiny_resnet.onnx` 识别装甲板数字（OpenCV DNN，非 OpenVINO）。
 - `Solver`：唯一负责像素、云台、世界三者坐标转换的组件。持有 `camera_matrix`、`distort_coeffs`、`R_gimbal2imubody` 以及 `R_camera2gimbal` / `t_camera2gimbal`，同时提供 `solve(Armor&)`（像素 → 世界）与 `reproject_armor()` / `world2pixel()`（世界 → 像素）。装甲板俯仰角按固定值建模（普通装甲 +15°，前哨站 −15°），yaw 通过重投影搜索细化。
 - `Tracker`：维护 lost/detecting/tracking/temp_lost/switching 状态机，使用 11 维 EKF（含 2/3/4 装甲板模型与前哨站专用处理）预测旋转目标；`focus_rois()` 根据预测四角生成网络 ROI 与灯条 ROI。
-- `Planner`：唯一的生产规划器。2026-10-03 起把原 `Aimer` / `Shooter` 的击打策略并了进来，两者的源文件已删除。选哪块装甲板由 `choose_aim_point()` 决定：装甲板未跳变时只认第 0 块；低速时用 ±60° 可射击扇形加 `lock_id_` 防抖（避免在两块 45° 板之间来回切）；转速超过 2 rad/s 的小陀螺以及前哨站（前哨站固定 70°/30°），按 `comming_angle` / `leaving_angle` 选「正在转过来的那块」。飞行时间沿用原来最多 10 次的迭代收敛。参考轨迹是 60 步 yaw/pitch，由两个独立 TinyMPC 问题分别求解 yaw 与 pitch，输出 `Plan{control, fire, target_yaw, yaw, yaw_vel, yaw_acc, target_pitch, pitch, pitch_vel, pitch_acc}`；控制量取预测时域中点（0.3 s 处）。开火 = 「参考轨迹在加速度约束下可达」（`fire_thresh_*`）**AND** 「上一条指令未跳变 + 云台已到达上一条指令」（`first/second_tolerance`、`judge_distance`）。
-- `Planner::plan_at(target, now, ...)`：显式传入基准时刻的入口，供 `auto_aim_test` 这类离线回放使用，避免预测依赖墙钟（对应原 `Aimer` 的 `to_now=false`）；`plan(optional<Target>, ...)` 是取 `steady_clock::now()` 的生产入口。`gimbal_yaw` 有值（运行时传 `GimbalState::yaw`）才启用「云台已到位」判定，不传就只保留 `fire_thresh` 判据。
+- `Planner`：唯一的生产规划器。2026-10-03 起把原 `Aimer` / `Shooter` 的击打策略并了进来，两者的源文件已删除。选哪块装甲板由 `choose_aim_point()` 决定：装甲板未跳变时只认第 0 块；低速时用 ±60° 可射击扇形加 `lock_id_` 防抖（避免在两块 45° 板之间来回切）；转速超过 2 rad/s 的小陀螺以及前哨站（前哨站固定 70°/30°），按 `comming_angle` / `leaving_angle` 选「正在转过来的那块」。飞行时间沿用原来最多 10 次的迭代收敛，`AimDecision` 同时带出决策时刻的局部锁。参考轨迹是 60 步 yaw/pitch，由两个独立 TinyMPC 问题分别求解 yaw 与 pitch，输出 `Plan{control, fire, target_yaw, yaw, yaw_vel, yaw_acc, target_pitch, pitch, pitch_vel, pitch_acc}`；控制量取预测时域中点（0.3 s 处）。参考轨迹**以命中列（第 `HALF_HORIZON` 列）的决策板为锚点**：该列直接取 `resolve_aim_time` 选定的装甲板与其弹道，不与策略重选；之后（未来）与之前（过去）各持一份锁副本向两侧演进，策略给不出结果时沿用上一列的装甲板、弹道不可解时沿用上一列的角度。这样中心板 ID、飞行时间与参考方向由构造保证一致（旧实现把目标倒退 310 ms 再让锁从过去重新演进，中心列可能选到另一块板，实测偏差约 7°）。
+- 开火判定分两层：与云台反馈无关的「`auto_fire` 总开关 + 已有上一条指令 + 决策有效（`AimDecision::valid`）+ 上一条参考指令未跳变（角度差用 `tools::limit_rad` 环绕）」**AND** 「参考轨迹在加速度约束下可达」（`fire_thresh_*`），再 **AND** 依赖反馈的「云台已到位」。只有最后一项在缺 `gimbal_yaw` 时被跳过，其余条件与是否提供反馈无关；因此离线回放里 `fire=true` 只能说明前者成立，不能当作生产开火逻辑正确的证据。
+- 云台控制帧的角度约定是**相对增量**（下位机按「目标 = 当前云台 yaw + 下发 yaw」解释），所以 `Plan::yaw`/`Plan::target_yaw` 都是云台系相对角，而 `GimbalState::yaw` 来自姿态四元数、是世界系绝对角。「云台已到位」因此比较的是「云台从上一条指令生成时刻到现在实际转过的角度」与「上一条指令增量」，容差用 `first/second_tolerance`（按 `judge_distance` 选），而不是把两个绝对角直接相减。
+- `Planner::plan_at(target, now, ...)`：显式传入基准时刻的入口，供 `auto_aim_test` 这类离线回放使用，避免预测依赖墙钟（对应原 `Aimer` 的 `to_now=false`）；`plan(optional<Target>, ...)` 是取 `steady_clock::now()` 的生产入口。`gimbal_yaw` 传云台当前绝对 yaw（运行时传 `GimbalState::yaw`）；不传时只跳过「云台已到位」这一项，其余开火条件照常生效。
 - `Gimbal`：通过串口读取四元数、云台状态和弹速，发送视觉控制帧。
 - `Camera`：统一工业相机取流接口，`stop()` 提供安全的停止与 SDK 清理入口（HikRobot 启动失败时清理流程无操作兜底）。取流结束后队列关闭，`read()` 返回空图。
 - `Plotter`：将 JSON 调试数据发送到 UDP `127.0.0.1:9870`，无需接收端即可运行。
@@ -822,6 +824,13 @@ id
 `Plotter` 把 JSON 发到 UDP `127.0.0.1:9870`，没有接收端时数据会被丢弃，但不影响程序运行。需要一个监听该端口的绘图工具才能看到曲线。
 
 ## 开发约定
+
+### Planner 安全约定
+
+- 飞行时间迭代最多执行 10 次；未在 1 ms 容差内收敛时仍可输出跟踪控制，但该拍禁止开火，且不会提交新的装甲板锁。
+- 弹道模型的水平距离和高度都使用世界坐标系；yaw 角仍由云台坐标系中的目标向量计算。
+- 云台关节轴为 Z(yaw)-X(pitch)-Y(roll)，弹道发射方向先从世界系变换到当前云台系，再分解为 yaw/pitch；不能直接把世界系弹道仰角作为 pitch 指令。
+- 生产规划线程只使用新鲜的云台反馈，并在规划完成后重新采样一次，作为当前指令的到位判定基准。
 
 - 构建产物集中在 `build/`、`build-ninja/`、`install/`、`log/`、`logs/`、`records/`、`neo/`，不要提交。
 - 代码风格和提交规范以仓库根目录 `AGENTS.md` 为准。

@@ -89,7 +89,7 @@ int main(int argc, char * argv[])
       gimbal.send(false, false, 0, 0, 0, 0, 0, 0);
       continue;
     }
-    Eigen::Vector3d eulers = tools::eulers(orientation->q, 2, 1, 0);
+    Eigen::Vector3d eulers = tools::eulers(orientation->q, 2, 0, 1);
 
     if (signal_mode == "triangle_wave") {
       if (count == slice) {

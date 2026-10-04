@@ -27,7 +27,7 @@ const std::string keys =
   "{help h usage ? |                          | 输出命令行参数说明}"
   "{@config-path   | configs/calibration.yaml | 位置参数，yaml配置文件路径 }"
   "{output-folder o |      assets/img_with_q   | 输出文件夹路径   }"
-  "{headless       | false                    | 不创建OpenCV窗口 }"
+  "{headless       | true                    | 不创建OpenCV窗口 }"
   "{foxglove      | true                    | 启用Foxglove WebSocket }"
   "{foxglove-host | 127.0.0.1                | Foxglove监听地址 }"
   "{foxglove-port | 8765                     | Foxglove监听端口 }"

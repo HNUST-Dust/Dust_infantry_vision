@@ -105,7 +105,7 @@ int main(int argc, char * argv[])
     tools::draw_text(
       img,
       fmt::format(
-        "gimbal yaw{:.4f}", (tools::eulers(gimbal_q.toRotationMatrix(), 2, 1, 0))[0]),
+        "gimbal yaw{:.4f}", (tools::eulers(gimbal_q.toRotationMatrix(), 2, 0, 1))[0]),
       {10, 90}, {255, 255, 255});
 
     nlohmann::json data;
@@ -123,7 +123,7 @@ int main(int argc, char * argv[])
     }
 
     Eigen::Quaternion q{w, x, y, z};
-    auto yaw = tools::eulers(q, 2, 1, 0)[0];
+    auto yaw = tools::eulers(q, 2, 0, 1)[0];
   data["gimbal_yaw"] = yaw;
   data["cmd_yaw"] = plan.yaw;
     data["fire"] = plan.fire;

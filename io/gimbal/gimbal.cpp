@@ -220,14 +220,14 @@ void Gimbal::read_thread()
     Eigen::Quaterniond q(rx_data_.q[0], rx_data_.q[1], rx_data_.q[2], rx_data_.q[3]);
     if (!orientations_.push(q, t)) continue;
     q.normalize();
-    // 按一般情况解算欧拉角：ZYX（Yaw-Pitch-Roll）
-    Eigen::Vector3d ypr = q.toRotationMatrix().eulerAngles(2, 1, 0);
-    double yaw_angle   = ypr[0];  // Z
-    double pitch_angle = ypr[2];  // X
-    // double roll_angle  = ypr[1];  // Y
+    // 云台关节轴为 Z(yaw)-X(pitch)-Y(roll)，按同一顺序提取反馈角。
+    Eigen::Vector3d zxy = tools::eulers(q, 2, 0, 1);
+    double yaw_angle   = zxy[0];  // Z
+    double pitch_angle = zxy[1];  // X
+    // double roll_angle  = zxy[2];  // Y
 
     // tools::logger()->info(
-    //   "[Gimbal] Euler from q (ZYX) -> Yaw(Z): {:.4f} rad ({:.2f} deg), Pitch(Y): {:.4f} rad ({:.2f} deg), Roll(X): {:.4f} rad ({:.2f} deg)",
+    //   "[Gimbal] Euler from q (ZXY) -> Yaw(Z): {:.4f} rad ({:.2f} deg), Pitch(X): {:.4f} rad ({:.2f} deg), Roll(Y): {:.4f} rad ({:.2f} deg)",
     //   yaw_angle, yaw_angle * 180.0 / M_PI,
     //   pitch_angle, pitch_angle * 180.0 / M_PI,
     //   roll_angle, roll_angle * 180.0 / M_PI);
