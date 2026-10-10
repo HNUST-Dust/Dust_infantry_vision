@@ -5,6 +5,8 @@
 #include <yaml-cpp/yaml.h>
 
 #include <filesystem>
+#include <algorithm>
+#include <stdexcept>
 
 #include "tools/img_tools.hpp"
 #include "tools/logger.hpp"
@@ -19,6 +21,22 @@ YOLOV5::YOLOV5(const std::string & config_path, bool debug)
   binary_threshold_ = yaml["threshold"].as<double>();
   min_confidence_ = yaml["min_confidence"].as<double>();
   use_traditional_ = yaml["use_traditional"].as<bool>();
+  if (yaml["yolov5_color_order"]) {
+    const auto colors = yaml["yolov5_color_order"].as<std::vector<std::string>>();
+    if (colors.size() != color_map_.size()) {
+      throw std::invalid_argument("yolov5_color_order requires four colors");
+    }
+    std::array<bool, 4> seen{};
+    for (std::size_t i = 0; i < colors.size(); ++i) {
+      const auto name = colors[i] == "gray" ? "extinguish" : colors[i];
+      const auto found = std::find(COLORS.begin(), COLORS.end(), name);
+      if (found == COLORS.end()) throw std::invalid_argument("Unknown YOLOV5 color: " + colors[i]);
+      const auto index = static_cast<std::size_t>(found - COLORS.begin());
+      if (seen[index]) throw std::invalid_argument("yolov5_color_order contains duplicate colors");
+      seen[index] = true;
+      color_map_[i] = static_cast<Color>(index);
+    }
+  }
 
   save_path_ = "imgs";
   std::filesystem::create_directory(save_path_);
@@ -29,6 +47,9 @@ std::list<Armor> YOLOV5::parse(
   const cv::Point2f & offset, bool has_roi, const cv::Rect & roi,
   std::optional<cv::Rect> light_roi)
 {
+  if (output.type() != CV_32F || output.cols != 22) {
+    throw std::runtime_error("YOLOV5 requires FP32 output with 22 columns");
+  }
   // for each row: xywh + classess
   std::vector<int> color_ids, num_ids;
   std::vector<float> confidences;
@@ -94,6 +115,7 @@ std::list<Armor> YOLOV5::parse(
     } else {
       armors.emplace_back(color_ids[i], num_ids[i], confidences[i], boxes[i], armors_key_points[i]);
     }
+    armors.back().color = color_map_[color_ids[i]];
   }
 
   tmp_img_ = bgr_img;

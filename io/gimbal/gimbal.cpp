@@ -12,19 +12,19 @@ namespace io
 Gimbal::Gimbal(const std::string & config_path, bool simulate)
 : simulate_(simulate)
 {
-  auto yaml = tools::load(config_path);
-  auto com_port = tools::read<std::string>(yaml, "com_port");
-  const uint32_t baudrate = yaml["baudrate"] ? yaml["baudrate"].as<uint32_t>() : 460800;
-  skip_crc_ = false;  // 默认
-  if (yaml["skip_gimbal_crc"])
-    skip_crc_ = tools::read<bool>(yaml, "skip_gimbal_crc");
-
   if (simulate_) {
     state_.bullet_speed = 23.0F;
     feedback_timestamp_ = std::chrono::steady_clock::now();
     tools::logger()->warn("[Gimbal] Using simulated feedback and serial output.");
     return;
   }
+
+  auto yaml = tools::load(config_path);
+  auto com_port = tools::read<std::string>(yaml, "com_port");
+  const uint32_t baudrate = yaml["baudrate"] ? yaml["baudrate"].as<uint32_t>() : 460800;
+  skip_crc_ = false;  // 默认
+  if (yaml["skip_gimbal_crc"])
+    skip_crc_ = tools::read<bool>(yaml, "skip_gimbal_crc");
 
   try {
     serial_.setPort(com_port);
@@ -75,6 +75,19 @@ std::chrono::steady_clock::time_point Gimbal::feedback_timestamp() const
   if (simulate_) return std::chrono::steady_clock::now();
   std::lock_guard<std::mutex> lock(mutex_);
   return feedback_timestamp_;
+}
+
+void Gimbal::set_external_feedback(
+  const Eigen::Quaterniond & q, std::chrono::steady_clock::time_point t)
+{
+  const auto angles = tools::eulers(q.normalized(), 2, 0, 1);
+  std::lock_guard<std::mutex> lock(mutex_);
+  state_.yaw = static_cast<float>(angles[0]);
+  state_.pitch = static_cast<float>(angles[1]);
+  state_.yaw_vel = 0.0F;
+  state_.pitch_vel = 0.0F;
+  state_.bullet_speed = 23.0F;
+  feedback_timestamp_ = t;
 }
 
 std::string Gimbal::str(GimbalMode mode) const

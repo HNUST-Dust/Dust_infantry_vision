@@ -10,6 +10,7 @@ add_library(io STATIC
     camera.cpp
     dm_imu/dm_imu.cpp
     gimbal/gimbal.cpp
+    talos/talos.cpp
 )
 
 
@@ -82,6 +83,7 @@ target_link_libraries(io
     yaml-cpp
     serial
     ${OpenCV_LIBS}
+    talos_ipc
   PRIVATE
     # io 的源文件与 PCH 都经 tools/logger.hpp 包含 spdlog，而 io 并不链接 tools，
     # 必须自己声明一次：spdlog 是 header-only 内联（SPDLOG_INLINE inline），
@@ -89,6 +91,7 @@ target_link_libraries(io
     spdlog::spdlog_header_only
     Threads::Threads
 )
+add_dependencies(io talos_ipc_build)
 
 target_precompile_headers(io PRIVATE
   <Eigen/Geometry>

@@ -172,11 +172,13 @@ Armor::Armor(
   rectangular_error = std::max(left_rectangular_error, right_rectangular_error);
 
   ratio = max_length / max_width;
-  color = color_id == 0 ? Color::blue : color_id == 1 ? Color::red : Color::extinguish;
+  color = color_id == 0 ? Color::blue : color_id == 1 ? Color::red :
+    color_id == 3 ? Color::purple : Color::extinguish;
   name = num_id == 0  ? ArmorName::sentry
+         : num_id >= 7 ? ArmorName::base
          : num_id > 5 ? ArmorName(num_id)
-                      : ArmorName(num_id - 1);  //TODO 考虑Bb
-  type = num_id == 1 ? ArmorType::big : ArmorType::small;
+                      : ArmorName(num_id - 1);
+  type = (num_id == 1 || num_id == 8) ? ArmorType::big : ArmorType::small;
 }
 
 // YOLOV5+ROI构造函数
@@ -213,9 +215,11 @@ Armor::Armor(
   rectangular_error = std::max(left_rectangular_error, right_rectangular_error);
 
   ratio = max_length / max_width;
-  color = color_id == 0 ? Color::blue : color_id == 1 ? Color::red : Color::extinguish;
-  name = num_id == 0 ? ArmorName::sentry : num_id > 5 ? ArmorName(num_id) : ArmorName(num_id - 1);
-  type = num_id == 1 ? ArmorType::big : ArmorType::small;
+  color = color_id == 0 ? Color::blue : color_id == 1 ? Color::red :
+    color_id == 3 ? Color::purple : Color::extinguish;
+  name = num_id == 0 ? ArmorName::sentry : num_id >= 7 ? ArmorName::base :
+    num_id > 5 ? ArmorName(num_id) : ArmorName(num_id - 1);
+  type = (num_id == 1 || num_id == 8) ? ArmorType::big : ArmorType::small;
 }
 
 }  // namespace auto_aim

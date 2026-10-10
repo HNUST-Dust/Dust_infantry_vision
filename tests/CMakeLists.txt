@@ -58,6 +58,13 @@ target_link_libraries(dynamic_roi_test PRIVATE ${OpenCV_LIBS} auto_aim tools io)
 target_link_libraries(detector_roi_test PRIVATE ${OpenCV_LIBS} auto_aim tools io)
 target_link_libraries(openvino_benchmark_test PRIVATE ${OpenCV_LIBS} auto_aim tools io)
 
+if(ENABLE_TENSORRT)
+  add_executable(tensorrt_detector_test tensorrt_detector_test.cpp)
+  target_link_libraries(tensorrt_detector_test
+    PRIVATE auto_aim tools io yaml-cpp nlohmann_json::nlohmann_json Threads::Threads
+  )
+endif()
+
 # ordered_delivery.hpp 是纯头（只用 std），但它用 #include "tools/ordered_delivery.hpp"
 # 根相对路径，故仍需 dust::include；其源码用 std::async/std::future/std::mutex，补上 Threads。
 add_executable(ordered_delivery_test ordered_delivery_test.cpp)

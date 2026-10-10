@@ -62,6 +62,44 @@ find_package(Threads REQUIRED)
 set(OpenVINO_DIR "/opt/intel/openvino_2024.6.0/runtime/cmake/" CACHE PATH "OpenVINO CMake package directory")
 find_package(OpenVINO REQUIRED COMPONENTS Runtime)
 
+option(ENABLE_TENSORRT "Build the TensorRT 10 inference backend" OFF)
+if(ENABLE_TENSORRT)
+  find_package(CUDAToolkit 12 REQUIRED)
+  set(TensorRT_ROOT "$ENV{TRT_ROOT}" CACHE PATH "TensorRT installation root")
+  find_path(TensorRT_INCLUDE_DIR NvInfer.h HINTS "${TensorRT_ROOT}/include")
+  find_library(TensorRT_LIBRARY nvinfer HINTS "${TensorRT_ROOT}/lib" "${TensorRT_ROOT}/lib64")
+  if(NOT TensorRT_INCLUDE_DIR OR NOT TensorRT_LIBRARY)
+    message(FATAL_ERROR "TensorRT headers/library missing; set TensorRT_ROOT to a TensorRT 10 installation")
+  endif()
+  add_library(dust_tensorrt INTERFACE)
+  target_include_directories(dust_tensorrt SYSTEM INTERFACE "${TensorRT_INCLUDE_DIR}")
+  target_link_libraries(dust_tensorrt INTERFACE "${TensorRT_LIBRARY}" CUDA::cudart)
+endif()
+
+set(TALOS_IPC_ROOT "${PROJECT_SOURCE_DIR}/../bevy_robomaster_simulator" CACHE PATH "Bevy Talos IPC crate root")
+find_program(CARGO_EXECUTABLE cargo)
+if(NOT CARGO_EXECUTABLE)
+  message(FATAL_ERROR "cargo is required to build the Talos IPC C ABI")
+endif()
+set(TALOS_IPC_LIBRARY "${TALOS_IPC_ROOT}/target/release/libtalos_ipc.so")
+file(GLOB_RECURSE TALOS_IPC_SOURCES CONFIGURE_DEPENDS "${TALOS_IPC_ROOT}/crates/talos-ipc/src/*.rs")
+add_custom_command(
+  OUTPUT "${TALOS_IPC_LIBRARY}"
+  COMMAND "${CARGO_EXECUTABLE}" build --release --manifest-path "${TALOS_IPC_ROOT}/Cargo.toml" -p talos-ipc
+  WORKING_DIRECTORY "${TALOS_IPC_ROOT}"
+  DEPENDS "${TALOS_IPC_ROOT}/Cargo.toml" "${TALOS_IPC_ROOT}/Cargo.lock"
+    "${TALOS_IPC_ROOT}/crates/talos-ipc/Cargo.toml" ${TALOS_IPC_SOURCES}
+  VERBATIM
+)
+add_custom_target(talos_ipc_build DEPENDS "${TALOS_IPC_LIBRARY}")
+add_library(talos_ipc SHARED IMPORTED GLOBAL)
+set_target_properties(talos_ipc PROPERTIES
+  IMPORTED_LOCATION "${TALOS_IPC_LIBRARY}"
+  # Rust cdylibs have no SONAME; link by library name so RUNPATH resolves them.
+  IMPORTED_NO_SONAME TRUE
+  INTERFACE_INCLUDE_DIRECTORIES "${TALOS_IPC_ROOT}/crates/talos-ipc/include"
+)
+
 # 仓库根即 include 根：全仓 198 处 #include "tools/logger.hpp" 这类形式依赖它
 # （tools 121 / tasks 46 / io 23 / visualization 6 / calibration 2）。
 # 用 INTERFACE 目标表达，由各 target 显式链接，取代原来的全局

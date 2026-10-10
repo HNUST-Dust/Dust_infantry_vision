@@ -63,6 +63,15 @@ void Solver::set_R_gimbal2world(const Eigen::Quaterniond & q)
   R_gimbal2world_ = R_gimbal2world(q);
 }
 
+void Solver::set_camera_intrinsics(double fx, double fy, double cx, double cy)
+{
+  if (!(std::isfinite(fx) && std::isfinite(fy) && std::isfinite(cx) && std::isfinite(cy)) ||
+      fx <= 0.0 || fy <= 0.0)
+    throw std::invalid_argument("Talos camera intrinsics are invalid");
+  camera_matrix_ = (cv::Mat_<double>(3, 3) << fx, 0.0, cx, 0.0, fy, cy, 0.0, 0.0, 1.0);
+  distort_coeffs_ = cv::Mat::zeros(1, 5, CV_64F);
+}
+
 //solvePnP（获得姿态）
 void Solver::solve(Armor & armor) const
 {

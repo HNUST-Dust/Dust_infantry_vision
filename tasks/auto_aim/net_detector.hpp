@@ -8,14 +8,13 @@
 #include <mutex>
 #include <optional>
 #include <opencv2/core.hpp>
-#include <openvino/openvino.hpp>
 #include <string>
 #include <vector>
 
 namespace auto_aim
 {
 
-// Owns OpenVINO preprocessing and the reusable request/input-buffer pool.
+// Owns inference preprocessing and the reusable request/input-buffer pool.
 class NetDetector
 {
 public:
@@ -28,12 +27,14 @@ public:
     int infer_request_buffer_num = 2;
     // LATENCY avoids queueing on shared GPUs; THROUGHPUT is for offline benchmarks.
     std::string performance_mode = "LATENCY";
+    std::string backend = "openvino";
+    int cuda_device = 0;
   };
 
   struct Result
   {
     cv::Mat source;
-    cv::Mat output;
+    cv::Mat output;  // Owned FP32 data; remains valid after the ticket is released.
     double scale = 1.0;
     cv::Rect roi;
     bool has_roi = false;

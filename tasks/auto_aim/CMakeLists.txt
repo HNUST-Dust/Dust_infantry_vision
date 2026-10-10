@@ -17,7 +17,7 @@ add_library(auto_aim OBJECT
 
 # auto_aim 的公共头暴露 OpenCV（armor.hpp / detector.hpp / yolo.hpp / classifier.hpp 等）、
 # Eigen（solver.hpp / planner.hpp / tracker.hpp / target.hpp）、
-# OpenVINO（net_detector.hpp 含 <openvino/openvino.hpp>）；多个公共头用根相对路径包含
+# OpenVINO（classifier.hpp 含 <openvino/openvino.hpp>）；多个公共头用根相对路径包含
 # tools/ 与 tasks/auto_aim/ 下的头（target.hpp→tools/extended_kalman_filter.hpp 等），
 # 故 tools 与 dust::include 都是 PUBLIC。
 # yaml-cpp / fmt 只出现在实现文件里（detector.cpp / config 读取），Threads 同理，故 PRIVATE。
@@ -35,6 +35,11 @@ target_link_libraries(auto_aim
     yaml-cpp
     Threads::Threads
 )
+
+if(ENABLE_TENSORRT)
+  target_compile_definitions(auto_aim PRIVATE DUST_ENABLE_TENSORRT)
+  target_link_libraries(auto_aim PRIVATE dust_tensorrt)
+endif()
 
 target_precompile_headers(auto_aim PRIVATE
   <Eigen/Geometry>

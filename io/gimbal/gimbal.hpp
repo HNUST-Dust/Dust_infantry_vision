@@ -72,6 +72,7 @@ public:
   GimbalMode mode() const;
   GimbalState state() const;
   std::chrono::steady_clock::time_point feedback_timestamp() const;
+  void set_external_feedback(const Eigen::Quaterniond & q, std::chrono::steady_clock::time_point t);
   std::string str(GimbalMode mode) const;
   // Returns no sample if the image timestamp cannot be bracketed by valid telemetry.
   std::optional<tools::QuaternionSample> orientation_at(std::chrono::steady_clock::time_point t);

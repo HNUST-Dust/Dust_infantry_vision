@@ -1,6 +1,7 @@
 #ifndef AUTO_AIM__YOLOV5_HPP
 #define AUTO_AIM__YOLOV5_HPP
 
+#include <array>
 #include <list>
 #include <opencv2/opencv.hpp>
 #include <string>
@@ -24,6 +25,7 @@ public:
 private:
   std::string save_path_, debug_path_;
   bool debug_, use_traditional_;
+  std::array<Color, 4> color_map_{{Color::blue, Color::red, Color::extinguish, Color::purple}};
 
   const int class_num_ = 13;
   const float nms_threshold_ = 0.3;

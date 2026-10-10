@@ -10,7 +10,9 @@ YOLO::YOLO(const std::string & config_path, bool debug)
 : net_detector_([&config_path] {
     auto yaml = YAML::LoadFile(config_path);
     NetDetector::Config config;
-    config.device = yaml["device"].as<std::string>();
+    config.backend = yaml["inference_backend"].as<std::string>("openvino");
+    config.device = yaml["device"].as<std::string>("CPU");
+    config.cuda_device = yaml["cuda_device"].as<int>(0);
     config.infer_request_buffer_num =
       yaml["infer_request_buffer_num"] ? yaml["infer_request_buffer_num"].as<int>() : 2;
     config.performance_mode = yaml["performance_mode"] ?

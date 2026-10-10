@@ -12,6 +12,7 @@
 
 #include "io/camera.hpp"
 #include "io/gimbal/gimbal.hpp"
+#include "io/talos/talos.hpp"
 #include "tasks/auto_aim/multithread/mt_detector.hpp"
 #include "tasks/auto_aim/planner/planner.hpp"
 #include "tasks/auto_aim/solver.hpp"
@@ -55,6 +56,7 @@ struct PlanUpdate
   std::chrono::steady_clock::time_point last_observed_timestamp;
   double planning_ms = 0.0;
   uint64_t sequence = 0;
+  float distance_m = -1.0F;
 };
 
 void add_latency_metrics(
@@ -73,6 +75,7 @@ void add_latency_metrics(
 // 这四个开关原先在命令行上（--simulate-gimbal/--headless/--verbose-ekf/--foxglove），已移除。
 struct RuntimeConfig
 {
+  std::string io_backend = "hardware";
   bool simulate_gimbal = false;
   bool headless = false;
   bool verbose_ekf = false;
@@ -89,6 +92,7 @@ RuntimeConfig load_runtime_config(const std::string & config_path)
   const auto node = tools::load(config_path)["runtime"];  // 加载失败时抛 runtime_error
   if (!node) return config;
 
+  if (node["io_backend"]) config.io_backend = node["io_backend"].as<std::string>();
   if (node["simulate_gimbal"]) config.simulate_gimbal = node["simulate_gimbal"].as<bool>();
   if (node["headless"]) config.headless = node["headless"].as<bool>();
   if (node["verbose_ekf"]) config.verbose_ekf = node["verbose_ekf"].as<bool>();
@@ -101,6 +105,8 @@ RuntimeConfig load_runtime_config(const std::string & config_path)
     config.feedback_timeout = std::chrono::milliseconds(node["feedback_timeout_ms"].as<int>());
   if (node["plan_timeout_ms"])
     config.plan_timeout = std::chrono::milliseconds(node["plan_timeout_ms"].as<int>());
+  if (config.io_backend != "hardware" && config.io_backend != "talos")
+    throw std::runtime_error("runtime.io_backend must be hardware or talos");
   if (
     config.fire_timeout <= 0ms || config.control_timeout <= 0ms || config.feedback_timeout <= 0ms ||
     config.plan_timeout <= 0ms)
@@ -205,8 +211,19 @@ int run(const RuntimeOptions & options)
       "this binary was built without Foxglove; configure with -DENABLE_FOXGLOVE_VISION=ON");
 #endif
 
-  io::Gimbal gimbal(options.config_path, runtime_config.simulate_gimbal);
-  io::Camera camera(options.config_path);
+  const bool talos_backend = runtime_config.io_backend == "talos";
+  io::Gimbal gimbal(options.config_path, runtime_config.simulate_gimbal || talos_backend);
+  std::unique_ptr<io::Camera> camera;
+  std::unique_ptr<io::Talos> talos;
+  try {
+    if (talos_backend)
+      talos = std::make_unique<io::Talos>();
+    else
+      camera = std::make_unique<io::Camera>(options.config_path);
+  } catch (const std::exception & e) {
+    tools::logger()->error("[Runtime] {}", e.what());
+    return 2;
+  }
 
   multithread::MultiThreadDetector detector(options.config_path, !headless);
   Solver solver(options.config_path);
@@ -219,7 +236,7 @@ int run(const RuntimeOptions & options)
   tools::ThreadSafeQueue<TargetUpdate, true> target_queue(1);
   target_queue.push({std::nullopt, epoch, epoch, 0});
   tools::ThreadSafeQueue<PlanUpdate, true> plan_queue(1);
-  plan_queue.push({Plan{}, epoch, epoch, epoch, 0.0, 0});
+  plan_queue.push({Plan{}, epoch, epoch, epoch, 0.0, 0, -1.0F});
 
   // 计划线程只读这个原子状态码；直接调 Tracker::state() 会和主循环的 track() 抢同一把锁
   std::atomic<int> tracker_state_code{static_cast<int>(TrackerState::lost)};
@@ -269,9 +286,14 @@ int run(const RuntimeOptions & options)
         std::chrono::duration<double, std::milli>(generated_at - started).count();
       planning_stats.add(planning_ms);
       if (plan_ok) {
+        float distance_m = -1.0F;
+        if (update.target) {
+          const auto x = update.target->ekf_x();
+          distance_m = static_cast<float>(std::hypot(x[0], x[2]));
+        }
         plan_queue.push({
           plan, generated_at, update.frame_timestamp, update.last_observed_timestamp, planning_ms,
-          update.sequence});
+          update.sequence, distance_m});
       }
 
       if (tools::delta_time(generated_at, last_planning_log) >= 1.0 && !planning_stats.empty()) {
@@ -317,9 +339,23 @@ int run(const RuntimeOptions & options)
 
       // The gimbal must interpret a continuous mode=2 stream as a fire permission,
       // not as one trigger event per received frame.
-      gimbal.send(
-        plan.control, plan.fire, plan.yaw, plan.yaw_vel, plan.yaw_acc, plan.pitch, plan.pitch_vel,
-        plan.pitch_acc);
+      if (talos_backend) {
+        const auto state = gimbal.state();
+        const float distance_m = plan.control ? update.distance_m : -1.0F;
+        const double absolute_yaw = state.yaw + plan.yaw;
+        const double absolute_pitch = state.pitch + plan.pitch;
+        // Talos consumes an absolute solver target; the hardware planner command is relative.
+        const float pitch_deg = static_cast<float>(
+          -(90.0 + absolute_pitch * 57.29577951308232));
+        const int result = talos->send(
+          static_cast<float>(absolute_yaw * 57.29577951308232), pitch_deg, distance_m,
+          plan.control && plan.fire);
+        if (result != 0) tools::logger()->error("[Talos] command write failed: {}", result);
+      } else {
+        gimbal.send(
+          plan.control, plan.fire, plan.yaw, plan.yaw_vel, plan.yaw_acc, plan.pitch,
+          plan.pitch_vel, plan.pitch_acc);
+      }
 
       next += period;
       if (next <= now)
@@ -427,16 +463,44 @@ int run(const RuntimeOptions & options)
   auto last_detector_timing_log = std::chrono::steady_clock::now();
   auto capture_thread = std::thread([&] {
     bool orientation_was_valid = false;
+    bool talos_intrinsics_applied = false;
     while (!quit) {
       cv::Mat image;
       std::chrono::steady_clock::time_point timestamp;
+      std::optional<Eigen::Quaterniond> talos_orientation;
       const auto capture_started = std::chrono::steady_clock::now();
-      camera.read(image, timestamp);
+      if (talos_backend) {
+        io::TalosFrame frame;
+        const int result = talos->read(frame);
+        if (result == 0) {
+          std::this_thread::sleep_for(1ms);
+          continue;
+        }
+        if (result < 0) {
+          tools::logger()->error("[Talos] frame read failed: {}", result);
+          quit = true;
+          break;
+        }
+        image = std::move(frame.image_bgr);
+        timestamp = frame.timestamp;
+        talos_orientation = frame.gimbal_to_world;
+        if (!talos_intrinsics_applied) {
+          solver.set_camera_intrinsics(
+            frame.camera.fx, frame.camera.fy, frame.camera.cx, frame.camera.cy);
+          talos_intrinsics_applied = true;
+        }
+        gimbal.set_external_feedback(frame.gimbal_to_world, timestamp);
+      } else {
+        camera->read(image, timestamp);
+      }
       const double capture_ms = std::chrono::duration<double, std::milli>(
                                   std::chrono::steady_clock::now() - capture_started)
                                   .count();
       if (image.empty()) break;
-      const auto orientation = gimbal.orientation_at(timestamp);
+      const auto orientation = talos_orientation
+                                 ? std::optional<tools::QuaternionSample>(tools::QuaternionSample{
+                                     *talos_orientation, timestamp, timestamp})
+                                 : gimbal.orientation_at(timestamp);
       const bool was_valid = orientation_was_valid;
       orientation_was_valid = orientation.has_value();
       if (!orientation) {
@@ -540,7 +604,7 @@ int run(const RuntimeOptions & options)
     }
   }
 
-  camera.stop();
+  if (camera) camera->stop();
   detector.close();
   if (capture_thread.joinable()) capture_thread.join();
   // 排空时必须复用检测帧里携带的姿态，不能重新消费云台队列
@@ -558,7 +622,10 @@ int run(const RuntimeOptions & options)
   if (plan_thread.joinable()) plan_thread.join();
   if (send_thread.joinable()) send_thread.join();
   if (telemetry_thread.joinable()) telemetry_thread.join();
-  gimbal.send(false, false, 0, 0, 0, 0, 0, 0);
+  if (talos_backend)
+    talos->send(0.0F, -90.0F, -1.0F, false);
+  else
+    gimbal.send(false, false, 0, 0, 0, 0, 0, 0);
 
   return 0;
 }

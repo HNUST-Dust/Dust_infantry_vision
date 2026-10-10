@@ -41,6 +41,7 @@ cmake --build build-ninja --target auto_aim_test -j$(nproc)
 | --- | --- | --- |
 | `ENABLE_CCACHE` | `ON` | 找到 `ccache` 时用它做编译器启动器 |
 | `ENABLE_WARNINGS` | `OFF` | 开启后追加 `-Wall -Wextra -Wpedantic` |
+| `ENABLE_TENSORRT` | `OFF` | 启用 TensorRT 10 后端，需指定 `TensorRT_ROOT` 和 CUDA 12 的 `CUDAToolkit_ROOT` |
 | `ENABLE_FOXGLOVE_CALIBRATION` | `OFF` | 为 `capture` 启用原生 Foxglove WebSocket 预览与标定服务 |
 | `HIKROBOT_MVS_ROOT` | `/opt/MVS` | HikRobot MVS SDK 安装根目录 |
 | `OpenVINO_DIR` | `/opt/intel/openvino_2024.6.0/runtime/cmake/` | OpenVINO CMake 包目录 |
@@ -51,6 +52,8 @@ cmake --build build-ninja --target auto_aim_test -j$(nproc)
 - `build-ninja/camera_test`、`build-ninja/detector_video_test`、`build-ninja/auto_aim_test`
 - `build-ninja/gimbal_test`、`build-ninja/handeye_test`
 - `build-ninja/capture`、`build-ninja/calibrate_camera`、`build-ninja/calibrate_handeye`、`build-ninja/calibrate_robotworld_handeye`
+
+TensorRT 模型转换、后端配置、精度对比和 Talos 模拟器运行见 [TensorRT 中文完整运行说明](docs/tensorrt.zh-CN.md)（英文版：[TensorRT 接入](docs/tensorrt.md)）。
 
 ### 3. 无硬件快速验证
 
@@ -535,6 +538,8 @@ tests/                    调试和测试程序
 模型与演示数据：
 
 - `assets/0708.xml` + `0708.bin`：当前默认 YOLOv5 OpenVINO IR。
+- `assets/0526.onnx`：TensorRT 引擎的源模型。
+- `assets/*.engine`：按本机 GPU、CUDA 和 TensorRT 环境生成的本地文件，不纳入版本管理；`configs/simulator.yaml` 使用 `assets/0526.engine` 作为本机路径示例。
 - `assets/tiny_resnet.onnx`：数字识别模型。
 - `assets/yolov5.xml` + `yolov5.bin`、`assets/best2-sim.onnx`：备用模型，当前配置未引用。
 - `assets/demo/demo.avi` + `demo.txt`：演示视频与 `t w x y z` 姿态记录。

@@ -64,5 +64,8 @@ __pycache__/
 assets/img_with_q/
 assets/img_with_q_synced/
 
+# TensorRT engines are generated locally for each GPU/runtime environment.
+assets/*.engine
+
 # Local generated kernel logs (never commit)
 /kernel.errors.txt

@@ -1,0 +1,101 @@
+# enemy_color: "red"
+enemy_color: "blue"
+
+#####-----运行模式-----#####
+runtime:
+  io_backend: talos       # 使用 Talos 模拟器图像、云台反馈与控制接口
+  simulate_gimbal: false # Talos 提供云台反馈，无需额外启用虚拟云台
+  headless: true          # 关闭检测可视化与窗口事件
+  verbose_ekf: false      # 每帧输出 EKF 11 维状态
+  foxglove: false         # 启用 Foxglove 图像与遥测推送
+  fire_timeout_ms: 30     # 最后一次真实匹配超过此时间后禁止开火
+  control_timeout_ms: 80  # 最后一次真实匹配超过此时间后停止目标控制
+  feedback_timeout_ms: 100 # 云台姿态反馈超时后停止目标控制
+  plan_timeout_ms: 20     # 计划生成超时后停止目标控制
+
+#####-----神经网络参数-----#####
+classify_model: assets/tiny_resnet.onnx
+inference_backend: openvino # openvino / tensorrt；切换时同时修改模型路径和颜色顺序
+yolov5_model_path: assets/0526.engine  # 根据本机 TensorRT/CUDA 环境生成后填写
+# OpenVINO 配置：将 inference_backend 改为 openvino，并替换上面的模型路径。
+# yolov5_model_path: assets/yolov5.xml # 使用此模型时删除下面的 yolov5_color_order
+cuda_device: 0 # TensorRT 使用的 CUDA 设备编号；需以 -DENABLE_TENSORRT=ON 编译
+# 0526 模型：demo.avi 已验证 blue=0、gray=2，尚无真实 red/purple 样本。
+yolov5_color_order: [blue, red, gray, purple]
+# 以下 device / performance_mode 仅用于 OpenVINO。
+device: CPU
+# YOLO 与 MultiThreadDetector 共用的推理请求池大小
+infer_request_buffer_num: 1
+performance_mode: LATENCY
+min_confidence: 0.8
+use_traditional: true
+
+dynamic_roi:
+  enabled: true
+  expand_ratio: 1.4
+  base_expand_ratio: 3.0
+  net_ratio: 1.0
+  lost_time: 0.5
+
+#####-----传统方法参数-----#####
+threshold: 150
+max_angle_error: 45 # degree
+min_lightbar_ratio: 1.5
+max_lightbar_ratio: 20
+min_lightbar_length: 8
+min_armor_ratio: 1
+max_armor_ratio: 5
+max_side_ratio: 1.5
+max_rectangular_error: 25 # degree
+
+#####-----tracker参数-----#####
+min_detect_count: 5
+max_temp_lost_count: 25
+outpost_max_temp_lost_count: 75
+armor_association:
+  enabled: true
+  center_gate_px: 100.0
+  corner_gate_px: 140.0
+  angle_gate_rad: 0.8
+  perimeter_ratio_gate: 0.6
+  image_observation:
+    enabled: true
+    point_sigma_px: 8.0
+  pnp_observation:
+    point_sigma_px: 8.0
+    angle_prior_rad: 0.15
+
+#####-----planner 瞄准/弹道参数（原 aimer，2026-10-03 并入）-----#####
+yaw_offset: 0.0 # degree 向右为负
+pitch_offset: 0.0 # degree 向上为正
+comming_angle: 55 # degree
+leaving_angle: 20 # degree
+decision_speed: 8 # rad/s
+high_speed_delay_time: 0.01 # s 规划，下发，云台到达，发弹延迟
+low_speed_delay_time: 0.01 # s
+
+#####-----planner 开火参数（原 shooter，2026-10-03 并入）-----#####
+first_tolerance: 3 # 近距离射击容差，degree
+second_tolerance: 2 # 远距离射击容差，degree
+judge_distance: 2 # 距离判断阈值
+auto_fire: false # 是否由自瞄控制射击
+
+#####-----模拟器相机/云台标定参数-----#####
+R_gimbal2imubody: [1, 0, 0, 0, 1, 0, 0, 0, 1]
+camera_matrix: [1303.6753236814714, 0, 720, 0, 1303.6753236814714, 540, 0, 0, 1]
+distort_coeffs: [0, 0, 0, 0, 0]
+# CV 相机坐标（右、下、前）到 Talos ROS 云台坐标的变换
+R_camera2gimbal: [0, 0, 1, -1, 0, 0, 0, -1, 0]
+t_camera2gimbal: [0, 0, 0]
+
+#####-----planner TinyMPC-----#####
+fire_thresh_high_speed: 1e-3 # 高速旋转时使用较宽松的阈值
+fire_thresh_low_speed: 1e-4 # 低速/静止时使用较严格的阈值
+
+max_yaw_acc: 50
+Q_yaw: [9e9, 0]
+R_yaw: [1]
+
+max_pitch_acc: 100
+Q_pitch: [9e9, 0]
+R_pitch: [1]

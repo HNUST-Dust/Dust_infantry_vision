@@ -22,6 +22,7 @@ public:
   Eigen::Matrix3d R_gimbal2world(const Eigen::Quaterniond & q) const;
 
   void set_R_gimbal2world(const Eigen::Quaterniond & q);
+  void set_camera_intrinsics(double fx, double fy, double cx, double cy);
 
   void solve(Armor & armor) const;
 

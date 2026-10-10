@@ -3,7 +3,7 @@ enemy_color: "blue"
 
 #####-----运行模式-----#####
 runtime:
-  simulate_gimbal: false  # 虚拟云台：姿态与串口都走模拟，不依赖真机（默认 false）
+  simulate_gimbal: true   # 虚拟云台：姿态与串口都走模拟，不依赖真机（默认 false）
   headless: true          # 关闭检测可视化与窗口事件，无桌面运行（如开机自启）时置 true（默认 false）
   verbose_ekf: false      # 每帧输出 EKF 11 维状态，165fps 下会刷满日志（默认 false）
   foxglove: true         # 启用 Foxglove 图像与遥测推送，监听与编码参数见下面的 foxglove 段（默认 false）
@@ -14,10 +14,16 @@ runtime:
   
 #####-----神经网络参数-----#####
 classify_model: assets/tiny_resnet.onnx
-yolov5_model_path: assets/yolov5.xml
+inference_backend: tensorrt # openvino / tensorrt；切换时同时修改模型路径和颜色顺序
+yolov5_model_path: /home/jy/RobotDetectionModel/Model/0526-rtx4060-fp32-compute.engine
+# TensorRT 配置：将 inference_backend 改为 tensorrt，并替换上面的模型路径。
+# yolov5_model_path: assets/0526.engine # 需在本机生成，并以 -DENABLE_TENSORRT=ON 编译
+# yolov5_color_order: [blue, red, gray, purple] # 0526 模型；切回 yolov5.xml 时删除此项
+cuda_device: 0 # TensorRT 使用的 CUDA 设备编号
+# 以下 device / performance_mode 仅用于 OpenVINO。
 # CPU is the stable real-time default when GNOME shares the Intel iGPU.
 # Set to GPU only in headless mode or with a dedicated GPU.
-device: GPU
+device: CPU
 # Number of reusable OpenVINO requests kept in flight by YOLO and MultiThreadDetector.
 infer_request_buffer_num: 1
 performance_mode: LATENCY
