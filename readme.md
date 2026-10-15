@@ -90,7 +90,7 @@ TensorRT 模型转换、后端配置、精度对比和 Talos 模拟器运行见 
 ctest --test-dir build-ninja --output-on-failure
 ```
 
-`quaternion_buffer` 总是注册；`simulator_disabled` 在 `ENABLE_SIMULATOR=OFF` 时验证误用 Talos 配置会先于硬件初始化报错；`foxglove_calibration_protocol` 仅在启用 `ENABLE_FOXGLOVE_CALIBRATION` 时注册，`foxglove_vision_protocol` 仅在启用 `ENABLE_FOXGLOVE_VISION` 时注册。其余测试程序都是独立可执行文件，需要手动运行。
+`planner_feedback` 和 `quaternion_buffer` 总是注册；`simulator_disabled` 在 `ENABLE_SIMULATOR=OFF` 时验证误用 Talos 配置会先于硬件初始化报错；`foxglove_calibration_protocol` 仅在启用 `ENABLE_FOXGLOVE_CALIBRATION` 时注册，`foxglove_vision_protocol` 仅在启用 `ENABLE_FOXGLOVE_VISION` 时注册。其余测试程序都是独立可执行文件，需要手动运行。
 
 只验证命令入口：
 
@@ -457,10 +457,15 @@ tests/                    调试和测试程序
 - `Classifier`：使用 `assets/tiny_resnet.onnx` 识别装甲板数字（OpenCV DNN，非 OpenVINO）。
 - `Solver`：唯一负责像素、云台、世界三者坐标转换的组件。持有 `camera_matrix`、`distort_coeffs`、`R_gimbal2imubody` 以及 `R_camera2gimbal` / `t_camera2gimbal`，同时提供 `solve(Armor&)`（像素 → 世界）与 `reproject_armor()` / `world2pixel()`（世界 → 像素）。装甲板俯仰角按固定值建模（普通装甲 +15°，前哨站 −15°），yaw 通过重投影搜索细化。
 - `Tracker`：维护 lost/detecting/tracking/temp_lost/switching 状态机，使用 11 维 EKF（含 2/3/4 装甲板模型与前哨站专用处理）预测旋转目标；`focus_rois()` 根据预测四角生成网络 ROI 与灯条 ROI。
-- `Planner`：唯一的生产规划器。2026-10-03 起把原 `Aimer` / `Shooter` 的击打策略并了进来，两者的源文件已删除。选哪块装甲板由 `choose_aim_point()` 决定：装甲板未跳变时只认第 0 块；低速时用 ±60° 可射击扇形加 `lock_id_` 防抖（避免在两块 45° 板之间来回切）；转速超过 2 rad/s 的小陀螺以及前哨站（前哨站固定 70°/30°），按 `comming_angle` / `leaving_angle` 选「正在转过来的那块」。飞行时间沿用原来最多 10 次的迭代收敛，`AimDecision` 同时带出决策时刻的局部锁。参考轨迹是 60 步 yaw/pitch，由两个独立 TinyMPC 问题分别求解 yaw 与 pitch，输出 `Plan{control, fire, target_yaw, yaw, yaw_vel, yaw_acc, target_pitch, pitch, pitch_vel, pitch_acc}`；控制量取预测时域中点（0.3 s 处）。参考轨迹**以命中列（第 `HALF_HORIZON` 列）的决策板为锚点**：该列直接取 `resolve_aim_time` 选定的装甲板与其弹道，不与策略重选；之后（未来）与之前（过去）各持一份锁副本向两侧演进，策略给不出结果时沿用上一列的装甲板、弹道不可解时沿用上一列的角度。这样中心板 ID、飞行时间与参考方向由构造保证一致（旧实现把目标倒退 310 ms 再让锁从过去重新演进，中心列可能选到另一块板，实测偏差约 7°）。
-- 开火判定分两层：与云台反馈无关的「`auto_fire` 总开关 + 已有上一条指令 + 决策有效（`AimDecision::valid`）+ 上一条参考指令未跳变（角度差用 `tools::limit_rad` 环绕）」**AND** 「参考轨迹在加速度约束下可达」（`fire_thresh_*`），再 **AND** 依赖反馈的「云台已到位」。只有最后一项在缺 `gimbal_yaw` 时被跳过，其余条件与是否提供反馈无关；因此离线回放里 `fire=true` 只能说明前者成立，不能当作生产开火逻辑正确的证据。
-- 云台控制帧的角度约定是**相对增量**（下位机按「目标 = 当前云台 yaw + 下发 yaw」解释），所以 `Plan::yaw`/`Plan::target_yaw` 都是云台系相对角，而 `GimbalState::yaw` 来自姿态四元数、是世界系绝对角。「云台已到位」因此比较的是「云台从上一条指令生成时刻到现在实际转过的角度」与「上一条指令增量」，容差用 `first/second_tolerance`（按 `judge_distance` 选），而不是把两个绝对角直接相减。
-- `Planner::plan_at(target, now, ...)`：显式传入基准时刻的入口，供 `auto_aim_test` 这类离线回放使用，避免预测依赖墙钟（对应原 `Aimer` 的 `to_now=false`）；`plan(optional<Target>, ...)` 是取 `steady_clock::now()` 的生产入口。`gimbal_yaw` 传云台当前绝对 yaw（运行时传 `GimbalState::yaw`）；不传时只跳过「云台已到位」这一项，其余开火条件照常生效。
+- `Planner`：生产规划器，负责装甲板选择、弹道飞行时间迭代和两轴 TinyMPC。每轮必须传入完整 `PlanningState`（绝对 ZXY yaw/pitch、对应角速度、同包姿态矩阵、反馈时间、有效性和速度来源）。角度单位 rad、角速度 rad/s；硬件角度来自归一化四元数，上行速度在 IO 层从 deg/s 转换一次。初值使用实测状态，并按短时常速传播到统一规划时刻；禁止用参考第一列或上一轮预测代替。
+- 预测步长 10ms、60 个状态列，列 k 对应规划时刻后 k*10ms。每列对该时刻加发弹延迟和迭代飞行时间求瞄准参考；参考角在绝对关节坐标中表达，保留原局部 yaw/pitch offset 所代表的射向。yaw 以本轮实测角为数值原点连续展开。当前锁只提交一次，未来各列使用局部锁；远期弹道失败时沿用上一列参考，近期无效/不收敛的决策禁止开火。
+- 两轴保留前向 Euler 模型：角度下一步为当前角度加 DT*角速度，角速度下一步加 DT*加速度。输出改为第 1 列位置/速度和第 0 列加速度，目标有效时刻为规划后 10ms；不再直接发送第 30 列。此模型的第一步位置只含实测速度积分，下位机必须实际消费速度/加速度前馈。规划和发送仍各按 2ms 周期调度，错过周期不补发积压任务。
+- TinyMPC 将加速度归一化到 [-1,1]、整体等比例缩放 YAML 的 Q/R；默认 rho=0.05、最多 300 次迭代、原始/对偶残差容差 1e-3。修正了内部 ADMM 惩罚项重复计入和冷启动首次参考未生效的问题。仅采用收敛、有限且通过初值/动力学/输入约束检查的解；使用有界投影输入重新 rollout 配套状态，求解失败返回不控制结果。可选顶层参数 `mpc_rho`、`mpc_max_iter`、`mpc_max_state_age_ms`（默认 20ms）无需添加到已有配置即可生效。
+- `Plan` 保存独立的绝对预测目标、绝对参考和规划/有效时刻；原 `yaw/pitch/target_yaw/target_pitch` 字段仍表示相对关节增量。硬件发送线程每次调用 `relative_to(latest_yaw, latest_pitch)` 重新计算增量，同一计划重发时绝对目标保持不变；速度/加速度保留物理前馈含义。Talos 直接消费绝对目标。计划超过自身 10ms 有效时刻、计划生成超时、反馈或真实观测超时都会停止控制。
+- 开火要求 auto_fire、前一有效计划、近期选板有效且飞行时间收敛、绝对参考稳定、近期预测可达，以及当前实测 yaw/pitch 的二维角误差小于按距离选择的 first/second_tolerance。发送时再次检查到位；不再使用旧的 yaw 增量锚点判据。姿态估计得到的速度只用于模拟/回放控制，不能授权开火。缺反馈、未来时间戳、状态过期、非有限值或求解失败均不能产生开火结果。
+- `Planner::plan_at(target, now, bullet_speed, state)` 提供确定性回放入口；`plan(target, bullet_speed, state)` 取当前 steady_clock。图像 PnP/Tracker 仍使用随图像传递的采集时刻姿态，规划使用当前反馈姿态，不覆盖图像解算的共享 R。Gimbal 新增 `feedback()`，一次锁取得同包角度、速度、q、接收时间、序号与有效性；接收时间不是 MCU 采样时间。Talos/旧视频仅有姿态时用相邻样本估速，首帧、重复/倒退时间及大于 100ms 的间隔无有效速度。
+- 当前硬件速度映射限定为已对齐的 IMU/关节坐标；若 `R_gimbal2imubody` 改变实际旋转坐标，运行时会报错并禁止控制，需实现对应速度映射后再启用。上行速度是否为关节角导数、pitch 是否按相对增量解释，以及前馈是否被下位机使用，须通过协议与无开火实机测试确认。现有反馈停止阈值 100ms 不会放宽 MPC 默认 20ms 外推上限。
+- 离线回归：`./build-ninja/planner_feedback_test` 或 `ctest --test-dir build-ninja -R planner_feedback --output-on-failure`，无需相机、串口、模型或显示。覆盖真实初值、速度/制动、坐标和时间、角度环绕、重复发送、估算反馈、原子快照、ADMM 解析对照及求解失败。
 - `Gimbal`：通过串口读取四元数、云台状态和弹速，发送视觉控制帧。
 - `Camera`：统一工业相机取流接口，`stop()` 提供安全的停止与 SDK 清理入口（HikRobot 启动失败时清理流程无操作兜底）。取流结束后队列关闭，`read()` 返回空图。
 - `Plotter`：将 JSON 调试数据发送到 UDP `127.0.0.1:9870`，无需接收端即可运行。
@@ -860,6 +865,36 @@ id
 ## 开发约定
 
 ### Planner 安全约定
+
+Planner 的瞄准点、有效标志与时间由完成的 `Plan` 一起发布。新一轮计算期间仍读取上次完成结果；真实失败结果发布后立即隐藏，显示年龄超过 20 ms 也隐藏。显示保鲜期与指令的 10 ms 有效时刻分别处理。
+
+`PlanStatus` 区分反馈、轨迹与 MPC 失败，每轴 `MpcStatus` 区分 `not_run`、`iteration_limit` 和解验证拒绝。未执行轴的 JSON 残差为 `null`。`ok` 表示控制解成功，开火仍需通过原有门控。`selection_valid`、`ballistic_converged` 和 `display_valid` 独立记录。
+
+默认每秒写入 `[PlannerStatus]` 累计计数，包括有目标次数、实际求解次数、MPC 失败、显示无效、恢复、超过 2 ms 与完成时已过期次数、各原因计数及最近 256 次各轴求解的迭代/耗时统计。状态变化详情 `[PlannerResult]` 最多每秒 5 条，不逐次输出 `no_target`。MPC 失败率用 `mpc_failed/attempted`；`with_target` 是规划整体拒绝率的分母，不能把 lost 后返回混入求解失败率。`send_gate_counts` 单独记录发送门控的累计次数，遥测 `send_status` 对应 0 ready、1 no_control、2 no_plan、3 plan_expired、4 feedback_stale、5 no_observation、6 observation_stale；ready 仍不等于允许开火。
+
+完整输入记录默认关闭。需要采集时，在使用的 YAML 的 `runtime` 段内合并以下配置，不能重复定义整个 `runtime`：
+
+```yaml
+runtime:
+  planner_diagnostics:
+    trace_enabled: true
+    trace_mode: failures
+    trace_directory: logs/planner_trace
+    trace_max_mb: 32
+```
+
+`failures` 只采集有目标的失败，每秒最多 5 份；`all` 采集全部规划，供短时连续分析。规划线程只复制数值并入队；容量 128，满时丢弃新记录并计数。独立线程序列化和落盘，每条刷新；达到文件限额或写入失败后停止完整记录，原因汇总继续。`trace_written` 是完成写入及流刷新的记录数，不保证掉电持久性。退出时排空队列。trace 缺失可能来自限频、丢样或限额，不能据此认定没有失败。
+
+JSONL 保存实际初值、4x60 参考、姿态/速度来源、目标状态、有效成本/约束/动力学配置、构建标识、两轴诊断和输出。耗时为整次规划及每轴 solve，不包含单独的选板/弹道阶段耗时。目标 11 维状态仅用于解释参考变化；离线程序重放轴求解，不重建完整 Tracker 历史。
+
+```bash
+cmake --build build-ninja --target planner_feedback_test planner_diagnostics_test planner_replay_test -j4
+ctest --test-dir build-ninja --output-on-failure -R 'planner_(feedback|diagnostics|replay)'
+./build-ninja/planner_replay_test logs/planner_trace/<session>.jsonl --mode=reproduce
+./build-ninja/planner_replay_test logs/planner_trace/<session>.jsonl --mode=sweep
+```
+
+`reproduce` 使用记录的配置和共享生产 `MpcAxis`，验证状态、迭代数、四种残差、约束误差及成功控制输出；构建指纹、schema、单位或模型不兼容时明确失败。无参考记录标为上游拒绝，不执行 MPC。`sweep` 扫描 rho 与迭代上限，输出两轴和合计的收敛数、P95/P99/最大耗时及超过 2/10 ms 次数；计时仅含 solve，不含初始化和参考生成，不自动修改配置。本批仍使用原来的冷启动、Q/R、rho、容差、控制周期、输出列和开火门控；调整求解参数前先采集实机有目标失败并确认速度单位、符号与关节导数约定。
 
 - 飞行时间迭代最多执行 10 次；未在 1 ms 容差内收敛时仍可输出跟踪控制，但该拍禁止开火，且不会提交新的装甲板锁。
 - 弹道模型的水平距离和高度都使用世界坐标系；yaw 角仍由云台坐标系中的目标向量计算。

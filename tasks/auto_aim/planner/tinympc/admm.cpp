@@ -309,6 +309,9 @@ int solve(TinySolver *solver)
         solver->work->zlnew = solver->work->u;
     }
 
+    // New references must affect the first rollout, including a cold start at zero.
+    update_linear_cost(solver);
+
     for (int i = 0; i < solver->settings->max_iter; i++)
     {
         // Solve linear system with Riccati and roll out to get new trajectory

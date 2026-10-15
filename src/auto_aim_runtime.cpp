@@ -1,4 +1,5 @@
 #include "src/auto_aim_runtime.hpp"
+#include "src/planner_diagnostics.hpp"
 
 #include <atomic>
 #include <chrono>
@@ -165,8 +166,10 @@ int run(const RuntimeOptions & options)
 
   // 运行模式开关先于任何硬件对象读取：配置文件缺失、runtime 段类型不合法都在这里退出
   RuntimeConfig runtime_config;
+  PlannerDiagnosticsConfig diagnostics_config;
   try {
     runtime_config = load_runtime_config(options.config_path);
+    diagnostics_config = PlannerDiagnosticsConfig::load(options.config_path);
   } catch (const std::exception & e) {
     tools::logger()->error("[Runtime] {}", e.what());
     return 2;
@@ -258,45 +261,59 @@ int run(const RuntimeOptions & options)
   std::atomic<double> latest_inference_wait_ms{0.0};
   std::atomic<double> latest_postprocess_ms{0.0};
   std::atomic<double> latest_delivery_ms{0.0};
+  std::atomic<int> latest_send_status{1};
+  PlannerDiagnostics planner_diagnostics(diagnostics_config);
 
   auto plan_thread = std::thread([&]() {
     constexpr auto period = 2ms;
     auto next = std::chrono::steady_clock::now();
     tools::LatencyStats planning_stats;
     auto last_planning_log = next;
+    bool unsupported_frame_reported = false;
     while (!quit) {
       const auto update = target_queue.front();
       const auto started = std::chrono::steady_clock::now();
       Plan plan;
-      bool plan_ok = false;
+      std::optional<PlanningTrace> trace;
+      if (planner_diagnostics.trace_enabled()) trace.emplace();
+      PlanSource source;
+      source.frame_sequence = update.sequence;
+      source.frame_timestamp = update.frame_timestamp;
       try {
-        const auto gs = gimbal.state();
-        const auto feedback_at = gimbal.feedback_timestamp();
-        const bool feedback_fresh =
-          feedback_at != epoch && started - feedback_at <= runtime_config.feedback_timeout;
-        // Planner::plan() owns the single prediction-to-control-time step. The target
-        // copied from the snapshot is never written back to Tracker.
-        plan = planner.plan(
-          update.target, gs.bullet_speed, solver.R_gimbal2world(),
-          feedback_fresh ? std::optional<double>(gs.yaw) : std::nullopt);
-        plan_ok = true;
-      } catch (const std::exception & e) {
-        tools::logger()->warn("[Planner] plan failed: {}", e.what());
+        const auto feedback = gimbal.feedback();
+        source.feedback_sequence = feedback.sequence;
+        const auto control_at = std::chrono::steady_clock::now();
+        PlanningState state;
+        state.yaw = feedback.state.yaw;
+        state.yaw_vel = feedback.state.yaw_vel;
+        state.pitch = feedback.state.pitch;
+        state.pitch_vel = feedback.state.pitch_vel;
+        state.timestamp = feedback.received_at;
+        state.R_gimbal2world = solver.R_gimbal2world(feedback.q);
+        // The reported rates are defined in the raw ZXY joint frame. A different
+        // IMU axis calibration needs a rate mapping, not just rotated angles.
+        const bool rate_frame_supported =
+          (state.R_gimbal2world - feedback.q.toRotationMatrix()).norm() < 1e-6;
+        if (!rate_frame_supported && !unsupported_frame_reported)
+          tools::logger()->error(
+            "[Planner] IMU axis calibration needs a matching joint-rate mapping; control disabled");
+        unsupported_frame_reported = !rate_frame_supported;
+        state.valid = feedback.fresh_at(control_at, runtime_config.feedback_timeout) &&
+          rate_frame_supported;
+        state.rates_measured = feedback.rates_measured;
+        plan = planner.plan_at(update.target, control_at, feedback.state.bullet_speed, state,
+                               trace ? &*trace : nullptr);
+      } catch (const std::exception &e) {
+        plan = Plan{};
+        plan.planned_at = started;
+        plan.status = PlanStatus::exception;
+        plan.error_message = e.what();
       }
       const auto generated_at = std::chrono::steady_clock::now();
-      if (plan_ok && plan.control) {
-        const auto generated_state = gimbal.state();
-        const auto generated_feedback_at = gimbal.feedback_timestamp();
-        const bool generated_feedback_fresh =
-          generated_feedback_at != epoch &&
-          generated_at - generated_feedback_at <= runtime_config.feedback_timeout;
-        planner.record_command_gimbal_yaw(
-          generated_feedback_fresh ? std::optional<double>(generated_state.yaw) : std::nullopt);
-      }
       const double planning_ms =
         std::chrono::duration<double, std::milli>(generated_at - started).count();
       planning_stats.add(planning_ms);
-      if (plan_ok) {
+      {
         float distance_m = -1.0F;
         if (update.target) {
           const auto x = update.target->ekf_x();
@@ -306,6 +323,8 @@ int run(const RuntimeOptions & options)
           plan, generated_at, update.frame_timestamp, update.last_observed_timestamp, planning_ms,
           update.sequence, distance_m});
       }
+      planner_diagnostics.observe(plan, update.target.has_value(), planning_ms, generated_at,
+                                  source, trace ? &*trace : nullptr);
 
       if (tools::delta_time(generated_at, last_planning_log) >= 1.0 && !planning_stats.empty()) {
         const auto summary = planning_stats.summary();
@@ -331,15 +350,23 @@ int run(const RuntimeOptions & options)
     auto next = std::chrono::steady_clock::now();
     while (!quit) {
       const auto update = plan_queue.front();
+      const auto feedback = gimbal.feedback();
       const auto now = std::chrono::steady_clock::now();
-      auto plan = update.plan;
-      const auto feedback_at = gimbal.feedback_timestamp();
+      auto plan = update.plan.relative_to(feedback.state.yaw, feedback.state.pitch);
       const bool plan_fresh =
-        update.generated_at != epoch && now - update.generated_at <= runtime_config.plan_timeout;
+        update.generated_at != epoch && now >= update.generated_at &&
+        now - update.generated_at <= runtime_config.plan_timeout && now <= update.plan.valid_at;
       const bool feedback_fresh =
-        feedback_at != epoch && now - feedback_at <= runtime_config.feedback_timeout;
+        feedback.fresh_at(now, runtime_config.feedback_timeout);
       const bool observation_known = update.last_observed_timestamp != epoch;
       const auto observation_age = observation_known ? now - update.last_observed_timestamp : now - epoch;
+      // 0=ready, 1=no_control, 2=no_plan, 3=plan_expired, 4=feedback_stale,
+      // 5=no_observation, 6=observation_stale. The gating below is unchanged.
+      const int send_status = update.generated_at == epoch ? 2 : !update.plan.control ? 1 :
+          !plan_fresh ? 3 : !feedback_fresh ? 4 : !observation_known ? 5 :
+          observation_age > runtime_config.control_timeout ? 6 : 0;
+      latest_send_status.store(send_status);
+      planner_diagnostics.observe_send(send_status);
 
       if (!plan_fresh || !feedback_fresh || !observation_known ||
           observation_age > runtime_config.control_timeout) {
@@ -352,10 +379,9 @@ int run(const RuntimeOptions & options)
       // not as one trigger event per received frame.
 #ifdef DUST_ENABLE_SIMULATOR
       if (talos_backend) {
-        const auto state = gimbal.state();
         const float distance_m = plan.control ? update.distance_m : -1.0F;
-        const double absolute_yaw = state.yaw + plan.yaw;
-        const double absolute_pitch = state.pitch + plan.pitch;
+        const double absolute_yaw = plan.control ? plan.absolute_yaw : feedback.state.yaw;
+        const double absolute_pitch = plan.control ? plan.absolute_pitch : feedback.state.pitch;
         // Talos consumes an absolute solver target; the hardware planner command is relative.
         const float pitch_deg = static_cast<float>(
           -(90.0 + absolute_pitch * 57.29577951308232));
@@ -394,7 +420,8 @@ int run(const RuntimeOptions & options)
     while (!quit) {
       const auto target_update = target_queue.front();
       const auto plan_update = plan_queue.front();
-      const auto gs = gimbal.state();
+      const auto feedback = gimbal.feedback();
+      const auto & gs = feedback.state;
       const auto sampled_at = std::chrono::steady_clock::now();
       if (target_update.sequence != 0 && target_update.sequence != last_latency_sequence) {
         latency_stats.add(1e3 * tools::delta_time(sampled_at, target_update.frame_timestamp));
@@ -419,6 +446,44 @@ int run(const RuntimeOptions & options)
       data["plan_pitch_vel"] = plan_update.plan.pitch_vel;
       data["plan_pitch_acc"] = plan_update.plan.pitch_acc;
       data["plan_time_ms"] = plan_update.planning_ms;
+      data["plan_status"] = to_string(plan_update.plan.status);
+      data["plan_status_code"] = static_cast<int>(plan_update.plan.status);
+      data["aim_selection_valid"] = plan_update.plan.aim_debug.selection_valid;
+      data["aim_ballistic_converged"] = plan_update.plan.aim_debug.ballistic_converged;
+      data["aim_display_valid"] = plan_update.plan.aim_visible_at(sampled_at);
+      data["aim_plan_sequence"] = plan_update.sequence;
+      data["aim_age_ms"] = 1e3 * tools::delta_time(sampled_at, plan_update.plan.planned_at);
+      data["mpc_yaw"] = mpc_diagnostics_json(plan_update.plan.yaw_mpc);
+      data["mpc_pitch"] = mpc_diagnostics_json(plan_update.plan.pitch_mpc);
+      const int send_status = latest_send_status.load();
+      data["send_status_code"] = send_status;
+      static constexpr const char *send_names[] = {"ready", "no_control", "no_plan",
+          "plan_expired", "feedback_stale", "no_observation", "observation_stale"};
+      data["send_status"] = send_names[send_status];
+      data["planner_diagnostic_dropped"] = planner_diagnostics.dropped();
+      data["planner_trace_written"] = planner_diagnostics.written();
+      data["planner_trace_enabled"] = planner_diagnostics.trace_enabled();
+      data["feedback_sequence"] = feedback.sequence;
+      data["feedback_valid"] = feedback.valid;
+      data["feedback_rates_measured"] = feedback.rates_measured;
+      data["mpc_feedback_age_ms"] = plan_update.plan.feedback_age_ms;
+      data["mpc_state_valid"] = plan_update.plan.initial_state.valid;
+      data["mpc_initial_yaw"] = plan_update.plan.initial_state.yaw;
+      data["mpc_initial_yaw_vel"] = plan_update.plan.initial_state.yaw_vel;
+      data["mpc_initial_pitch"] = plan_update.plan.initial_state.pitch;
+      data["mpc_initial_pitch_vel"] = plan_update.plan.initial_state.pitch_vel;
+      data["plan_absolute_yaw"] = plan_update.plan.absolute_yaw;
+      data["plan_absolute_pitch"] = plan_update.plan.absolute_pitch;
+      data["mpc_yaw_solved"] = plan_update.plan.yaw_mpc.solved;
+      data["mpc_pitch_solved"] = plan_update.plan.pitch_mpc.solved;
+      data["mpc_yaw_iterations"] = plan_update.plan.yaw_mpc.iterations;
+      data["mpc_pitch_iterations"] = plan_update.plan.pitch_mpc.iterations;
+      data["mpc_yaw_primal_residual"] = plan_update.plan.yaw_mpc.primal_residual;
+      data["mpc_pitch_primal_residual"] = plan_update.plan.pitch_mpc.primal_residual;
+      data["mpc_yaw_dual_residual"] = plan_update.plan.yaw_mpc.dual_residual;
+      data["mpc_pitch_dual_residual"] = plan_update.plan.pitch_mpc.dual_residual;
+      data["mpc_yaw_input_violation"] = plan_update.plan.yaw_mpc.input_violation;
+      data["mpc_pitch_input_violation"] = plan_update.plan.pitch_mpc.input_violation;
       data["capture_time_ms"] = latest_capture_ms.load();
       data["detection_submit_ms"] = latest_submit_ms.load();
       data["inference_time_ms"] = latest_inference_ms.load();
@@ -606,8 +671,9 @@ int run(const RuntimeOptions & options)
         armors, detection->net_roi, detection->light_roi, to_string(current_state)};
       if (!targets.empty()) {
         overlay.target = &targets.front();
-        overlay.aim_xyza = planner.debug_xyza();
-        overlay.aim_valid = planner.debug_aim_valid();
+        const auto completed_plan = plan_queue.front();
+        overlay.aim_xyza = completed_plan.plan.aim_debug.xyza;
+        overlay.aim_valid = completed_plan.plan.aim_visible_at(std::chrono::steady_clock::now());
       }
       visualization::draw_vision_overlay(img_det, overlay, solver);
 

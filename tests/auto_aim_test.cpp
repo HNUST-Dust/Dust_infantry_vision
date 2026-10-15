@@ -9,6 +9,7 @@
 #include "tasks/auto_aim/solver.hpp"
 #include "tasks/auto_aim/tracker.hpp"
 #include "tasks/auto_aim/yolo.hpp"
+#include "tools/angle_rate_estimator.hpp"
 #include "tools/exiter.hpp"
 #include "tools/img_tools.hpp"
 #include "tools/logger.hpp"
@@ -47,6 +48,7 @@ int main(int argc, char * argv[])
   auto_aim::Solver solver(config_path);
   auto_aim::Tracker tracker(config_path, solver);
   auto_aim::Planner planner(config_path);
+  tools::AngleRateEstimator feedback_rates;
 
   cv::Mat img, drawing;
   auto t0 = std::chrono::steady_clock::now();
@@ -57,7 +59,7 @@ int main(int argc, char * argv[])
   video.set(cv::CAP_PROP_POS_FRAMES, start_index);
   for (int i = 0; i < start_index; i++) {
     double t, w, x, y, z;
-    text >> t >> w >> x >> y >> z;
+    if (!(text >> t >> w >> x >> y >> z)) break;
   }
 
   for (int frame_count = start_index; !exiter.exit(); frame_count++) {
@@ -67,7 +69,7 @@ int main(int argc, char * argv[])
     if (img.empty()) break;
 
     double t, w, x, y, z;
-    text >> t >> w >> x >> y >> z;
+    if (!(text >> t >> w >> x >> y >> z)) break;
     auto timestamp = t0 + std::chrono::microseconds(int(t * 1e6));
 
     /// 自瞄核心逻辑
@@ -84,8 +86,18 @@ int main(int argc, char * argv[])
       targets.empty() ? std::nullopt : std::optional<auto_aim::Target>(targets.front());
     // 离线回放：基准时刻取视频时间戳 + 5ms 的 detector/planner 预算，对应旧 Aimer 的 to_now=false
     auto planner_start = std::chrono::steady_clock::now();
+    auto_aim::PlanningState state;
+    state.R_gimbal2world = solver.R_gimbal2world();
+    const auto angles = tools::eulers(state.R_gimbal2world, 2, 0, 1);
+    const auto rates = feedback_rates.update(angles.head<2>(), timestamp);
+    state.yaw = angles[0];
+    state.pitch = angles[1];
+    state.yaw_vel = rates ? (*rates)[0] : 0.0;
+    state.pitch_vel = rates ? (*rates)[1] : 0.0;
+    state.timestamp = timestamp;
+    state.valid = rates.has_value();
     auto plan = planner.plan_at(
-      plan_target, timestamp + std::chrono::milliseconds(5), 27.0, solver.R_gimbal2world());
+      plan_target, timestamp + std::chrono::milliseconds(5), 27.0, state);
     /// 调试输出
 
     auto finish = std::chrono::steady_clock::now();
@@ -148,10 +160,10 @@ int main(int argc, char * argv[])
       }
 
       // planner 的瞄准位置（决策时刻策略选中的那块装甲板）
-      Eigen::Vector4d aim_xyza = planner.debug_xyza();
+      Eigen::Vector4d aim_xyza = plan.aim_debug.xyza;
       auto image_points =
         solver.reproject_armor(aim_xyza.head(3), aim_xyza[3], target.armor_type, target.name);
-      if (planner.debug_aim_valid()) tools::draw_points(img, image_points, {0, 0, 255});
+      if (plan.aim_debug.display_valid) tools::draw_points(img, image_points, {0, 0, 255});
 
       // 观测器内部数据
       Eigen::VectorXd x = target.ekf_x();

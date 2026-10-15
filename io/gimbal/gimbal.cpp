@@ -5,6 +5,7 @@
 #include "tools/math_tools.hpp"
 #include "tools/yaml.hpp"
 
+#include <cmath>
 #include <stdexcept>
 
 namespace io
@@ -15,6 +16,7 @@ Gimbal::Gimbal(const std::string & config_path, bool simulate)
   if (simulate_) {
     state_.bullet_speed = 23.0F;
     feedback_timestamp_ = std::chrono::steady_clock::now();
+    feedback_valid_ = true;
     tools::logger()->warn("[Gimbal] Using simulated feedback and serial output.");
     return;
   }
@@ -72,22 +74,39 @@ GimbalState Gimbal::state() const
 
 std::chrono::steady_clock::time_point Gimbal::feedback_timestamp() const
 {
-  if (simulate_) return std::chrono::steady_clock::now();
+  return feedback().received_at;
+}
+
+GimbalFeedback Gimbal::feedback() const
+{
   std::lock_guard<std::mutex> lock(mutex_);
-  return feedback_timestamp_;
+  const auto at = simulate_ && !external_feedback_ ? std::chrono::steady_clock::now()
+                                                 : feedback_timestamp_;
+  return {state_, feedback_q_, at, feedback_sequence_, feedback_valid_,
+          !simulate_ && !external_feedback_};
 }
 
 void Gimbal::set_external_feedback(
   const Eigen::Quaterniond & q, std::chrono::steady_clock::time_point t)
 {
-  const auto angles = tools::eulers(q.normalized(), 2, 0, 1);
   std::lock_guard<std::mutex> lock(mutex_);
+  external_feedback_ = true;
+  feedback_valid_ = false;
+  if (!q.coeffs().allFinite() || !std::isfinite(q.norm()) || q.norm() < 1e-6) {
+    external_rates_ = tools::AngleRateEstimator{};
+    return;
+  }
+  const auto angles = tools::eulers(q.normalized(), 2, 0, 1);
+  const auto rates = external_rates_.update(angles.head<2>(), t);
   state_.yaw = static_cast<float>(angles[0]);
   state_.pitch = static_cast<float>(angles[1]);
-  state_.yaw_vel = 0.0F;
-  state_.pitch_vel = 0.0F;
+  state_.yaw_vel = rates ? (*rates)[0] : 0.0F;
+  state_.pitch_vel = rates ? (*rates)[1] : 0.0F;
   state_.bullet_speed = 23.0F;
   feedback_timestamp_ = t;
+  feedback_q_ = q.normalized();
+  ++feedback_sequence_;
+  feedback_valid_ = rates.has_value() && rates->allFinite();
 }
 
 std::string Gimbal::str(GimbalMode mode) const
@@ -231,6 +250,12 @@ void Gimbal::read_thread()
 
     error_count = 0;
     Eigen::Quaterniond q(rx_data_.q[0], rx_data_.q[1], rx_data_.q[2], rx_data_.q[3]);
+    if (!q.coeffs().allFinite() || !std::isfinite(q.norm()) || q.norm() < 1e-6 ||
+        !std::isfinite(rx_data_.yaw_vel) || !std::isfinite(rx_data_.pitch_vel)) {
+      std::lock_guard<std::mutex> lock(mutex_);
+      feedback_valid_ = false;
+      continue;
+    }
     if (!orientations_.push(q, t)) continue;
     q.normalize();
     // 云台关节轴为 Z(yaw)-X(pitch)-Y(roll)，按同一顺序提取反馈角。
@@ -265,6 +290,9 @@ void Gimbal::read_thread()
     // tools::logger()->info("[Gimbal] bullet_speed: {:.2f}", state_.bullet_speed);
     state_.bullet_count = rx_data_.bullet_count;
     feedback_timestamp_ = t;
+    feedback_q_ = q;
+    ++feedback_sequence_;
+    feedback_valid_ = true;
 
     switch (rx_data_.mode) {
       case 0:
@@ -285,6 +313,10 @@ void Gimbal::read_thread()
 
 void Gimbal::reconnect()
 {
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    feedback_valid_ = false;
+  }
   int max_retry_count = 10;
   for (int i = 0; i < max_retry_count && !quit_; ++i) {
     tools::logger()->warn("[Gimbal] Reconnecting serial, attempt {}/{}...", i + 1, max_retry_count);

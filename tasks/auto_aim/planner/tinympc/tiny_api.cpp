@@ -106,8 +106,9 @@ int tiny_setup(TinySolver** solverp,
     work->gl = tinyMatrix::Zero(nx, N);
     work->yl = tinyMatrix::Zero(nu, N-1);
 
-    work->Q = (Q + rho * tinyMatrix::Identity(nx, nx)).diagonal();
-    work->R = (R + rho * tinyMatrix::Identity(nu, nu)).diagonal();
+    // Reference gradients use physical costs; precompute adds the ADMM penalty once.
+    work->Q = Q.diagonal();
+    work->R = R.diagonal();
     work->Adyn = Adyn; // State transition matrix
     work->Bdyn = Bdyn; // Input matrix
     work->fdyn = fdyn; // Affine offset vector

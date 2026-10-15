@@ -10,6 +10,7 @@
 #include <optional>
 
 #include "serial/serial.h"
+#include "tools/angle_rate_estimator.hpp"
 #include "tools/quaternion_buffer.hpp"
 
 namespace io
@@ -62,6 +63,22 @@ struct GimbalState
   uint16_t bullet_count;
 };
 
+struct GimbalFeedback
+{
+  GimbalState state{};
+  Eigen::Quaterniond q = Eigen::Quaterniond::Identity();
+  std::chrono::steady_clock::time_point received_at{};
+  uint64_t sequence = 0;
+  bool valid = false;
+  bool rates_measured = false;
+  bool fresh_at(
+    std::chrono::steady_clock::time_point now, std::chrono::steady_clock::duration timeout) const
+  {
+    return valid && received_at != std::chrono::steady_clock::time_point{} &&
+      now >= received_at && now - received_at <= timeout;
+  }
+};
+
 class Gimbal
 {
 public:
@@ -71,6 +88,7 @@ public:
 
   GimbalMode mode() const;
   GimbalState state() const;
+  GimbalFeedback feedback() const;
   std::chrono::steady_clock::time_point feedback_timestamp() const;
   void set_external_feedback(const Eigen::Quaterniond & q, std::chrono::steady_clock::time_point t);
   std::string str(GimbalMode mode) const;
@@ -100,6 +118,11 @@ private:
   GimbalMode mode_ = GimbalMode::IDLE;
   GimbalState state_{};
   std::chrono::steady_clock::time_point feedback_timestamp_{};
+  Eigen::Quaterniond feedback_q_ = Eigen::Quaterniond::Identity();
+  uint64_t feedback_sequence_ = 0;
+  bool feedback_valid_ = false;
+  bool external_feedback_ = false;
+  tools::AngleRateEstimator external_rates_;
   std::atomic<uint64_t> write_failure_count_{0};
   tools::QuaternionBuffer orientations_{1000};
 

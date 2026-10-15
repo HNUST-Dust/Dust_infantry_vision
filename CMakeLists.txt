@@ -125,7 +125,7 @@ add_subdirectory(io)
 add_subdirectory(tasks/auto_aim)
 
 ###################src###################
-add_executable(infantry src/infantry.cpp src/auto_aim_runtime.cpp visualization/vision_overlay.cpp)
+add_executable(infantry src/infantry.cpp src/auto_aim_runtime.cpp src/planner_diagnostics.cpp visualization/vision_overlay.cpp)
 
 # 只声明直接使用的库：OpenCV / Eigen / yaml-cpp / nlohmann / spdlog / OpenVINO /
 # Threads 与仓库根 include 由 tools / io / auto_aim 的 PUBLIC（及 PRIVATE 的 LINK_ONLY）

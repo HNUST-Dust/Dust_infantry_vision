@@ -3,7 +3,7 @@ enemy_color: "blue"
 
 #####-----运行模式-----#####
 runtime:
-  simulate_gimbal: true   # 虚拟云台：姿态与串口都走模拟，不依赖真机（默认 false）
+  simulate_gimbal: false   # 虚拟云台：姿态与串口都走模拟，不依赖真机（默认 false）
   headless: true          # 关闭检测可视化与窗口事件，无桌面运行（如开机自启）时置 true（默认 false）
   verbose_ekf: false      # 每帧输出 EKF 11 维状态，165fps 下会刷满日志（默认 false）
   foxglove: true         # 启用 Foxglove 图像与遥测推送，监听与编码参数见下面的 foxglove 段（默认 false）

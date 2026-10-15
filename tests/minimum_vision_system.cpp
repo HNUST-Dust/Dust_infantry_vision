@@ -8,6 +8,7 @@
 #include "tasks/auto_aim/planner/planner.hpp"
 #include "tasks/auto_aim/solver.hpp"
 #include "tasks/auto_aim/tracker.hpp"
+#include "tools/angle_rate_estimator.hpp"
 #include "tools/exiter.hpp"
 #include "tools/img_tools.hpp"
 #include "tools/logger.hpp"
@@ -36,6 +37,7 @@ int main(int argc, char * argv[])
   auto_aim::Solver solver(config_path);
   auto_aim::Tracker tracker(config_path, solver);
   auto_aim::Planner planner(config_path);
+  tools::AngleRateEstimator feedback_rates;
 
   auto detect_thread = std::thread([&]() {
     while (!exiter.exit()) {
@@ -68,7 +70,16 @@ int main(int argc, char * argv[])
 
     const std::optional<auto_aim::Target> plan_target =
       targets.empty() ? std::nullopt : std::optional<auto_aim::Target>(targets.front());
-    auto plan = planner.plan_at(plan_target, t, 22.0, solver.R_gimbal2world(), gimbal_pos[0]);
+    auto_aim::PlanningState state;
+    state.R_gimbal2world = solver.R_gimbal2world();
+    const auto rates = feedback_rates.update(gimbal_pos.head<2>(), t);
+    state.yaw = gimbal_pos[0];
+    state.pitch = gimbal_pos[1];
+    state.yaw_vel = rates ? (*rates)[0] : 0.0;
+    state.pitch_vel = rates ? (*rates)[1] : 0.0;
+    state.timestamp = t;
+    state.valid = rates.has_value();
+    auto plan = planner.plan_at(plan_target, t, 22.0, state);
 
     auto dt = tools::delta_time(t, last_t);
     last_t = t;
@@ -110,10 +121,10 @@ int main(int argc, char * argv[])
       }
 
       // planner 的瞄准位置
-      Eigen::Vector4d aim_xyza = planner.debug_xyza();
+      Eigen::Vector4d aim_xyza = plan.aim_debug.xyza;
       auto image_points =
         solver.reproject_armor(aim_xyza.head(3), aim_xyza[3], target.armor_type, target.name);
-      if (planner.debug_aim_valid())
+      if (plan.aim_debug.display_valid)
         tools::draw_points(img, image_points, {0, 0, 255});  // red
       else
         tools::draw_points(img, image_points, {255, 0, 0});  // blue
