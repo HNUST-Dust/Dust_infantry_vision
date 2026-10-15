@@ -7,7 +7,7 @@ runtime:
   simulate_gimbal: false # Talos 提供云台反馈，无需额外启用虚拟云台
   headless: true          # 关闭检测可视化与窗口事件
   verbose_ekf: false      # 每帧输出 EKF 11 维状态
-  foxglove: false         # 启用 Foxglove 图像与遥测推送
+  foxglove: true         # 启用 Foxglove 图像与遥测推送
   fire_timeout_ms: 30     # 最后一次真实匹配超过此时间后禁止开火
   control_timeout_ms: 80  # 最后一次真实匹配超过此时间后停止目标控制
   feedback_timeout_ms: 100 # 云台姿态反馈超时后停止目标控制
@@ -16,17 +16,17 @@ runtime:
 #####-----神经网络参数-----#####
 classify_model: assets/tiny_resnet.onnx
 inference_backend: openvino # openvino / tensorrt；切换时同时修改模型路径和颜色顺序
-yolov5_model_path: assets/0526.engine  # 根据本机 TensorRT/CUDA 环境生成后填写
+yolov5_model_path: assets/yolov5.xml  # 根据本机 TensorRT/CUDA 环境生成后填写
 # OpenVINO 配置：将 inference_backend 改为 openvino，并替换上面的模型路径。
 # yolov5_model_path: assets/yolov5.xml # 使用此模型时删除下面的 yolov5_color_order
 cuda_device: 0 # TensorRT 使用的 CUDA 设备编号；需以 -DENABLE_TENSORRT=ON 编译
 # 0526 模型：demo.avi 已验证 blue=0、gray=2，尚无真实 red/purple 样本。
 yolov5_color_order: [blue, red, gray, purple]
 # 以下 device / performance_mode 仅用于 OpenVINO。
-device: CPU
+device: GPU
 # YOLO 与 MultiThreadDetector 共用的推理请求池大小
-infer_request_buffer_num: 1
-performance_mode: LATENCY
+infer_request_buffer_num: 2
+performance_mode: THROUGHPUT # THROUGHPUT / LATENCY / CUMULATIVE_THROUGHPUT 
 min_confidence: 0.8
 use_traditional: true
 
@@ -66,7 +66,7 @@ armor_association:
     angle_prior_rad: 0.15
 
 #####-----planner 瞄准/弹道参数（原 aimer，2026-10-03 并入）-----#####
-yaw_offset: 0.0 # degree 向右为负
+yaw_offset: -10.0 # degree 向右为负
 pitch_offset: 0.0 # degree 向上为正
 comming_angle: 55 # degree
 leaving_angle: 20 # degree

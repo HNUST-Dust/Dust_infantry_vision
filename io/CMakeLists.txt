@@ -10,9 +10,14 @@ add_library(io STATIC
     camera.cpp
     dm_imu/dm_imu.cpp
     gimbal/gimbal.cpp
-    talos/talos.cpp
 )
 
+if(ENABLE_SIMULATOR)
+  target_sources(io PRIVATE talos/talos.cpp)
+  target_compile_definitions(io PUBLIC DUST_ENABLE_SIMULATOR)
+  target_link_libraries(io PUBLIC talos_ipc)
+  add_dependencies(io talos_ipc_build)
+endif()
 
 # 厂商 SDK 一律以 imported target 表达，取代 target_link_directories + 裸库名：后者会把厂商
 # SDK 的 -L 路径 PUBLIC 传播给全部下游可执行程序，且库名只能靠编译器的默认搜索路径解析，
@@ -83,7 +88,6 @@ target_link_libraries(io
     yaml-cpp
     serial
     ${OpenCV_LIBS}
-    talos_ipc
   PRIVATE
     # io 的源文件与 PCH 都经 tools/logger.hpp 包含 spdlog，而 io 并不链接 tools，
     # 必须自己声明一次：spdlog 是 header-only 内联（SPDLOG_INLINE inline），
@@ -91,7 +95,6 @@ target_link_libraries(io
     spdlog::spdlog_header_only
     Threads::Threads
 )
-add_dependencies(io talos_ipc_build)
 
 target_precompile_headers(io PRIVATE
   <Eigen/Geometry>

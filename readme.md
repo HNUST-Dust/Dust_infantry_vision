@@ -41,10 +41,37 @@ cmake --build build-ninja --target auto_aim_test -j$(nproc)
 | --- | --- | --- |
 | `ENABLE_CCACHE` | `ON` | 找到 `ccache` 时用它做编译器启动器 |
 | `ENABLE_WARNINGS` | `OFF` | 开启后追加 `-Wall -Wextra -Wpedantic` |
+| `ENABLE_SIMULATOR` | `OFF` | 启用 Talos 仿真 IO；关闭时不需要 Cargo、模拟器源码或 Talos IPC 动态库 |
+| `TALOS_IPC_ROOT` | `../bevy_robomaster_simulator` | 启用仿真时使用的模拟器源码根目录，须包含 `crates/talos-ipc` |
 | `ENABLE_TENSORRT` | `OFF` | 启用 TensorRT 10 后端，需指定 `TensorRT_ROOT` 和 CUDA 12 的 `CUDAToolkit_ROOT` |
 | `ENABLE_FOXGLOVE_CALIBRATION` | `OFF` | 为 `capture` 启用原生 Foxglove WebSocket 预览与标定服务 |
 | `HIKROBOT_MVS_ROOT` | `/opt/MVS` | HikRobot MVS SDK 安装根目录 |
 | `OpenVINO_DIR` | `/opt/intel/openvino_2024.6.0/runtime/cmake/` | OpenVINO CMake 包目录 |
+
+实车编译（默认关闭 Talos 仿真支持）：
+
+```bash
+cmake -B build-ninja -G Ninja -DENABLE_SIMULATOR=OFF
+cmake --build build-ninja --target infantry -j$(nproc)
+./build-ninja/infantry configs/standard3.yaml
+```
+
+仿真编译（需 Cargo 和模拟器源码；建议用独立构建目录）：
+
+```bash
+cmake -B build-simulator -G Ninja -DENABLE_SIMULATOR=ON \
+  -DTALOS_IPC_ROOT=/path/to/bevy_robomaster_simulator
+cmake --build build-simulator --target infantry -j$(nproc)
+# 启动 Talos 模拟器后运行
+./build-simulator/infantry configs/simulator.yaml
+```
+
+`ENABLE_SIMULATOR` 控制是否编译、链接 Talos 后端。开启后仍通过 YAML 的
+`runtime.io_backend` 选择 `hardware`（默认）或 `talos`，实车后端仍可使用；
+关闭时选择 `talos` 会在初始化硬件前报错并返回退出码 2。
+该选项与 `ENABLE_TENSORRT`、`ENABLE_FOXGLOVE_VISION` 独立：仿真可使用 OpenVINO，
+需要 Foxglove 推送时另加 `-DENABLE_FOXGLOVE_VISION=ON`。
+`runtime.simulate_gimbal` 只用于虚拟云台调试，不等同于 Talos 仿真，不受此编译开关影响。
 
 可执行文件输出在 `build-ninja/` 目录。主要程序包括：
 
@@ -57,13 +84,13 @@ TensorRT 模型转换、后端配置、精度对比和 Talos 模拟器运行见 
 
 ### 3. 无硬件快速验证
 
-先跑不依赖任何硬件的自动回归（CTest 始终注册 `quaternion_buffer`，另外两个 Foxglove 用例取决于构建选项）：
+先跑不依赖任何硬件的自动回归（CTest 始终注册 `quaternion_buffer`，其余用例取决于构建选项）：
 
 ```bash
 ctest --test-dir build-ninja --output-on-failure
 ```
 
-`quaternion_buffer` 总是注册；`foxglove_calibration_protocol` 仅在启用 `ENABLE_FOXGLOVE_CALIBRATION` 时注册，`foxglove_vision_protocol` 仅在启用 `ENABLE_FOXGLOVE_VISION` 时注册。其余测试程序都是独立可执行文件，需要手动运行。
+`quaternion_buffer` 总是注册；`simulator_disabled` 在 `ENABLE_SIMULATOR=OFF` 时验证误用 Talos 配置会先于硬件初始化报错；`foxglove_calibration_protocol` 仅在启用 `ENABLE_FOXGLOVE_CALIBRATION` 时注册，`foxglove_vision_protocol` 仅在启用 `ENABLE_FOXGLOVE_VISION` 时注册。其余测试程序都是独立可执行文件，需要手动运行。
 
 只验证命令入口：
 
@@ -101,6 +128,7 @@ source /opt/intel/openvino_2024.6.0/setupvars.sh
 
 | 键 | 默认 | 说明 |
 | --- | --- | --- |
+| `runtime.io_backend` | `hardware` | `hardware` 使用相机/云台；`talos` 使用模拟器，需 `ENABLE_SIMULATOR=ON` |
 | `runtime.simulate_gimbal` | `false` | 置为 `true` 时使用虚拟云台姿态并只做串口输出，不依赖真实云台，可用于无设备联调 |
 | `runtime.headless` | `false` | 置为 `true` 时关闭检测可视化和窗口事件，适合无桌面的远程运行；无桌面开机自启必须为 `true` |
 | `runtime.verbose_ekf` | `false` | 置为 `true` 时每帧输出 EKF 11 维状态；关闭时无输出 |
@@ -123,6 +151,7 @@ source /opt/intel/openvino_2024.6.0/setupvars.sh
 ### 自动回归（CTest）
 
 - `quaternion_buffer_test`：无硬件回归，覆盖姿态插值、历史重复查询、缓存淘汰、无效四元数、通信间断和退出唤醒。链接仅需 Eigen 与 Threads。
+- `simulator_disabled`：仅在关闭仿真支持时注册，使用仅含 Talos 后端选择的临时配置验证启动返回 2，并提示重新启用编译开关。
 
   ```bash
   ./build-ninja/quaternion_buffer_test

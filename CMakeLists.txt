@@ -76,29 +76,41 @@ if(ENABLE_TENSORRT)
   target_link_libraries(dust_tensorrt INTERFACE "${TensorRT_LIBRARY}" CUDA::cudart)
 endif()
 
-set(TALOS_IPC_ROOT "${PROJECT_SOURCE_DIR}/../bevy_robomaster_simulator" CACHE PATH "Bevy Talos IPC crate root")
-find_program(CARGO_EXECUTABLE cargo)
-if(NOT CARGO_EXECUTABLE)
-  message(FATAL_ERROR "cargo is required to build the Talos IPC C ABI")
+option(ENABLE_SIMULATOR "Build the Talos simulator IO backend" OFF)
+if(ENABLE_SIMULATOR)
+  set(TALOS_IPC_ROOT "${PROJECT_SOURCE_DIR}/../bevy_robomaster_simulator" CACHE PATH "Bevy Talos IPC crate root")
+  foreach(TALOS_IPC_REQUIRED_FILE
+      Cargo.toml Cargo.lock crates/talos-ipc/Cargo.toml crates/talos-ipc/include/talos_ipc.h)
+    if(NOT EXISTS "${TALOS_IPC_ROOT}/${TALOS_IPC_REQUIRED_FILE}")
+      message(FATAL_ERROR
+        "Talos IPC source missing: ${TALOS_IPC_ROOT}/${TALOS_IPC_REQUIRED_FILE}; "
+        "set TALOS_IPC_ROOT to the simulator checkout or use -DENABLE_SIMULATOR=OFF")
+    endif()
+  endforeach()
+  find_program(CARGO_EXECUTABLE cargo)
+  if(NOT CARGO_EXECUTABLE)
+    message(FATAL_ERROR "ENABLE_SIMULATOR=ON requires cargo to build the Talos IPC C ABI")
+  endif()
+  set(TALOS_IPC_LIBRARY "${TALOS_IPC_ROOT}/target/release/libtalos_ipc.so")
+  file(GLOB_RECURSE TALOS_IPC_SOURCES CONFIGURE_DEPENDS "${TALOS_IPC_ROOT}/crates/talos-ipc/src/*.rs")
+  add_custom_command(
+    OUTPUT "${TALOS_IPC_LIBRARY}"
+    COMMAND "${CARGO_EXECUTABLE}" build --release --manifest-path "${TALOS_IPC_ROOT}/Cargo.toml" -p talos-ipc
+    WORKING_DIRECTORY "${TALOS_IPC_ROOT}"
+    DEPENDS "${TALOS_IPC_ROOT}/Cargo.toml" "${TALOS_IPC_ROOT}/Cargo.lock"
+      "${TALOS_IPC_ROOT}/crates/talos-ipc/Cargo.toml" ${TALOS_IPC_SOURCES}
+    VERBATIM
+  )
+  add_custom_target(talos_ipc_build DEPENDS "${TALOS_IPC_LIBRARY}")
+  add_library(talos_ipc SHARED IMPORTED GLOBAL)
+  set_target_properties(talos_ipc PROPERTIES
+    IMPORTED_LOCATION "${TALOS_IPC_LIBRARY}"
+    # Rust cdylibs have no SONAME; link by library name so RUNPATH resolves them.
+    IMPORTED_NO_SONAME TRUE
+    INTERFACE_INCLUDE_DIRECTORIES "${TALOS_IPC_ROOT}/crates/talos-ipc/include"
+  )
 endif()
-set(TALOS_IPC_LIBRARY "${TALOS_IPC_ROOT}/target/release/libtalos_ipc.so")
-file(GLOB_RECURSE TALOS_IPC_SOURCES CONFIGURE_DEPENDS "${TALOS_IPC_ROOT}/crates/talos-ipc/src/*.rs")
-add_custom_command(
-  OUTPUT "${TALOS_IPC_LIBRARY}"
-  COMMAND "${CARGO_EXECUTABLE}" build --release --manifest-path "${TALOS_IPC_ROOT}/Cargo.toml" -p talos-ipc
-  WORKING_DIRECTORY "${TALOS_IPC_ROOT}"
-  DEPENDS "${TALOS_IPC_ROOT}/Cargo.toml" "${TALOS_IPC_ROOT}/Cargo.lock"
-    "${TALOS_IPC_ROOT}/crates/talos-ipc/Cargo.toml" ${TALOS_IPC_SOURCES}
-  VERBATIM
-)
-add_custom_target(talos_ipc_build DEPENDS "${TALOS_IPC_LIBRARY}")
-add_library(talos_ipc SHARED IMPORTED GLOBAL)
-set_target_properties(talos_ipc PROPERTIES
-  IMPORTED_LOCATION "${TALOS_IPC_LIBRARY}"
-  # Rust cdylibs have no SONAME; link by library name so RUNPATH resolves them.
-  IMPORTED_NO_SONAME TRUE
-  INTERFACE_INCLUDE_DIRECTORIES "${TALOS_IPC_ROOT}/crates/talos-ipc/include"
-)
+message(STATUS "Talos simulator backend: ${ENABLE_SIMULATOR}")
 
 # 仓库根即 include 根：全仓 198 处 #include "tools/logger.hpp" 这类形式依赖它
 # （tools 121 / tasks 46 / io 23 / visualization 6 / calibration 2）。

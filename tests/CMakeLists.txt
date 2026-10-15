@@ -74,6 +74,16 @@ add_executable(quaternion_buffer_test quaternion_buffer_test.cpp)
 target_link_libraries(quaternion_buffer_test PRIVATE dust::include Eigen3::Eigen Threads::Threads)
 add_test(NAME quaternion_buffer COMMAND quaternion_buffer_test)
 
+if(NOT ENABLE_SIMULATOR)
+  add_test(
+    NAME simulator_disabled
+    COMMAND ${CMAKE_COMMAND}
+      -DINFANTRY=$<TARGET_FILE:infantry>
+      -P ${CMAKE_CURRENT_SOURCE_DIR}/simulator_disabled_test.cmake
+  )
+  set_tests_properties(simulator_disabled PROPERTIES TIMEOUT 10)
+endif()
+
 if(ENABLE_FOXGLOVE_CALIBRATION OR ENABLE_FOXGLOVE_VISION)
   find_package(Python3 REQUIRED COMPONENTS Interpreter)
 endif()

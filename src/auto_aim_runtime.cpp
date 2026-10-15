@@ -12,7 +12,9 @@
 
 #include "io/camera.hpp"
 #include "io/gimbal/gimbal.hpp"
+#ifdef DUST_ENABLE_SIMULATOR
 #include "io/talos/talos.hpp"
+#endif
 #include "tasks/auto_aim/multithread/mt_detector.hpp"
 #include "tasks/auto_aim/planner/planner.hpp"
 #include "tasks/auto_aim/solver.hpp"
@@ -107,6 +109,11 @@ RuntimeConfig load_runtime_config(const std::string & config_path)
     config.plan_timeout = std::chrono::milliseconds(node["plan_timeout_ms"].as<int>());
   if (config.io_backend != "hardware" && config.io_backend != "talos")
     throw std::runtime_error("runtime.io_backend must be hardware or talos");
+#ifndef DUST_ENABLE_SIMULATOR
+  if (config.io_backend == "talos")
+    throw std::runtime_error(
+      "Talos simulator backend is not compiled in; configure with -DENABLE_SIMULATOR=ON");
+#endif
   if (
     config.fire_timeout <= 0ms || config.control_timeout <= 0ms || config.feedback_timeout <= 0ms ||
     config.plan_timeout <= 0ms)
@@ -214,11 +221,15 @@ int run(const RuntimeOptions & options)
   const bool talos_backend = runtime_config.io_backend == "talos";
   io::Gimbal gimbal(options.config_path, runtime_config.simulate_gimbal || talos_backend);
   std::unique_ptr<io::Camera> camera;
+#ifdef DUST_ENABLE_SIMULATOR
   std::unique_ptr<io::Talos> talos;
+#endif
   try {
+#ifdef DUST_ENABLE_SIMULATOR
     if (talos_backend)
       talos = std::make_unique<io::Talos>();
     else
+#endif
       camera = std::make_unique<io::Camera>(options.config_path);
   } catch (const std::exception & e) {
     tools::logger()->error("[Runtime] {}", e.what());
@@ -339,6 +350,7 @@ int run(const RuntimeOptions & options)
 
       // The gimbal must interpret a continuous mode=2 stream as a fire permission,
       // not as one trigger event per received frame.
+#ifdef DUST_ENABLE_SIMULATOR
       if (talos_backend) {
         const auto state = gimbal.state();
         const float distance_m = plan.control ? update.distance_m : -1.0F;
@@ -352,10 +364,13 @@ int run(const RuntimeOptions & options)
           plan.control && plan.fire);
         if (result != 0) tools::logger()->error("[Talos] command write failed: {}", result);
       } else {
+#endif
         gimbal.send(
           plan.control, plan.fire, plan.yaw, plan.yaw_vel, plan.yaw_acc, plan.pitch,
           plan.pitch_vel, plan.pitch_acc);
+#ifdef DUST_ENABLE_SIMULATOR
       }
+#endif
 
       next += period;
       if (next <= now)
@@ -463,12 +478,15 @@ int run(const RuntimeOptions & options)
   auto last_detector_timing_log = std::chrono::steady_clock::now();
   auto capture_thread = std::thread([&] {
     bool orientation_was_valid = false;
+#ifdef DUST_ENABLE_SIMULATOR
     bool talos_intrinsics_applied = false;
+#endif
     while (!quit) {
       cv::Mat image;
       std::chrono::steady_clock::time_point timestamp;
       std::optional<Eigen::Quaterniond> talos_orientation;
       const auto capture_started = std::chrono::steady_clock::now();
+#ifdef DUST_ENABLE_SIMULATOR
       if (talos_backend) {
         io::TalosFrame frame;
         const int result = talos->read(frame);
@@ -491,8 +509,11 @@ int run(const RuntimeOptions & options)
         }
         gimbal.set_external_feedback(frame.gimbal_to_world, timestamp);
       } else {
+#endif
         camera->read(image, timestamp);
+#ifdef DUST_ENABLE_SIMULATOR
       }
+#endif
       const double capture_ms = std::chrono::duration<double, std::milli>(
                                   std::chrono::steady_clock::now() - capture_started)
                                   .count();
@@ -622,9 +643,11 @@ int run(const RuntimeOptions & options)
   if (plan_thread.joinable()) plan_thread.join();
   if (send_thread.joinable()) send_thread.join();
   if (telemetry_thread.joinable()) telemetry_thread.join();
+#ifdef DUST_ENABLE_SIMULATOR
   if (talos_backend)
     talos->send(0.0F, -90.0F, -1.0F, false);
   else
+#endif
     gimbal.send(false, false, 0, 0, 0, 0, 0, 0);
 
   return 0;
