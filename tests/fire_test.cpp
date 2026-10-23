@@ -42,7 +42,7 @@ int main(int argc, char * argv[])
 
   while (!exiter.exit()) {
     auto now = std::chrono::steady_clock::now();
-    auto gs = gimbal.state();
+    // auto gs = gimbal.state();
     if(tools::delta_time(now, last_t) > 1.600) {
         plan.mode = 2;
         tools::logger()->debug("fire!");

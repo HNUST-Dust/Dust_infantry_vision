@@ -118,10 +118,10 @@ foxglove:
 fire_thresh_high_speed: 1e-3   # 高速旋转时使用较宽松的阈值
 fire_thresh_low_speed: 1e-4    # 低速/静止时使用较严格的阈值
 
-max_yaw_acc: 150
+max_yaw_acc: 100
 Q_yaw: [9e9, 0]
-R_yaw: [1]
+R_yaw: [1e5]
 
 max_pitch_acc: 100
 Q_pitch: [9e9, 0]
-R_pitch: [1]
+R_pitch: [1e5]

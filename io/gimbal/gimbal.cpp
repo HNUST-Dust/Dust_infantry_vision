@@ -203,6 +203,7 @@ void Gimbal::read_thread()
 {
   tools::logger()->info("[Gimbal] read_thread started.");
   int error_count = 0;
+  auto last_rate_log = std::chrono::steady_clock::time_point{};
 
   while (!quit_) {
     if (error_count > 5000000) {
@@ -279,13 +280,21 @@ void Gimbal::read_thread()
     // 打印四元数
     // tools::logger()->debug("[Gimbal] Quaternion: q=[{}, {}, {}, {}]", q.w(), q.x(), q.y(), q.z());
 
+    // if (last_rate_log == std::chrono::steady_clock::time_point{} ||
+    //     t - last_rate_log >= std::chrono::seconds(1)) {
+    //   tools::logger()->info(
+    //     "[GimbalRxRate] feedback (rad/s): yaw={:.6f}, pitch={:.6f}",
+    //     static_cast<float>(rx_data_.yaw_vel), static_cast<float>(rx_data_.pitch_vel));
+    //   last_rate_log = t;
+    // }
+
     std::lock_guard<std::mutex> lock(mutex_);
 
-  // convert deg->rad for storage in state
+    // MCU angular rates already use rad/s, matching the planner state.
     state_.yaw = yaw_angle;
-    state_.yaw_vel = rx_data_.yaw_vel * static_cast<float>(M_PI / 180.0);
+    state_.yaw_vel = rx_data_.yaw_vel;
     state_.pitch = pitch_angle;
-    state_.pitch_vel = rx_data_.pitch_vel * static_cast<float>(M_PI / 180.0);
+    state_.pitch_vel = rx_data_.pitch_vel;
     state_.bullet_speed = rx_data_.bullet_speed;
     // tools::logger()->info("[Gimbal] bullet_speed: {:.2f}", state_.bullet_speed);
     state_.bullet_count = rx_data_.bullet_count;
