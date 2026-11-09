@@ -66,8 +66,8 @@ armor_association:
     angle_prior_rad: 0.15
 
 #####-----planner 瞄准/弹道参数（原 aimer，2026-10-03 并入）-----#####
-yaw_offset: -10.0 # degree -2.5  向右为负
-pitch_offset: 0.0 # degree 2  向上为正
+yaw_offset: -15.0 # degree -2.5  向右为负
+pitch_offset: -5.0 # degree 2  向上为正
 comming_angle: 55 # degree
 leaving_angle: 20 # degree
 decision_speed: 8 # rad/s
@@ -120,8 +120,8 @@ fire_thresh_low_speed: 1e-4    # 低速/静止时使用较严格的阈值
 
 max_yaw_acc: 100
 Q_yaw: [9e9, 0]
-R_yaw: [1e5]
+R_yaw: [1e4]
 
-max_pitch_acc: 100
+max_pitch_acc: 200
 Q_pitch: [9e9, 0]
-R_pitch: [1e5]
+R_pitch: [1]

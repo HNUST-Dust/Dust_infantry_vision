@@ -47,9 +47,9 @@ per-frame `yolo/tracker/planner` timing is logged, exit 0); it only needs a disp
 ## Pipeline ownership
 
 - `tasks/auto_aim/yolo*.cpp`: OpenVINO inference and postprocessing.
-- `tasks/auto_aim/detector.cpp`: traditional light-bar/armor geometry.
-- `tasks/auto_aim/solver.cpp`: camera-to-gimbal/world pose and reprojection.
-- `tasks/auto_aim/tracker.cpp`: lost/detecting/tracking/temp_lost/switching state machine and EKF updates.
+- `tasks/auto_aim/detection/detector.cpp`: traditional light-bar/armor geometry.
+- `tasks/auto_aim/geometry/solver.cpp`: camera-to-gimbal/world pose and reprojection.
+- `tasks/auto_aim/tracking/tracker.cpp`: lost/detecting/tracking/temp_lost/switching state machine and EKF updates.
 - `tasks/auto_aim/planner/planner.cpp`: the production planning path. Since 2026-10-03 it also
   owns the armour selection and fire decision that used to live in the deleted `aimer.cpp` /
   `shooter.cpp`: `choose_aim_point()` (jumped/±60° lock/small-gyro coming-leaving angles), the

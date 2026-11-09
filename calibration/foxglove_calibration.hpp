@@ -30,9 +30,8 @@ public:
   bool take_save_request();
   bool quit_requested() const;
 
-  void publish(
-    const cv::Mat & preview, bool grid_detected, const Eigen::Vector3d & zyx_degree,
-    int saved_count, const std::string & last_event);
+  void publish(const cv::Mat & preview, bool grid_detected, const Eigen::Vector3d & zyx_degree,
+               int saved_count, const std::string & last_event);
 
 private:
   class Impl;

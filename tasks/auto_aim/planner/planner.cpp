@@ -5,41 +5,57 @@
 #include <stdexcept>
 #include <vector>
 
-#include "tools/logger.hpp"
-#include "tools/math_tools.hpp"
-#include "tools/trajectory.hpp"
-#include "tools/yaml.hpp"
+#include "tools/diagnostics/logger.hpp"
+#include "tools/math/math_tools.hpp"
+#include "tools/math/trajectory.hpp"
+#include "tools/runtime/yaml.hpp"
 
 using namespace std::chrono_literals;
 
 namespace auto_aim
 {
-const char *to_string(PlanStatus status)
+const char * to_string(PlanStatus status)
 {
   switch (status) {
-    case PlanStatus::not_run: return "not_run";
-    case PlanStatus::ok: return "ok";
-    case PlanStatus::no_target: return "no_target";
-    case PlanStatus::empty_armor: return "empty_armor";
-    case PlanStatus::feedback_invalid: return "feedback_invalid";
-    case PlanStatus::timestamp_missing: return "timestamp_missing";
-    case PlanStatus::feedback_future: return "feedback_future";
-    case PlanStatus::feedback_stale: return "feedback_stale";
-    case PlanStatus::state_nonfinite: return "state_nonfinite";
-    case PlanStatus::rotation_invalid: return "rotation_invalid";
-    case PlanStatus::state_frame_mismatch: return "state_frame_mismatch";
-    case PlanStatus::pitch_singular: return "pitch_singular";
-    case PlanStatus::propagated_state_invalid: return "propagated_state_invalid";
-    case PlanStatus::trajectory_unavailable: return "trajectory_unavailable";
-    case PlanStatus::mpc_failed: return "mpc_failed";
-    case PlanStatus::exception: return "exception";
+  case PlanStatus::not_run:
+    return "not_run";
+  case PlanStatus::ok:
+    return "ok";
+  case PlanStatus::no_target:
+    return "no_target";
+  case PlanStatus::empty_armor:
+    return "empty_armor";
+  case PlanStatus::feedback_invalid:
+    return "feedback_invalid";
+  case PlanStatus::timestamp_missing:
+    return "timestamp_missing";
+  case PlanStatus::feedback_future:
+    return "feedback_future";
+  case PlanStatus::feedback_stale:
+    return "feedback_stale";
+  case PlanStatus::state_nonfinite:
+    return "state_nonfinite";
+  case PlanStatus::rotation_invalid:
+    return "rotation_invalid";
+  case PlanStatus::state_frame_mismatch:
+    return "state_frame_mismatch";
+  case PlanStatus::pitch_singular:
+    return "pitch_singular";
+  case PlanStatus::propagated_state_invalid:
+    return "propagated_state_invalid";
+  case PlanStatus::trajectory_unavailable:
+    return "trajectory_unavailable";
+  case PlanStatus::mpc_failed:
+    return "mpc_failed";
+  case PlanStatus::exception:
+    return "exception";
   }
   return "unknown";
 }
 
-Planner::Planner(const std::string &config_path)
-  : yaw_solver_(MpcConfig::load(config_path, "yaw")),
-    pitch_solver_(MpcConfig::load(config_path, "pitch"))
+Planner::Planner(const std::string & config_path)
+    : yaw_solver_(MpcConfig::load(config_path, "yaw")),
+      pitch_solver_(MpcConfig::load(config_path, "pitch"))
 {
   auto yaml = tools::load(config_path);
   yaw_offset_ = tools::read<double>(yaml, "yaw_offset") / 57.3;
@@ -64,10 +80,9 @@ Planner::Planner(const std::string &config_path)
   if (!std::isfinite(low_speed_delay_time_) || low_speed_delay_time_ < 0.0 ||
       !std::isfinite(high_speed_delay_time_) || high_speed_delay_time_ < 0.0)
     throw std::invalid_argument("Planner delay times must be finite and nonnegative");
-
 }
 
-int Planner::nearest_armor_id(const Target &target) const
+int Planner::nearest_armor_id(const Target & target) const
 {
   const auto armor_xyza_list = target.armor_xyza_list();
   int best = -1;
@@ -82,7 +97,7 @@ int Planner::nearest_armor_id(const Target &target) const
   return best;
 }
 
-AimPoint Planner::choose_aim_point(const Target &target, int &lock_id) const
+AimPoint Planner::choose_aim_point(const Target & target, int & lock_id) const
 {
   const Eigen::VectorXd ekf_x = target.ekf_x();
   const std::vector<Eigen::Vector4d> armor_xyza_list = target.armor_xyza_list();
@@ -158,9 +173,9 @@ AimPoint Planner::choose_aim_point(const Target &target, int &lock_id) const
   return {false, 0, armor_xyza_list[0]};
 }
 
-std::optional<Planner::AimSolution> Planner::solve_xyza(const Eigen::Vector4d &xyza,
-                                                        double bullet_speed,
-                                                        const Eigen::Matrix3d &R_gimbal2world) const
+std::optional<Planner::AimSolution>
+Planner::solve_xyza(const Eigen::Vector4d & xyza, double bullet_speed,
+                    const Eigen::Matrix3d & R_gimbal2world) const
 {
   const Eigen::Vector3d xyz = xyza.head<3>();
   // 重力沿世界系 z 轴，弹道的水平距离和高度必须使用同一世界参考系。
@@ -190,17 +205,17 @@ std::optional<Planner::AimSolution> Planner::solve_xyza(const Eigen::Vector4d &x
   solution.fly_time = bullet_traj.fly_time;
   // Preserve the calibrated local offset as a direction, then express it in absolute joint angles.
   const Eigen::Vector3d corrected =
-      R_gimbal2world * (Eigen::AngleAxisd(azim + yaw_offset_, Eigen::Vector3d::UnitZ()) *
-                        Eigen::AngleAxisd(pitch - pitch_offset_, Eigen::Vector3d::UnitX()) *
-                        Eigen::Vector3d(0.0, -1.0, 0.0));
+    R_gimbal2world * (Eigen::AngleAxisd(azim + yaw_offset_, Eigen::Vector3d::UnitZ()) *
+                      Eigen::AngleAxisd(pitch - pitch_offset_, Eigen::Vector3d::UnitX()) *
+                      Eigen::Vector3d(0.0, -1.0, 0.0));
   solution.yaw = std::atan2(corrected.x(), -corrected.y());
   solution.pitch = std::atan2(-corrected.z(), std::hypot(corrected.x(), corrected.y()));
   return solution;
 }
 
 bool Planner::resolve_aim_time(Target base, double bullet_speed,
-                               const Eigen::Matrix3d &R_gimbal2world, int initial_lock,
-                               AimDecision &decision) const
+                               const Eigen::Matrix3d & R_gimbal2world, int initial_lock,
+                               AimDecision & decision) const
 {
   // lock_id_ 每次规划只写回一次；迭代内部用局部副本，60 步前瞻不会污染持久状态
   int lock = initial_lock;
@@ -231,7 +246,7 @@ bool Planner::resolve_aim_time(Target base, double bullet_speed,
   for (int iter = 0; iter < 10; iter++) {
     const double current_time = used;
     Target predicted = base;
-    predicted.predict(current_time); // 绝对时刻 T1 + current_time
+    predicted.predict(current_time);  // 绝对时刻 T1 + current_time
 
     const AimPoint p = choose_aim_point(predicted, lock);
     const auto armor_xyza_list = predicted.armor_xyza_list();
@@ -270,9 +285,9 @@ bool Planner::resolve_aim_time(Target base, double bullet_speed,
   return true;
 }
 
-bool Planner::get_trajectory(const Target &launch_target, double yaw_origin, double bullet_speed,
-                             const Eigen::Matrix3d &rotation, Trajectory &out,
-                             AimDecision &first_decision, Eigen::Vector4d &aim_xyza) const
+bool Planner::get_trajectory(const Target & launch_target, double yaw_origin, double bullet_speed,
+                             const Eigen::Matrix3d & rotation, Trajectory & out,
+                             AimDecision & first_decision, Eigen::Vector4d & aim_xyza) const
 {
   int lock = lock_id_;
   double previous_yaw = yaw_origin;
@@ -314,7 +329,7 @@ bool Planner::get_trajectory(const Target &launch_target, double yaw_origin, dou
     }
     if (k > 0 && k <= COMMAND_STEP)
       first_decision.command_valid =
-          first_decision.command_valid && decision.valid && decision.converged;
+        first_decision.command_valid && decision.valid && decision.converged;
   }
   for (int k = 0; k < HORIZON; ++k) {
     const int left = std::max(0, k - 1);
@@ -345,14 +360,14 @@ bool Plan::aim_visible_at(std::chrono::steady_clock::time_point now) const
          now >= planned_at && now - planned_at <= 20ms;
 }
 
-Plan Planner::plan(std::optional<Target> target, double bullet_speed, const PlanningState &state,
-                   PlanningTrace *trace)
+Plan Planner::plan(std::optional<Target> target, double bullet_speed, const PlanningState & state,
+                   PlanningTrace * trace)
 {
   return plan_at(target, std::chrono::steady_clock::now(), bullet_speed, state, trace);
 }
 
 Plan Planner::plan_at(std::optional<Target> target, std::chrono::steady_clock::time_point now,
-                      double bullet_speed, const PlanningState &state, PlanningTrace *trace)
+                      double bullet_speed, const PlanningState & state, PlanningTrace * trace)
 {
   Plan result;
   result.planned_at = now;
@@ -368,7 +383,8 @@ Plan Planner::plan_at(std::optional<Target> target, std::chrono::steady_clock::t
     trace->target_available = target.has_value();
     if (target) {
       const auto x = target->ekf_x();
-      for (int i = 0; i < std::min<int>(11, x.size()); ++i) trace->target_state[i] = x[i];
+      for (int i = 0; i < std::min<int>(11, x.size()); ++i)
+        trace->target_state[i] = x[i];
     }
   }
   auto fail = [&](PlanStatus status) {
@@ -380,17 +396,22 @@ Plan Planner::plan_at(std::optional<Target> target, std::chrono::steady_clock::t
   const double age = std::chrono::duration<double>(now - state.timestamp).count();
   result.feedback_age_ms = age * 1e3;
   const Eigen::Vector4d measured{state.yaw, state.yaw_vel, state.pitch, state.pitch_vel};
-  if (!target) return fail(PlanStatus::no_target);
-  if (!state.valid) return fail(PlanStatus::feedback_invalid);
+  if (!target)
+    return fail(PlanStatus::no_target);
+  if (!state.valid)
+    return fail(PlanStatus::feedback_invalid);
   if (state.timestamp == std::chrono::steady_clock::time_point{})
     return fail(PlanStatus::timestamp_missing);
-  if (age < 0.0) return fail(PlanStatus::feedback_future);
-  if (age > max_state_age_) return fail(PlanStatus::feedback_stale);
+  if (age < 0.0)
+    return fail(PlanStatus::feedback_future);
+  if (age > max_state_age_)
+    return fail(PlanStatus::feedback_stale);
   if (!measured.allFinite() || !state.R_gimbal2world.allFinite())
     return fail(PlanStatus::state_nonfinite);
-  if (target->armor_xyza_list().empty()) return fail(PlanStatus::empty_armor);
+  if (target->armor_xyza_list().empty())
+    return fail(PlanStatus::empty_armor);
 
-  const auto &rotation = state.R_gimbal2world;
+  const auto & rotation = state.R_gimbal2world;
   if ((rotation.transpose() * rotation - Eigen::Matrix3d::Identity()).norm() > 1e-5 ||
       std::abs(rotation.determinant() - 1.0) > 1e-5)
     return fail(PlanStatus::rotation_invalid);
@@ -398,7 +419,8 @@ Plan Planner::plan_at(std::optional<Target> target, std::chrono::steady_clock::t
   if (std::abs(std::remainder(angles[0] - state.yaw, 2 * M_PI)) > 1e-4 ||
       std::abs(angles[1] - state.pitch) > 1e-4)
     return fail(PlanStatus::state_frame_mismatch);
-  if (std::abs(std::cos(state.pitch)) < 0.05) return fail(PlanStatus::pitch_singular);
+  if (std::abs(std::cos(state.pitch)) < 0.05)
+    return fail(PlanStatus::pitch_singular);
 
   PlanningState initial = state;
   initial.yaw += state.yaw_vel * age;
@@ -412,16 +434,17 @@ Plan Planner::plan_at(std::optional<Target> target, std::chrono::steady_clock::t
   initial.R_gimbal2world = (Eigen::AngleAxisd(initial.yaw, Eigen::Vector3d::UnitZ()) *
                             Eigen::AngleAxisd(initial.pitch, Eigen::Vector3d::UnitX()) *
                             Eigen::AngleAxisd(angles[2], Eigen::Vector3d::UnitY()))
-                               .toRotationMatrix();
+                             .toRotationMatrix();
   result.initial_state = initial;
   if (!std::isfinite(bullet_speed) || bullet_speed < 10 || bullet_speed > 25)
     bullet_speed = 23;
-  if (trace) trace->bullet_speed = bullet_speed;
+  if (trace)
+    trace->bullet_speed = bullet_speed;
   const auto ekf_x = target->ekf_x();
   const bool high_speed = std::abs(ekf_x[7]) > decision_speed_;
   const double delay = high_speed ? high_speed_delay_time_ : low_speed_delay_time_;
   target->predict(now + std::chrono::duration_cast<std::chrono::steady_clock::duration>(
-                            std::chrono::duration<double>(delay)));
+                          std::chrono::duration<double>(delay)));
   Trajectory reference;
   AimDecision decision;
   Eigen::Vector4d aim_xyza;
@@ -439,10 +462,9 @@ Plan Planner::plan_at(std::optional<Target> target, std::chrono::steady_clock::t
     trace->reference_available = true;
   }
 
-  result.yaw_mpc =
-      yaw_solver_.solve({0.0, initial.yaw_vel}, reference.topRows<2>());
-  result.pitch_mpc = pitch_solver_.solve({initial.pitch, initial.pitch_vel},
-                                        reference.bottomRows<2>());
+  result.yaw_mpc = yaw_solver_.solve({0.0, initial.yaw_vel}, reference.topRows<2>());
+  result.pitch_mpc =
+    pitch_solver_.solve({initial.pitch, initial.pitch_vel}, reference.bottomRows<2>());
   if (!result.yaw_mpc.solved || !result.pitch_mpc.solved)
     return fail(PlanStatus::mpc_failed);
 
@@ -457,20 +479,20 @@ Plan Planner::plan_at(std::optional<Target> target, std::chrono::steady_clock::t
   result.yaw_acc = yaw_solver_.inputs()(0, 0) * yaw_solver_.config().max_acc;
   result.pitch_acc = pitch_solver_.inputs()(0, 0) * pitch_solver_.config().max_acc;
   result.valid_at = now + std::chrono::duration_cast<std::chrono::steady_clock::duration>(
-                              std::chrono::duration<double>(COMMAND_STEP * DT));
+                            std::chrono::duration<double>(COMMAND_STEP * DT));
   result.fire_tolerance =
-      std::hypot(ekf_x[0], ekf_x[2]) > judge_distance_ ? second_tolerance_ : first_tolerance_;
+    std::hypot(ekf_x[0], ekf_x[2]) > judge_distance_ ? second_tolerance_ : first_tolerance_;
   const double threshold = high_speed ? fire_thresh_high_speed_ : fire_thresh_low_speed_;
   const bool reachable =
-      std::hypot(reference(0, COMMAND_STEP) - yaw_solver_.states()(0, COMMAND_STEP),
-                 reference(2, COMMAND_STEP) - pitch_solver_.states()(0, COMMAND_STEP)) < threshold;
+    std::hypot(reference(0, COMMAND_STEP) - yaw_solver_.states()(0, COMMAND_STEP),
+               reference(2, COMMAND_STEP) - pitch_solver_.states()(0, COMMAND_STEP)) < threshold;
   const bool settled =
-      std::hypot(reference(0, 0), reference(2, 0) - initial.pitch) < result.fire_tolerance;
+    std::hypot(reference(0, 0), reference(2, 0) - initial.pitch) < result.fire_tolerance;
   const double since_last = std::chrono::duration<double>(now - last_plan_at_).count();
   result.fire = auto_fire_ && state.rates_measured && have_last_command_ && since_last > 0.0 &&
                 since_last <= max_state_age_ && decision.command_valid && reachable && settled &&
                 std::abs(tools::limit_rad(last_target_yaw_ - result.absolute_target_yaw)) <
-                    2 * result.fire_tolerance;
+                  2 * result.fire_tolerance;
 
   if (decision.converged)
     lock_id_ = decision.lock;
@@ -482,4 +504,4 @@ Plan Planner::plan_at(std::optional<Target> target, std::chrono::steady_clock::t
   return result;
 }
 
-} // namespace auto_aim
+}  // namespace auto_aim

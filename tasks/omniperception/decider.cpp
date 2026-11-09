@@ -5,8 +5,8 @@
 #include <filesystem>
 #include <opencv2/opencv.hpp>
 
-#include "tools/logger.hpp"
-#include "tools/math_tools.hpp"
+#include "tools/diagnostics/logger.hpp"
+#include "tools/math/math_tools.hpp"
 
 namespace omniperception
 {
@@ -24,9 +24,9 @@ Decider::Decider(const std::string & config_path) : detector_(config_path), coun
   mode_ = yaml["mode"].as<double>();
 }
 
-io::Command Decider::decide(
-  auto_aim::YOLO & yolo, const Eigen::Vector3d & gimbal_pos, io::USBCamera & usbcam1,
-  io::USBCamera & usbcam2, io::Camera & back_camera)
+io::Command Decider::decide(auto_aim::YOLO & yolo, const Eigen::Vector3d & gimbal_pos,
+                            io::USBCamera & usbcam1, io::USBCamera & usbcam2,
+                            io::Camera & back_camera)
 {
   Eigen::Vector2d delta_angle;
   io::USBCamera * cams[] = {&usbcam1, &usbcam2};
@@ -58,9 +58,8 @@ io::Command Decider::decide(
 
     count_ = (count_ + 1) % 3;
 
-    return io::Command{
-      true, false, tools::limit_rad(gimbal_pos[0] + delta_angle[0] / 57.3),
-      tools::limit_rad(delta_angle[1] / 57.3)};
+    return io::Command{true, false, tools::limit_rad(gimbal_pos[0] + delta_angle[0] / 57.3),
+                       tools::limit_rad(delta_angle[1] / 57.3)};
   }
 
   count_ = (count_ + 1) % 3;
@@ -68,8 +67,8 @@ io::Command Decider::decide(
   return io::Command{false, false, 0, 0};
 }
 
-io::Command Decider::decide(
-  auto_aim::YOLO & yolo, const Eigen::Vector3d & gimbal_pos, io::Camera & back_cammera)
+io::Command Decider::decide(auto_aim::YOLO & yolo, const Eigen::Vector3d & gimbal_pos,
+                            io::Camera & back_cammera)
 {
   cv::Mat img;
   std::chrono::steady_clock::time_point timestamp;
@@ -83,9 +82,8 @@ io::Command Decider::decide(
       "[back camera] delta yaw:{:.2f},target pitch:{:.2f},armor number:{},armor name:{}",
       delta_angle[0], delta_angle[1], armors.size(), auto_aim::ARMOR_NAMES[armors.front().name]);
 
-    return io::Command{
-      true, false, tools::limit_rad(gimbal_pos[0] + delta_angle[0] / 57.3),
-      tools::limit_rad(delta_angle[1] / 57.3)};
+    return io::Command{true, false, tools::limit_rad(gimbal_pos[0] + delta_angle[0] / 57.3),
+                       tools::limit_rad(delta_angle[1] / 57.3)};
   }
 
   return io::Command{false, false, 0, 0};
@@ -98,16 +96,16 @@ io::Command Decider::decide(const std::vector<DetectionResult> & detection_queue
   }
 
   DetectionResult dr = detection_queue.front();
-  if (dr.armors.empty()) return io::Command{false, false, 0, 0};
-  tools::logger()->info(
-    "omniperceptron find {},delta yaw is {:.4f}", auto_aim::ARMOR_NAMES[dr.armors.front().name],
-    dr.delta_yaw * 57.3);
+  if (dr.armors.empty())
+    return io::Command{false, false, 0, 0};
+  tools::logger()->info("omniperceptron find {},delta yaw is {:.4f}",
+                        auto_aim::ARMOR_NAMES[dr.armors.front().name], dr.delta_yaw * 57.3);
 
   return io::Command{true, false, dr.delta_yaw, dr.delta_pitch};
 };
 
-Eigen::Vector2d Decider::delta_angle(
-  const std::list<auto_aim::Armor> & armors, const std::string & camera)
+Eigen::Vector2d Decider::delta_angle(const std::list<auto_aim::Armor> & armors,
+                                     const std::string & camera)
 {
   Eigen::Vector2d delta_angle;
   if (camera == "left") {
@@ -131,7 +129,8 @@ Eigen::Vector2d Decider::delta_angle(
 
 bool Decider::armor_filter(std::list<auto_aim::Armor> & armors)
 {
-  if (armors.empty()) return true;
+  if (armors.empty())
+    return true;
   // 过滤非敌方装甲板
   armors.remove_if([&](const auto_aim::Armor & a) { return a.color != enemy_color_; });
 
@@ -154,7 +153,8 @@ bool Decider::armor_filter(std::list<auto_aim::Armor> & armors)
 
 void Decider::set_priority(std::list<auto_aim::Armor> & armors)
 {
-  if (armors.empty()) return;
+  if (armors.empty())
+    return;
 
   const PriorityMap & priority_map = (mode_ == MODE_ONE) ? mode1 : mode2;
 
@@ -167,7 +167,8 @@ void Decider::set_priority(std::list<auto_aim::Armor> & armors)
 
 void Decider::sort(std::vector<DetectionResult> & detection_queue)
 {
-  if (detection_queue.empty()) return;
+  if (detection_queue.empty())
+    return;
 
   // 对每个 DetectionResult 调用 armor_filter 和 set_priority
   for (auto & dr : detection_queue) {
@@ -180,25 +181,24 @@ void Decider::sort(std::vector<DetectionResult> & detection_queue)
   }
 
   // 根据优先级对 DetectionResult 进行排序
-  std::sort(
-    detection_queue.begin(), detection_queue.end(),
-    [](const DetectionResult & a, const DetectionResult & b) {
-      return a.armors.front().priority < b.armors.front().priority;
-    });
+  std::sort(detection_queue.begin(), detection_queue.end(),
+            [](const DetectionResult & a, const DetectionResult & b) {
+              return a.armors.front().priority < b.armors.front().priority;
+            });
 }
 
-Eigen::Vector4d Decider::get_target_info(
-  const std::list<auto_aim::Armor> & armors, const std::list<auto_aim::Target> & targets)
+Eigen::Vector4d Decider::get_target_info(const std::list<auto_aim::Armor> & armors,
+                                         const std::list<auto_aim::Target> & targets)
 {
-  if (armors.empty() || targets.empty()) return Eigen::Vector4d::Zero();
+  if (armors.empty() || targets.empty())
+    return Eigen::Vector4d::Zero();
 
   auto target = targets.front();
 
   for (const auto & armor : armors) {
     if (armor.name == target.name) {
-      return Eigen::Vector4d{
-        armor.xyz_in_gimbal[0], armor.xyz_in_gimbal[1], 1,
-        static_cast<double>(armor.name) + 1};  //避免歧义+1(详见通信协议)
+      return Eigen::Vector4d{armor.xyz_in_gimbal[0], armor.xyz_in_gimbal[1], 1,
+                             static_cast<double>(armor.name) + 1};  //避免歧义+1(详见通信协议)
     }
   }
 
@@ -209,7 +209,8 @@ void Decider::get_invincible_armor(const std::vector<int8_t> & invincible_enemy_
 {
   invincible_armor_.clear();
 
-  if (invincible_enemy_ids.empty()) return;
+  if (invincible_enemy_ids.empty())
+    return;
 
   for (const auto & id : invincible_enemy_ids) {
     tools::logger()->info("invincible armor id: {}", id);
@@ -217,10 +218,11 @@ void Decider::get_invincible_armor(const std::vector<int8_t> & invincible_enemy_
   }
 }
 
-void Decider::get_auto_aim_target(
-  std::list<auto_aim::Armor> & armors, const std::vector<int8_t> & auto_aim_target)
+void Decider::get_auto_aim_target(std::list<auto_aim::Armor> & armors,
+                                  const std::vector<int8_t> & auto_aim_target)
 {
-  if (auto_aim_target.empty()) return;
+  if (auto_aim_target.empty())
+    return;
 
   std::vector<auto_aim::ArmorName> auto_aim_targets;
 
@@ -233,7 +235,8 @@ void Decider::get_auto_aim_target(
     tools::logger()->info("nav send auto_aim target is {}", auto_aim::ARMOR_NAMES[target - 1]);
   }
 
-  if (auto_aim_targets.empty()) return;
+  if (auto_aim_targets.empty())
+    return;
 
   armors.remove_if([&](const auto_aim::Armor & a) {
     return std::find(auto_aim_targets.begin(), auto_aim_targets.end(), a.name) ==

@@ -7,9 +7,9 @@
 #include <optional>
 #include <string>
 
-#include "tasks/auto_aim/armor.hpp"
-#include "tasks/auto_aim/solver.hpp"
-#include "tasks/auto_aim/target.hpp"
+#include "tasks/auto_aim/model/armor.hpp"
+#include "tasks/auto_aim/geometry/solver.hpp"
+#include "tasks/auto_aim/tracking/target.hpp"
 
 namespace visualization
 {
@@ -20,15 +20,15 @@ struct VisionOverlayInput
   const cv::Rect & net_roi;
   const std::optional<cv::Rect> & light_roi;
   const std::string & tracker_state;
-  const auto_aim::Target * target = nullptr;            // nullptr 表示本帧没有目标
-  Eigen::Vector4d aim_xyza = Eigen::Vector4d::Zero();   // 仅 target 非空且 aim_valid 时使用
-  bool aim_valid = false;                               // 策略是否真的选中了瞄准装甲板
+  const auto_aim::Target * target = nullptr;           // nullptr 表示本帧没有目标
+  Eigen::Vector4d aim_xyza = Eigen::Vector4d::Zero();  // 仅 target 非空且 aim_valid 时使用
+  bool aim_valid = false;                              // 策略是否真的选中了瞄准装甲板
 };
 
 // 绘制网络 ROI、灯条 ROI、装甲板角点、重投影装甲板、重投影瞄准点、Tracker 状态与中心准星。
 // 与本地窗口的叠加内容一一对应；不含缩放、窗口、按键与日志。
-void draw_vision_overlay(
-  cv::Mat & image, const VisionOverlayInput & input, const auto_aim::Solver & solver);
+void draw_vision_overlay(cv::Mat & image, const VisionOverlayInput & input,
+                         const auto_aim::Solver & solver);
 
 }  // namespace visualization
 

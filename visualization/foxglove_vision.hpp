@@ -64,8 +64,7 @@ public:
   // dump() 与 SDK 调用同样由数据线程完成。1 Hz 节流状态只由调用线程读写，因此本函数仍只能
   // 从同一个线程调用（publish_telemetry 无此限制）；应与 publish_telemetry 从同一线程调用，
   // 以保证两者在队列中的先后顺序稳定。
-  void publish_status(
-    nlohmann::json fields, std::chrono::steady_clock::time_point sample_time);
+  void publish_status(nlohmann::json fields, std::chrono::steady_clock::time_point sample_time);
 
   uint16_t image_port() const;
   uint16_t data_port() const;  // 单端口模式返回 image_port

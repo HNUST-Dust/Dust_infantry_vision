@@ -4,7 +4,7 @@
 
 #include "hikrobot/hikrobot.hpp"
 #include "mindvision/mindvision.hpp"
-#include "tools/yaml.hpp"
+#include "tools/runtime/yaml.hpp"
 
 namespace io
 {

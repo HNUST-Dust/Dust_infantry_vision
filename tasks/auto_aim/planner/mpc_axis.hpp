@@ -13,13 +13,22 @@ constexpr int HORIZON = 60;
 constexpr int COMMAND_STEP = 1;
 using AxisReference = Eigen::Matrix<double, 2, HORIZON>;
 
-enum class MpcStatus {
-  not_run, solved, x0_rejected, iteration_limit, solver_error, nonfinite,
-  initial_state_mismatch, dynamics_mismatch, input_violation
+enum class MpcStatus
+{
+  not_run,
+  solved,
+  x0_rejected,
+  iteration_limit,
+  solver_error,
+  nonfinite,
+  initial_state_mismatch,
+  dynamics_mismatch,
+  input_violation
 };
-const char *to_string(MpcStatus status);
+const char * to_string(MpcStatus status);
 
-struct MpcConfig {
+struct MpcConfig
+{
   double max_acc = 150.0;
   Eigen::Vector2d q{9e9, 0.0};
   double r = 1.0;
@@ -27,10 +36,11 @@ struct MpcConfig {
   int max_iterations = 300;
   double primal_tolerance = 1e-3;
   double dual_tolerance = 1e-3;
-  static MpcConfig load(const std::string &path, const std::string &axis);
+  static MpcConfig load(const std::string & path, const std::string & axis);
 };
 
-struct MpcDiagnostics {
+struct MpcDiagnostics
+{
   bool attempted = false;
   bool solved = false;
   MpcStatus status = MpcStatus::not_run;
@@ -57,17 +67,26 @@ struct MpcDiagnostics {
 class MpcAxis
 {
 public:
-  explicit MpcAxis(const MpcConfig &config);
+  explicit MpcAxis(const MpcConfig & config);
   ~MpcAxis();
   MpcAxis(const MpcAxis &) = delete;
-  MpcAxis &operator=(const MpcAxis &) = delete;
-  MpcDiagnostics solve(const Eigen::Vector2d &x0, const AxisReference &reference);
-  const tinyMatrix &states() const { return solver_->work->x; }
-  const tinyMatrix &inputs() const { return solver_->work->u; }
-  const MpcConfig &config() const { return config_; }
+  MpcAxis & operator=(const MpcAxis &) = delete;
+  MpcDiagnostics solve(const Eigen::Vector2d & x0, const AxisReference & reference);
+  const tinyMatrix & states() const
+  {
+    return solver_->work->x;
+  }
+  const tinyMatrix & inputs() const
+  {
+    return solver_->work->u;
+  }
+  const MpcConfig & config() const
+  {
+    return config_;
+  }
 
 private:
   MpcConfig config_;
-  TinySolver *solver_ = nullptr;
+  TinySolver * solver_ = nullptr;
 };
-} // namespace auto_aim
+}  // namespace auto_aim

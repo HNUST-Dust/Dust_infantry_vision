@@ -4,7 +4,7 @@
 
 - Factory selection is in `io/camera.cpp`.
 - HikRobot implementation: `io/hikrobot/hikrobot.cpp`; MindVision implementation: `io/mindvision/mindvision.cpp`.
-- Shared settings are read from YAML with `tools/yaml.hpp`.
+- Shared settings are read from YAML with `tools/runtime/yaml.hpp`.
 - The documented default is `configs/standard3.yaml`; it selects `hikrobot`, `vid_pid: "2bdf:0001"`, `exposure_ms: 1.0`, `gain: 16.9`, and `frame_rate: 165`.
 
 ## Checks

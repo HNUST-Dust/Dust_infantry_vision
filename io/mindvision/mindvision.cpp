@@ -4,24 +4,19 @@
 
 #include <stdexcept>
 
-#include "tools/logger.hpp"
+#include "tools/diagnostics/logger.hpp"
 
 using namespace std::chrono_literals;
 
 namespace io
 {
 MindVision::MindVision(double exposure_ms, double gamma, const std::string & vid_pid)
-: exposure_ms_(exposure_ms),
-  gamma_(gamma),
-  handle_(-1),
-  quit_(false),
-  ok_(false),
-  queue_(1),
-  vid_(-1),
-  pid_(-1)
+    : exposure_ms_(exposure_ms), gamma_(gamma), handle_(-1), quit_(false), ok_(false), queue_(1),
+      vid_(-1), pid_(-1)
 {
   set_vid_pid(vid_pid);
-  if (libusb_init(NULL)) tools::logger()->warn("Unable to init libusb!");
+  if (libusb_init(NULL))
+    tools::logger()->warn("Unable to init libusb!");
 
   try_open();
 
@@ -30,11 +25,14 @@ MindVision::MindVision(double exposure_ms, double gamma, const std::string & vid
     while (!quit_) {
       std::this_thread::sleep_for(100ms);
 
-      if (quit_) break;
+      if (quit_)
+        break;
 
-      if (ok_) continue;
+      if (ok_)
+        continue;
 
-      if (capture_thread_.joinable()) capture_thread_.join();
+      if (capture_thread_.joinable())
+        capture_thread_.join();
 
       close();
       reset_usb();
@@ -46,8 +44,10 @@ MindVision::MindVision(double exposure_ms, double gamma, const std::string & vid
 MindVision::~MindVision()
 {
   stop();
-  if (daemon_thread_.joinable()) daemon_thread_.join();
-  if (capture_thread_.joinable()) capture_thread_.join();
+  if (daemon_thread_.joinable())
+    daemon_thread_.join();
+  if (capture_thread_.joinable())
+    capture_thread_.join();
   close();
   tools::logger()->info("Mindvision destructed.");
 }
@@ -79,7 +79,8 @@ void MindVision::open()
   CameraSdkInit(1);
   CameraEnumerateDevice(&camera_info_list, &camera_num);
 
-  if (camera_num == 0) throw std::runtime_error("Not found camera!");
+  if (camera_num == 0)
+    throw std::runtime_error("Not found camera!");
 
   if (CameraInit(&camera_info_list, -1, -1, &handle_) != CAMERA_STATUS_SUCCESS)
     throw std::runtime_error("Failed to init camera!");
@@ -138,7 +139,8 @@ void MindVision::try_open()
 
 void MindVision::close()
 {
-  if (handle_ == -1) return;
+  if (handle_ == -1)
+    return;
   CameraUnInit(handle_);
 }
 
@@ -163,7 +165,8 @@ void MindVision::set_vid_pid(const std::string & vid_pid)
 
 void MindVision::reset_usb() const
 {
-  if (vid_ == -1 || pid_ == -1) return;
+  if (vid_ == -1 || pid_ == -1)
+    return;
 
   // https://github.com/ralight/usb-reset/blob/master/usb-reset.c
   auto handle = libusb_open_device_with_vid_pid(NULL, vid_, pid_);

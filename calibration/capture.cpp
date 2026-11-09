@@ -13,26 +13,25 @@
 
 #include "io/camera.hpp"
 #include "io/gimbal/gimbal.hpp"
-#include "tools/command_line.hpp"
-#include "tools/img_tools.hpp"
-#include "tools/logger.hpp"
-#include "tools/math_tools.hpp"
-#include "tools/yaml.hpp"
+#include "tools/runtime/command_line.hpp"
+#include "tools/image/img_tools.hpp"
+#include "tools/diagnostics/logger.hpp"
+#include "tools/math/math_tools.hpp"
+#include "tools/runtime/yaml.hpp"
 
 #ifdef DUST_ENABLE_FOXGLOVE
 #include "calibration/foxglove_calibration.hpp"
 #endif
 
-const std::string keys =
-  "{help h usage ? |                          | 输出命令行参数说明}"
-  "{@config-path   | configs/calibration.yaml | 位置参数，yaml配置文件路径 }"
-  "{output-folder o |      assets/img_with_q   | 输出文件夹路径   }"
-  "{headless       | true                    | 不创建OpenCV窗口 }"
-  "{foxglove      | true                    | 启用Foxglove WebSocket }"
-  "{foxglove-host | 127.0.0.1                | Foxglove监听地址 }"
-  "{foxglove-port | 8765                     | Foxglove监听端口 }"
-  "{foxglove-fps  | 30                       | Foxglove预览帧率 }"
-  "{jpeg-quality  | 80                       | JPEG质量(1-100) }";
+const std::string keys = "{help h usage ? |                          | 输出命令行参数说明}"
+                         "{@config-path   | configs/calibration.yaml | 位置参数，yaml配置文件路径 }"
+                         "{output-folder o |      assets/img_with_q   | 输出文件夹路径   }"
+                         "{headless       | true                    | 不创建OpenCV窗口 }"
+                         "{foxglove      | true                    | 启用Foxglove WebSocket }"
+                         "{foxglove-host | 127.0.0.1                | Foxglove监听地址 }"
+                         "{foxglove-port | 8765                     | Foxglove监听端口 }"
+                         "{foxglove-fps  | 30                       | Foxglove预览帧率 }"
+                         "{jpeg-quality  | 80                       | JPEG质量(1-100) }";
 
 void write_q(const std::string q_path, const Eigen::Quaterniond & q)
 {
@@ -41,25 +40,25 @@ void write_q(const std::string q_path, const Eigen::Quaterniond & q)
   // 输出顺序为wxyz
   q_file << fmt::format("{} {} {} {}", xyzw[3], xyzw[0], xyzw[1], xyzw[2]);
   q_file.close();
-  if (!q_file) throw std::runtime_error(fmt::format("Failed to write {}", q_path));
+  if (!q_file)
+    throw std::runtime_error(fmt::format("Failed to write {}", q_path));
 }
 
-void write_timing(
-  const std::string & path, std::chrono::steady_clock::time_point image_timestamp,
-  const tools::QuaternionSample & orientation)
+void write_timing(const std::string & path, std::chrono::steady_clock::time_point image_timestamp,
+                  const tools::QuaternionSample & orientation)
 {
   auto ns = [](auto t) {
     return std::chrono::duration_cast<std::chrono::nanoseconds>(t.time_since_epoch()).count();
   };
-  nlohmann::json data{
-    {"clock", "host_steady_clock"},
-    {"image_timestamp_ns", ns(image_timestamp)},
-    {"orientation_before_ns", ns(orientation.before)},
-    {"orientation_after_ns", ns(orientation.after)}};
+  nlohmann::json data{{"clock", "host_steady_clock"},
+                      {"image_timestamp_ns", ns(image_timestamp)},
+                      {"orientation_before_ns", ns(orientation.before)},
+                      {"orientation_after_ns", ns(orientation.after)}};
   std::ofstream file(path);
   file << data.dump(2) << '\n';
   file.close();
-  if (!file) throw std::runtime_error(fmt::format("Failed to write {}", path));
+  if (!file)
+    throw std::runtime_error(fmt::format("Failed to write {}", path));
 }
 
 int existing_sample_count(const std::string & output_folder)
@@ -67,16 +66,19 @@ int existing_sample_count(const std::string & output_folder)
   std::set<int> image_indices;
   std::set<int> quaternion_indices;
   for (const auto & entry : std::filesystem::directory_iterator(output_folder)) {
-    if (!entry.is_regular_file()) continue;
+    if (!entry.is_regular_file())
+      continue;
     auto extension = entry.path().extension().string();
-    if (extension != ".jpg" && extension != ".txt") continue;
+    if (extension != ".jpg" && extension != ".txt")
+      continue;
 
     auto stem = entry.path().stem().string();
     if (stem.empty() ||
         !std::all_of(stem.begin(), stem.end(), [](unsigned char c) { return std::isdigit(c); }))
       continue;
     auto index = std::stoi(stem);
-    if (index <= 0) continue;
+    if (index <= 0)
+      continue;
     (extension == ".jpg" ? image_indices : quaternion_indices).insert(index);
   }
 
@@ -92,20 +94,18 @@ int existing_sample_count(const std::string & output_folder)
   return expected - 1;
 }
 
-void capture_loop(
-  const std::string & config_path, const std::string & output_folder, bool headless,
-  bool enable_foxglove, const std::string & foxglove_host, int foxglove_port,
-  double foxglove_fps, int jpeg_quality)
+void capture_loop(const std::string & config_path, const std::string & output_folder, bool headless,
+                  bool enable_foxglove, const std::string & foxglove_host, int foxglove_port,
+                  double foxglove_fps, int jpeg_quality)
 {
   // 标定板规格统一从 YAML 读取：此处曾把图案尺寸写死为 10x7，配置与实际板子不符时会静默识别失败
   auto yaml = tools::load(config_path);
-  auto pattern_size = cv::Size(
-    tools::read<int>(yaml, "pattern_cols"), tools::read<int>(yaml, "pattern_rows"));
+  auto pattern_size =
+    cv::Size(tools::read<int>(yaml, "pattern_cols"), tools::read<int>(yaml, "pattern_rows"));
   if (pattern_size.width < 2 || pattern_size.height < 2)
     throw std::runtime_error("pattern_cols and pattern_rows must be at least 2");
-  tools::logger()->info(
-    "[Calibration] Pattern {} cols x {} rows (from {})", pattern_size.width, pattern_size.height,
-    config_path);
+  tools::logger()->info("[Calibration] Pattern {} cols x {} rows (from {})", pattern_size.width,
+                        pattern_size.height, config_path);
 
   io::Gimbal gimbal(config_path);
   io::Camera camera(config_path);
@@ -120,8 +120,8 @@ void capture_loop(
   if (enable_foxglove) {
     foxglove = std::make_unique<calibration::FoxgloveCalibration>(calibration::FoxgloveOptions{
       foxglove_host, static_cast<uint16_t>(foxglove_port), foxglove_fps, jpeg_quality});
-    tools::logger()->info(
-      "[Calibration] Foxglove listening at ws://{}:{}", foxglove_host, foxglove_port);
+    tools::logger()->info("[Calibration] Foxglove listening at ws://{}:{}", foxglove_host,
+                          foxglove_port);
   }
 #else
   (void)foxglove_host;
@@ -136,7 +136,8 @@ void capture_loop(
   tools::logger()->info("[Calibration] Continuing after {} existing samples", count);
   while (true) {
     camera.read(img, timestamp);
-    if (img.empty()) break;
+    if (img.empty())
+      break;
     // cv::flip(img,img,-1);
     // 使用云台回传的四元数，并按时间戳做 slerp 插值，与图像对齐
     const auto orientation = gimbal.orientation_at(timestamp);
@@ -163,13 +164,15 @@ void capture_loop(
       // 按“s”保存图片和对应四元数，按“q”退出程序
       cv::imshow("Press s to save, q to quit", img_with_ypr);
       auto key = cv::waitKey(1);
-      if (key == 'q') break;
+      if (key == 'q')
+        break;
       save_requested = key == 's';
     }
 
 #ifdef DUST_ENABLE_FOXGLOVE
     if (foxglove) {
-      if (foxglove->quit_requested()) break;
+      if (foxglove->quit_requested())
+        break;
       save_requested = foxglove->take_save_request() || save_requested;
     }
 #endif
@@ -195,7 +198,8 @@ void capture_loop(
     }
 
 #ifdef DUST_ENABLE_FOXGLOVE
-    if (foxglove) foxglove->publish(img_with_ypr, success, zyx, count, last_event);
+    if (foxglove)
+      foxglove->publish(img_with_ypr, success, zyx, count, last_event);
 #endif
   }
 
@@ -237,11 +241,12 @@ int main(int argc, char * argv[])
     return 2;
   }
   if (headless && !enable_foxglove) {
-    tools::logger()->error("--headless requires --foxglove=true so the process remains controllable");
+    tools::logger()->error(
+      "--headless requires --foxglove=true so the process remains controllable");
     return 2;
   }
-  if (foxglove_port < 1 || foxglove_port > 65535 || foxglove_fps <= 0 ||
-      jpeg_quality < 1 || jpeg_quality > 100) {
+  if (foxglove_port < 1 || foxglove_port > 65535 || foxglove_fps <= 0 || jpeg_quality < 1 ||
+      jpeg_quality > 100) {
     tools::logger()->error("Invalid Foxglove port, fps, or JPEG quality");
     return 2;
   }
@@ -253,9 +258,8 @@ int main(int argc, char * argv[])
   // 包 try/catch：Foxglove 构造失败（例如 host 绑不上）以及采集循环内的校验/写盘异常
   // 都改为记一条明确日志并返回 2，而不是未捕获异常直接 terminate。
   try {
-    capture_loop(
-      config_path, output_folder, headless, enable_foxglove, foxglove_host, foxglove_port,
-      foxglove_fps, jpeg_quality);
+    capture_loop(config_path, output_folder, headless, enable_foxglove, foxglove_host,
+                 foxglove_port, foxglove_fps, jpeg_quality);
   } catch (const std::exception & e) {
     tools::logger()->error("[Calibration] {}", e.what());
     return 2;

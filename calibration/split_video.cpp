@@ -6,10 +6,10 @@
 #include <sstream>
 #include <string>
 
-#include "tools/exiter.hpp"
-#include "tools/img_tools.hpp"
-#include "tools/logger.hpp"
-#include "tools/math_tools.hpp"
+#include "tools/runtime/exiter.hpp"
+#include "tools/image/img_tools.hpp"
+#include "tools/diagnostics/logger.hpp"
+#include "tools/math/math_tools.hpp"
 
 // 定义命令行参数
 const std::string keys =
@@ -65,10 +65,12 @@ int main(int argc, char * argv[])
 
   // 循环处理视频帧
   for (int frame_count = start_index; !exiter.exit(); frame_count++) {
-    if (end_index > 0 && frame_count > end_index) break;
+    if (end_index > 0 && frame_count > end_index)
+      break;
 
     video.read(img);
-    if (img.empty()) break;
+    if (img.empty())
+      break;
 
     outvideo.write(img);
 
@@ -79,7 +81,8 @@ int main(int argc, char * argv[])
     cv::imshow("result", img);
 
     int key = cv::waitKey(1);
-    if (key == 'q') break;
+    if (key == 'q')
+      break;
   }
   cv::destroyAllWindows();
   text.close();  // 关闭文件

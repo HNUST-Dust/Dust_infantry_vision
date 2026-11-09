@@ -6,12 +6,11 @@
 #include <opencv2/core/eigen.hpp>
 #include <opencv2/opencv.hpp>
 
-#include "tools/math_tools.hpp"
+#include "tools/math/math_tools.hpp"
 
-const std::string keys =
-  "{help h usage ? |                          | 输出命令行参数说明}"
-  "{@config-path   | configs/calibration.yaml | 位置参数，yaml配置文件路径 }"
-  "{@input-folder  | assets/img_with_q        | 输入文件夹路径   }";
+const std::string keys = "{help h usage ? |                          | 输出命令行参数说明}"
+                         "{@config-path   | configs/calibration.yaml | 位置参数，yaml配置文件路径 }"
+                         "{@input-folder  | assets/img_with_q        | 输入文件夹路径   }";
 
 std::vector<cv::Point3f> centers_3d(const cv::Size & pattern_size, const float center_distance)
 {
@@ -32,11 +31,10 @@ Eigen::Quaterniond read_q(const std::string & q_path)
   return {w, x, y, z};
 }
 
-void load(
-  const std::string & input_folder, const std::string & config_path,
-  std::vector<double> & R_gimbal2imubody_data, std::vector<cv::Mat> & R_gimbal2world_list,
-  std::vector<cv::Mat> & t_gimbal2world_list, std::vector<cv::Mat> & rvecs,
-  std::vector<cv::Mat> & tvecs)
+void load(const std::string & input_folder, const std::string & config_path,
+          std::vector<double> & R_gimbal2imubody_data, std::vector<cv::Mat> & R_gimbal2world_list,
+          std::vector<cv::Mat> & t_gimbal2world_list, std::vector<cv::Mat> & rvecs,
+          std::vector<cv::Mat> & tvecs)
 {
   // 读取yaml参数
   auto yaml = YAML::LoadFile(config_path);
@@ -58,7 +56,8 @@ void load(
     auto q_path = fmt::format("{}/{}.txt", input_folder, i);
     auto img = cv::imread(img_path);
     Eigen::Quaterniond q = read_q(q_path);
-    if (img.empty()) break;
+    if (img.empty())
+      break;
 
     // 计算云台旋转矩阵
     Eigen::Matrix3d R_imubody2imuabs = q.toRotationMatrix();
@@ -70,7 +69,8 @@ void load(
 
     // 输出识别结果
     fmt::print("[{}] {}\n", success ? "success" : "failure", img_path);
-    if (!success) continue;
+    if (!success)
+      continue;
 
     // 计算所需的数据
     cv::Mat t_gimbal2world = (cv::Mat_<double>(3, 1) << 0, 0, 0);
@@ -78,8 +78,8 @@ void load(
     cv::eigen2cv(R_gimbal2world, R_gimbal2world_cv);
     cv::Mat rvec, tvec;
     auto centers_3d_ = centers_3d(pattern_size, center_distance_mm);
-    cv::solvePnP(
-      centers_3d_, centers_2d, camera_matrix, distort_coeffs, rvec, tvec, false, cv::SOLVEPNP_IPPE);
+    cv::solvePnP(centers_3d_, centers_2d, camera_matrix, distort_coeffs, rvec, tvec, false,
+                 cv::SOLVEPNP_IPPE);
 
     // 记录所需的数据
     R_gimbal2world_list.emplace_back(R_gimbal2world_cv);
@@ -89,15 +89,14 @@ void load(
   }
 }
 
-void print_yaml(
-  const std::vector<double> & R_gimbal2imubody_data, const cv::Mat & R_camera2gimbal,
-  const cv::Mat & t_camera2gimbal, const Eigen::Vector3d & ypr)
+void print_yaml(const std::vector<double> & R_gimbal2imubody_data, const cv::Mat & R_camera2gimbal,
+                const cv::Mat & t_camera2gimbal, const Eigen::Vector3d & ypr)
 {
   YAML::Emitter result;
-  std::vector<double> R_camera2gimbal_data(
-    R_camera2gimbal.begin<double>(), R_camera2gimbal.end<double>());
-  std::vector<double> t_camera2gimbal_data(
-    t_camera2gimbal.begin<double>(), t_camera2gimbal.end<double>());
+  std::vector<double> R_camera2gimbal_data(R_camera2gimbal.begin<double>(),
+                                           R_camera2gimbal.end<double>());
+  std::vector<double> t_camera2gimbal_data(t_camera2gimbal.begin<double>(),
+                                           t_camera2gimbal.end<double>());
 
   result << YAML::BeginMap;
   result << YAML::Key << "R_gimbal2imubody";
@@ -131,14 +130,13 @@ int main(int argc, char * argv[])
   std::vector<double> R_gimbal2imubody_data;
   std::vector<cv::Mat> R_gimbal2world_list, t_gimbal2world_list;
   std::vector<cv::Mat> rvecs, tvecs;
-  load(
-    input_folder, config_path, R_gimbal2imubody_data, R_gimbal2world_list, t_gimbal2world_list,
-    rvecs, tvecs);
+  load(input_folder, config_path, R_gimbal2imubody_data, R_gimbal2world_list, t_gimbal2world_list,
+       rvecs, tvecs);
 
   // 手眼标定
   cv::Mat R_camera2gimbal, t_camera2gimbal;
-  cv::calibrateHandEye(
-    R_gimbal2world_list, t_gimbal2world_list, rvecs, tvecs, R_camera2gimbal, t_camera2gimbal);
+  cv::calibrateHandEye(R_gimbal2world_list, t_gimbal2world_list, rvecs, tvecs, R_camera2gimbal,
+                       t_camera2gimbal);
   t_camera2gimbal /= 1e3;  // mm to m
 
   // 计算相机同理想情况的偏角

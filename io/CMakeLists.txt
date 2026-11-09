@@ -77,7 +77,7 @@ endif()
 # io 的公共头暴露 OpenCV（camera.hpp / hikrobot.hpp / mindvision.hpp / usbcamera.hpp 含
 # <opencv2/opencv.hpp>）、Eigen（dm_imu/gimbal 含 <Eigen/Geometry>）与 serial
 # （dm_imu.hpp / gimbal.hpp 含 <serial/serial.h>）；gimbal.hpp 等用根相对路径包含
-# tools/quaternion_buffer.hpp，故 dust::include 也必需。
+# tools/estimation/quaternion_buffer.hpp，故 dust::include 也必需。
 target_link_libraries(io
   PUBLIC
     dust::include
@@ -89,7 +89,7 @@ target_link_libraries(io
     serial
     ${OpenCV_LIBS}
   PRIVATE
-    # io 的源文件与 PCH 都经 tools/logger.hpp 包含 spdlog，而 io 并不链接 tools，
+    # io 的源文件与 PCH 都经 tools/diagnostics/logger.hpp 包含 spdlog，而 io 并不链接 tools，
     # 必须自己声明一次：spdlog 是 header-only 内联（SPDLOG_INLINE inline），
     # 两个翻译单元若拿到不同的 SPDLOG_FMT_EXTERNAL 定义即构成 ODR 违规。
     spdlog::spdlog_header_only

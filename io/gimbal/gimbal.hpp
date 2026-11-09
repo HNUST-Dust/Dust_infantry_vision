@@ -10,8 +10,8 @@
 #include <optional>
 
 #include "serial/serial.h"
-#include "tools/angle_rate_estimator.hpp"
-#include "tools/quaternion_buffer.hpp"
+#include "tools/estimation/angle_rate_estimator.hpp"
+#include "tools/estimation/quaternion_buffer.hpp"
 
 namespace io
 {
@@ -48,17 +48,17 @@ static_assert(sizeof(VisionToGimbal) <= 64);
 
 enum class GimbalMode
 {
-  IDLE,      // 空闲
-  AUTO_AIM   // 自瞄
+  IDLE,     // 空闲
+  AUTO_AIM  // 自瞄
 };
 
 struct GimbalState
 {
   // Note: values are in radians and radians/second
-  float yaw;       // yaw angle in radians
-  float yaw_vel;   // yaw velocity in radians/sec
-  float pitch;     // pitch angle in radians
-  float pitch_vel; // pitch velocity in radians/sec
+  float yaw;        // yaw angle in radians
+  float yaw_vel;    // yaw velocity in radians/sec
+  float pitch;      // pitch angle in radians
+  float pitch_vel;  // pitch velocity in radians/sec
   float bullet_speed;
   uint16_t bullet_count;
 };
@@ -71,11 +71,11 @@ struct GimbalFeedback
   uint64_t sequence = 0;
   bool valid = false;
   bool rates_measured = false;
-  bool fresh_at(
-    std::chrono::steady_clock::time_point now, std::chrono::steady_clock::duration timeout) const
+  bool fresh_at(std::chrono::steady_clock::time_point now,
+                std::chrono::steady_clock::duration timeout) const
   {
-    return valid && received_at != std::chrono::steady_clock::time_point{} &&
-      now >= received_at && now - received_at <= timeout;
+    return valid && received_at != std::chrono::steady_clock::time_point{} && now >= received_at &&
+           now - received_at <= timeout;
   }
 };
 
@@ -95,12 +95,10 @@ public:
   // Returns no sample if the image timestamp cannot be bracketed by valid telemetry.
   std::optional<tools::QuaternionSample> orientation_at(std::chrono::steady_clock::time_point t);
 
-  void send(
-    bool control, bool fire, float yaw, float yaw_vel, float yaw_acc, float pitch, float pitch_vel,
-    float pitch_acc,uint8_t camera_flag);
-  void send(
-    bool control, bool fire, float yaw, float yaw_vel, float yaw_acc, float pitch, float pitch_vel,
-    float pitch_acc);
+  void send(bool control, bool fire, float yaw, float yaw_vel, float yaw_acc, float pitch,
+            float pitch_vel, float pitch_acc, uint8_t camera_flag);
+  void send(bool control, bool fire, float yaw, float yaw_vel, float yaw_acc, float pitch,
+            float pitch_vel, float pitch_acc);
 
   void send(io::VisionToGimbal VisionToGimbal);
 

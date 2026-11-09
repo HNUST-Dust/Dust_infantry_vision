@@ -10,9 +10,9 @@
 #include <stdexcept>
 #include <thread>
 
-#include "tools/crc.hpp"
-#include "tools/logger.hpp"
-#include "tools/math_tools.hpp"
+#include "tools/protocol/crc.hpp"
+#include "tools/diagnostics/logger.hpp"
+#include "tools/math/math_tools.hpp"
 
 namespace io
 {
@@ -36,8 +36,10 @@ DM_IMU::DM_IMU() : queue_(5000)
   if (!first || !second) {
     stop_thread_ = true;
     queue_.close();
-    if (rec_thread_.joinable()) rec_thread_.join();
-    if (serial_.isOpen()) serial_.close();
+    if (rec_thread_.joinable())
+      rec_thread_.join();
+    if (serial_.isOpen())
+      serial_.close();
     throw std::runtime_error("[DM_IMU] Timed out waiting for IMU data");
   }
   data_ahead_ = std::move(*first);
@@ -89,9 +91,8 @@ void DM_IMU::get_imu_data_thread()
 
     serial_.read((uint8_t *)(&receive_data.FrameHeader1), 4);
 
-    if (
-      receive_data.FrameHeader1 == 0x55 && receive_data.flag1 == 0xAA &&
-      receive_data.slave_id1 == 0x01 && receive_data.reg_acc == 0x01)
+    if (receive_data.FrameHeader1 == 0x55 && receive_data.flag1 == 0xAA &&
+        receive_data.slave_id1 == 0x01 && receive_data.reg_acc == 0x01)
 
     {
       serial_.read((uint8_t *)(&receive_data.accx_u32), 57 - 4);
@@ -128,13 +129,16 @@ void DM_IMU::get_imu_data_thread()
 
 Eigen::Quaterniond DM_IMU::imu_at(std::chrono::steady_clock::time_point timestamp)
 {
-  if (data_behind_.timestamp < timestamp) data_ahead_ = data_behind_;
+  if (data_behind_.timestamp < timestamp)
+    data_ahead_ = data_behind_;
 
   while (true) {
     auto next = queue_.wait_pop_for(std::chrono::milliseconds(50));
-    if (!next) return data_ahead_.q.normalized();
+    if (!next)
+      return data_ahead_.q.normalized();
     data_behind_ = std::move(*next);
-    if (data_behind_.timestamp > timestamp) break;
+    if (data_behind_.timestamp > timestamp)
+      break;
     data_ahead_ = data_behind_;
   }
 

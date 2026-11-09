@@ -4,7 +4,7 @@
 #include <chrono>
 #include <list>
 
-#include "tasks/auto_aim/armor.hpp"
+#include "tasks/auto_aim/model/armor.hpp"
 
 namespace omniperception
 {

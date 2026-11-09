@@ -2,15 +2,15 @@
 
 #include <stdexcept>
 
-#include "tools/logger.hpp"
-#include "tools/yaml.hpp"
+#include "tools/diagnostics/logger.hpp"
+#include "tools/runtime/yaml.hpp"
 
 using namespace std::chrono_literals;
 
 namespace io
 {
 USBCamera::USBCamera(const std::string & open_name, const std::string & config_path)
-: open_name_(open_name), quit_(false), ok_(false), queue_(1), open_count_(0)
+    : open_name_(open_name), quit_(false), ok_(false), queue_(1), open_count_(0)
 {
   auto yaml = tools::load(config_path);
   image_width_ = tools::read<double>(yaml, "image_width");
@@ -27,9 +27,11 @@ USBCamera::USBCamera(const std::string & open_name, const std::string & config_p
     while (!quit_) {
       std::this_thread::sleep_for(100ms);
 
-      if (quit_) break;
+      if (quit_)
+        break;
 
-      if (ok_) continue;
+      if (ok_)
+        continue;
 
       if (open_count_ > 20) {
         tools::logger()->warn("Give up to open {} USB camera", this->device_name);
@@ -48,7 +50,8 @@ USBCamera::USBCamera(const std::string & open_name, const std::string & config_p
         break;
       }
 
-      if (capture_thread_.joinable()) capture_thread_.join();
+      if (capture_thread_.joinable())
+        capture_thread_.join();
 
       {
         std::lock_guard<std::mutex> lock(cap_mutex_);
@@ -67,8 +70,10 @@ USBCamera::~USBCamera()
     std::lock_guard<std::mutex> lock(cap_mutex_);
     close();
   }
-  if (daemon_thread_.joinable()) daemon_thread_.join();
-  if (capture_thread_.joinable()) capture_thread_.join();
+  if (daemon_thread_.joinable())
+    daemon_thread_.join();
+  if (capture_thread_.joinable())
+    capture_thread_.join();
   tools::logger()->info("USBCamera destructed.");
 }
 

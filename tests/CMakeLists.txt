@@ -9,28 +9,28 @@
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 
 #################tests##################
-add_executable(auto_aim_test auto_aim_test.cpp)
-add_executable(planner_feedback_test planner_feedback_test.cpp)
+add_executable(auto_aim_test integration/auto_aim_test.cpp)
+add_executable(planner_feedback_test planner/planner_feedback_test.cpp)
 target_link_libraries(planner_feedback_test PRIVATE auto_aim tools io)
 add_test(NAME planner_feedback COMMAND planner_feedback_test)
-add_executable(planner_replay_test planner_replay_test.cpp ../src/planner_diagnostics.cpp)
+add_executable(planner_replay_test planner/planner_replay_test.cpp ../src/planner_diagnostics.cpp)
 target_link_libraries(planner_replay_test PRIVATE auto_aim tools io nlohmann_json::nlohmann_json)
 add_test(NAME planner_replay COMMAND planner_replay_test --self-test)
-add_executable(planner_diagnostics_test planner_diagnostics_test.cpp ../src/planner_diagnostics.cpp)
+add_executable(planner_diagnostics_test planner/planner_diagnostics_test.cpp ../src/planner_diagnostics.cpp)
 target_link_libraries(planner_diagnostics_test PRIVATE auto_aim tools io nlohmann_json::nlohmann_json)
 add_test(NAME planner_diagnostics COMMAND planner_diagnostics_test)
-add_executable(camera_test camera_test.cpp)
-add_executable(camera_thread_test camera_thread_test.cpp)
-add_executable(fire_test fire_test.cpp)
-add_executable(detector_video_test detector_video_test.cpp)
-add_executable(gimbal_response_test gimbal_response_test.cpp)
-add_executable(handeye_test handeye_test.cpp)
-add_executable(minimum_vision_system minimum_vision_system.cpp)
-add_executable(gimbal_test gimbal_test.cpp)
-add_executable(async_detector_test async_detector_test.cpp)
-add_executable(dynamic_roi_test dynamic_roi_test.cpp)
-add_executable(detector_roi_test detector_roi_test.cpp)
-add_executable(openvino_benchmark_test openvino_benchmark_test.cpp)
+add_executable(camera_test camera/camera_test.cpp)
+add_executable(camera_thread_test camera/camera_thread_test.cpp)
+add_executable(fire_test gimbal/fire_test.cpp)
+add_executable(detector_video_test detection/detector_video_test.cpp)
+add_executable(gimbal_response_test gimbal/gimbal_response_test.cpp)
+add_executable(handeye_test calibration/handeye_test.cpp)
+add_executable(minimum_vision_system integration/minimum_vision_system.cpp)
+add_executable(gimbal_test gimbal/gimbal_test.cpp)
+add_executable(async_detector_test detection/async_detector_test.cpp)
+add_executable(dynamic_roi_test detection/dynamic_roi_test.cpp)
+add_executable(detector_roi_test detection/detector_roi_test.cpp)
+add_executable(openvino_benchmark_test performance/openvino_benchmark_test.cpp)
 
 target_link_libraries(
   auto_aim_test PRIVATE fmt::fmt nlohmann_json::nlohmann_json Eigen3::Eigen ${OpenCV_LIBS}
@@ -68,18 +68,18 @@ target_link_libraries(detector_roi_test PRIVATE ${OpenCV_LIBS} auto_aim tools io
 target_link_libraries(openvino_benchmark_test PRIVATE ${OpenCV_LIBS} auto_aim tools io)
 
 if(ENABLE_TENSORRT)
-  add_executable(tensorrt_detector_test tensorrt_detector_test.cpp)
+  add_executable(tensorrt_detector_test detection/tensorrt_detector_test.cpp)
   target_link_libraries(tensorrt_detector_test
     PRIVATE auto_aim tools io yaml-cpp nlohmann_json::nlohmann_json Threads::Threads
   )
 endif()
 
-# ordered_delivery.hpp 是纯头（只用 std），但它用 #include "tools/ordered_delivery.hpp"
+# ordered_delivery.hpp 是纯头（只用 std），但它用 #include "tools/concurrency/ordered_delivery.hpp"
 # 根相对路径，故仍需 dust::include；其源码用 std::async/std::future/std::mutex，补上 Threads。
-add_executable(ordered_delivery_test ordered_delivery_test.cpp)
+add_executable(ordered_delivery_test tools/ordered_delivery_test.cpp)
 target_link_libraries(ordered_delivery_test PRIVATE dust::include Threads::Threads)
 
-add_executable(quaternion_buffer_test quaternion_buffer_test.cpp)
+add_executable(quaternion_buffer_test tools/quaternion_buffer_test.cpp)
 target_link_libraries(quaternion_buffer_test PRIVATE dust::include Eigen3::Eigen Threads::Threads)
 add_test(NAME quaternion_buffer COMMAND quaternion_buffer_test)
 
@@ -88,7 +88,7 @@ if(NOT ENABLE_SIMULATOR)
     NAME simulator_disabled
     COMMAND ${CMAKE_COMMAND}
       -DINFANTRY=$<TARGET_FILE:infantry>
-      -P ${CMAKE_CURRENT_SOURCE_DIR}/simulator_disabled_test.cmake
+      -P ${CMAKE_CURRENT_SOURCE_DIR}/integration/simulator_disabled_test.cmake
   )
   set_tests_properties(simulator_disabled PROPERTIES TIMEOUT 10)
 endif()
@@ -98,7 +98,7 @@ if(ENABLE_FOXGLOVE_CALIBRATION OR ENABLE_FOXGLOVE_VISION)
 endif()
 
 if(ENABLE_FOXGLOVE_CALIBRATION)
-  add_executable(foxglove_calibration_test foxglove_calibration_test.cpp)
+  add_executable(foxglove_calibration_test calibration/foxglove_calibration_test.cpp)
   target_link_libraries(
     foxglove_calibration_test PRIVATE dust::include Eigen3::Eigen ${OpenCV_LIBS} calibration_foxglove
   )
@@ -107,14 +107,14 @@ if(ENABLE_FOXGLOVE_CALIBRATION)
     NAME foxglove_calibration_protocol
     COMMAND
       ${Python3_EXECUTABLE}
-      ${PROJECT_SOURCE_DIR}/tests/foxglove_calibration_protocol_test.py
+      ${PROJECT_SOURCE_DIR}/tests/calibration/foxglove_calibration_protocol_test.py
       $<TARGET_FILE:foxglove_calibration_test>
   )
   set_tests_properties(foxglove_calibration_protocol PROPERTIES TIMEOUT 20)
 endif()
 
 if(ENABLE_FOXGLOVE_VISION)
-  add_executable(foxglove_vision_test foxglove_vision_test.cpp)
+  add_executable(foxglove_vision_test visualization/foxglove_vision_test.cpp)
   target_link_libraries(
     foxglove_vision_test PRIVATE dust::include ${OpenCV_LIBS} visualization_foxglove
   )
@@ -123,7 +123,7 @@ if(ENABLE_FOXGLOVE_VISION)
     NAME foxglove_vision_protocol
     COMMAND
       ${Python3_EXECUTABLE}
-      ${PROJECT_SOURCE_DIR}/tests/foxglove_vision_protocol_test.py
+      ${PROJECT_SOURCE_DIR}/tests/visualization/foxglove_vision_protocol_test.py
       $<TARGET_FILE:foxglove_vision_test>
   )
   set_tests_properties(foxglove_vision_protocol PROPERTIES TIMEOUT 60)

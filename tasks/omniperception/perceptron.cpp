@@ -4,16 +4,15 @@
 #include <memory>
 #include <thread>
 
-#include "tasks/auto_aim/yolo.hpp"
-#include "tools/exiter.hpp"
-#include "tools/logger.hpp"
+#include "tasks/auto_aim/detection/yolo.hpp"
+#include "tools/runtime/exiter.hpp"
+#include "tools/diagnostics/logger.hpp"
 
 namespace omniperception
 {
-Perceptron::Perceptron(
-  io::USBCamera * usbcam1, io::USBCamera * usbcam2, io::USBCamera * usbcam3,
-  io::USBCamera * usbcam4, const std::string & config_path)
-: detection_queue_(10), decider_(config_path), stop_flag_(false)
+Perceptron::Perceptron(io::USBCamera * usbcam1, io::USBCamera * usbcam2, io::USBCamera * usbcam3,
+                       io::USBCamera * usbcam4, const std::string & config_path)
+    : detection_queue_(10), decider_(config_path), stop_flag_(false)
 {
   // 初始化 YOLO 模型
   yolo_parallel1_ = std::make_shared<auto_aim::YOLO>(config_path, false);
@@ -61,8 +60,8 @@ std::vector<DetectionResult> Perceptron::get_detection_queue()
 }
 
 // 将并行推理逻辑移动到类成员函数
-void Perceptron::parallel_infer(
-  io::USBCamera * cam, std::shared_ptr<auto_aim::YOLO> & yolo_parallel)
+void Perceptron::parallel_infer(io::USBCamera * cam,
+                                std::shared_ptr<auto_aim::YOLO> & yolo_parallel)
 {
   if (!cam) {
     tools::logger()->error("Camera pointer is null!");
@@ -75,7 +74,8 @@ void Perceptron::parallel_infer(
 
       {
         std::unique_lock<std::mutex> lock(mutex_);
-        if (stop_flag_) break;  // 检查是否需要退出
+        if (stop_flag_)
+          break;  // 检查是否需要退出
       }
 
       cam->read(usb_img, ts);

@@ -112,7 +112,7 @@ if(ENABLE_SIMULATOR)
 endif()
 message(STATUS "Talos simulator backend: ${ENABLE_SIMULATOR}")
 
-# 仓库根即 include 根：全仓 198 处 #include "tools/logger.hpp" 这类形式依赖它
+# 仓库根即 include 根：全仓 198 处 #include "tools/diagnostics/logger.hpp" 这类形式依赖它
 # （tools 121 / tasks 46 / io 23 / visualization 6 / calibration 2）。
 # 用 INTERFACE 目标表达，由各 target 显式链接，取代原来的全局
 # include_directories(${PROJECT_SOURCE_DIR}) / (${EIGEN3_INCLUDE_DIR}) / (${OpenCV_INCLUDE_DIRS})。

@@ -1,0 +1,34 @@
+---
+BasedOnStyle: LLVM
+Language: Cpp
+Standard: c++17
+IndentWidth: 2
+ContinuationIndentWidth: 2
+UseTab: Never
+ColumnLimit: 100
+BreakBeforeBraces: Custom
+BraceWrapping:
+  AfterFunction: true
+  AfterClass: true
+  AfterStruct: true
+  AfterUnion: true
+  AfterEnum: true
+  AfterNamespace: true
+  AfterControlStatement: Never
+  BeforeElse: false
+  BeforeCatch: false
+DerivePointerAlignment: false
+PointerAlignment: Middle
+ReferenceAlignment: Pointer
+AccessModifierOffset: -2
+NamespaceIndentation: None
+AllowShortFunctionsOnASingleLine: Empty
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+AllowShortBlocksOnASingleLine: Never
+SortIncludes: Never
+IncludeBlocks: Preserve
+SpacesBeforeTrailingComments: 2
+ReflowComments: false
+FixNamespaceComments: true
+MaxEmptyLinesToKeep: 1

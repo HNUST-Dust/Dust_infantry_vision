@@ -6,22 +6,36 @@
 #include <array>
 #include <optional>
 
-#include "tasks/auto_aim/target.hpp"
+#include "tasks/auto_aim/tracking/target.hpp"
 #include "mpc_axis.hpp"
 
 namespace auto_aim
 {
 using Trajectory = Eigen::Matrix<double, 4, HORIZON>;
 
-enum class PlanStatus {
-  not_run, ok, no_target, empty_armor, feedback_invalid, timestamp_missing,
-  feedback_future, feedback_stale, state_nonfinite, rotation_invalid,
-  state_frame_mismatch, pitch_singular, propagated_state_invalid,
-  trajectory_unavailable, mpc_failed, exception
+enum class PlanStatus
+{
+  not_run,
+  ok,
+  no_target,
+  empty_armor,
+  feedback_invalid,
+  timestamp_missing,
+  feedback_future,
+  feedback_stale,
+  state_nonfinite,
+  rotation_invalid,
+  state_frame_mismatch,
+  pitch_singular,
+  propagated_state_invalid,
+  trajectory_unavailable,
+  mpc_failed,
+  exception
 };
-const char *to_string(PlanStatus status);
+const char * to_string(PlanStatus status);
 
-struct PlanningState {
+struct PlanningState
+{
   double yaw = 0.0;
   double yaw_vel = 0.0;
   double pitch = 0.0;
@@ -32,7 +46,8 @@ struct PlanningState {
   bool rates_measured = false;
 };
 
-struct AimDebugSnapshot {
+struct AimDebugSnapshot
+{
   Eigen::Vector4d xyza = Eigen::Vector4d::Zero();
   int armor_id = -1;
   bool candidate_available = false;
@@ -41,7 +56,8 @@ struct AimDebugSnapshot {
   bool display_valid = false;
 };
 
-struct Plan {
+struct Plan
+{
   PlanStatus status = PlanStatus::not_run;
   std::string error_message;
   AimDebugSnapshot aim_debug;
@@ -68,12 +84,16 @@ struct Plan {
   std::chrono::steady_clock::time_point planned_at{};
   std::chrono::steady_clock::time_point valid_at{};
 
-  int mode() const { return control ? (fire ? 2 : 1) : 0; }
+  int mode() const
+  {
+    return control ? (fire ? 2 : 1) : 0;
+  }
   Plan relative_to(double measured_yaw, double measured_pitch) const;
   bool aim_visible_at(std::chrono::steady_clock::time_point now) const;
 };
 
-struct PlanningTrace {
+struct PlanningTrace
+{
   bool reference_available = false;
   Trajectory reference = Trajectory::Zero();
   PlanningState received_state;
@@ -86,7 +106,8 @@ struct PlanningTrace {
   std::array<double, 11> target_state{};
 };
 
-struct AimPoint {
+struct AimPoint
+{
   bool valid = false;
   int id = 0;
   Eigen::Vector4d xyza = Eigen::Vector4d::Zero();
@@ -95,15 +116,15 @@ struct AimPoint {
 class Planner
 {
 public:
-  explicit Planner(const std::string &config_path);
+  explicit Planner(const std::string & config_path);
   ~Planner() = default;
   Planner(const Planner &) = delete;
-  Planner &operator=(const Planner &) = delete;
+  Planner & operator=(const Planner &) = delete;
 
-  Plan plan(std::optional<Target> target, double bullet_speed, const PlanningState &state,
-            PlanningTrace *trace = nullptr);
+  Plan plan(std::optional<Target> target, double bullet_speed, const PlanningState & state,
+            PlanningTrace * trace = nullptr);
   Plan plan_at(std::optional<Target> target, std::chrono::steady_clock::time_point now,
-               double bullet_speed, const PlanningState &state, PlanningTrace *trace = nullptr);
+               double bullet_speed, const PlanningState & state, PlanningTrace * trace = nullptr);
 
 private:
   double yaw_offset_;
@@ -121,7 +142,8 @@ private:
   double last_target_yaw_ = 0.0;
   std::chrono::steady_clock::time_point last_plan_at_{};
 
-  struct AimDecision {
+  struct AimDecision
+  {
     bool valid = false;
     bool converged = false;
     bool command_valid = false;
@@ -129,22 +151,23 @@ private:
     int lock = -1;
     double fly_time = 0.0;
   };
-  struct AimSolution {
+  struct AimSolution
+  {
     double fly_time = 0.0;
     double yaw = 0.0;
     double pitch = 0.0;
   };
 
-  int nearest_armor_id(const Target &target) const;
-  AimPoint choose_aim_point(const Target &target, int &lock_id) const;
-  std::optional<AimSolution> solve_xyza(const Eigen::Vector4d &xyza, double bullet_speed,
-                                        const Eigen::Matrix3d &R_gimbal2world) const;
-  bool resolve_aim_time(Target base, double bullet_speed, const Eigen::Matrix3d &R_gimbal2world,
-                        int initial_lock, AimDecision &decision) const;
-  bool get_trajectory(const Target &launch_target, double yaw_origin, double bullet_speed,
-                      const Eigen::Matrix3d &R_gimbal2world, Trajectory &out, AimDecision &decision,
-                      Eigen::Vector4d &aim_xyza) const;
+  int nearest_armor_id(const Target & target) const;
+  AimPoint choose_aim_point(const Target & target, int & lock_id) const;
+  std::optional<AimSolution> solve_xyza(const Eigen::Vector4d & xyza, double bullet_speed,
+                                        const Eigen::Matrix3d & R_gimbal2world) const;
+  bool resolve_aim_time(Target base, double bullet_speed, const Eigen::Matrix3d & R_gimbal2world,
+                        int initial_lock, AimDecision & decision) const;
+  bool get_trajectory(const Target & launch_target, double yaw_origin, double bullet_speed,
+                      const Eigen::Matrix3d & R_gimbal2world, Trajectory & out,
+                      AimDecision & decision, Eigen::Vector4d & aim_xyza) const;
 };
-} // namespace auto_aim
+}  // namespace auto_aim
 
 #endif

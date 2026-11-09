@@ -4,6 +4,20 @@
 
 当前仓库以自瞄主链路为完整可用状态。`tasks/omniperception/` 保留源码但未接入默认构建（根 `CMakeLists.txt` 中没有 `add_subdirectory(tasks/omniperception)`）；`io/usbcamera/`、`io/socketcan.hpp`、`auto_aim::Voter`、`tools::RansacSineFitter` 同样保留或参与编译，但当前没有调用方。详见“保留与未接入的模块”。
 
+## 代码格式
+
+统一使用 clang-format 14，格式规则由根目录 `.clang-format` 定义：两空格缩进、100 列行宽，函数/类型/命名空间的大括号换行，控制语句的大括号同行；保留 include 顺序和注释内容的人工分段。
+
+```bash
+sudo apt install clang-format-14
+./scripts/format.sh --check  # 只检查，可用于 CI
+./scripts/format.sh --write  # 格式化自维护源码
+```
+
+脚本处理 Git 跟踪的文件及未忽略的新文件，范围为 `src/`、`calibration/`、`tasks/auto_aim/`、`tasks/omniperception/`、`io/`、`tools/`、`tests/` 和 `visualization/` 下的 C/C++ 文件。排除 `io/hikrobot/include/`、`io/mindvision/include/`、`io/serial/` 和 `tasks/auto_aim/planner/tinympc/`，便于维护 SDK 和依赖补丁。CMake、YAML、Python 及构建产物不在处理范围内。脚本优先使用 `clang-format-14`，并检查主版本为 14。
+
+格式整理应独立提交，与功能修改分开审查。
+
 ## 快速开始
 
 ### 1. 准备代码
@@ -144,7 +158,7 @@ source /opt/intel/openvino_2024.6.0/setupvars.sh
 
 ## 测试与调试程序
 
-`tests/` 中的程序均作为独立可执行文件构建，主要用于算法回放、性能测量和硬件联调。除 CTest 注册的用例外，其余不会被 `ctest` 自动执行。
+`tests/` 按被测功能分目录，目标统一在 `tests/CMakeLists.txt` 注册；程序均作为独立可执行文件构建，主要用于算法回放、性能测量和硬件联调。除 CTest 注册的用例外，其余不会被 `ctest` 自动执行。
 
 多数程序的位置参数默认值非空（默认 `configs/standard3.yaml`，`handeye_test` 默认 `configs/calibration.yaml`），因此**不带参数直接运行会按默认配置启动，而不是打印帮助**；要查看帮助请显式传 `-h`。
 
@@ -157,8 +171,8 @@ source /opt/intel/openvino_2024.6.0/setupvars.sh
   ./build-ninja/quaternion_buffer_test
   ```
 
-- `foxglove_calibration_test`：配合 `tests/foxglove_calibration_protocol_test.py` 以合成图像驱动 Foxglove 服务端，校验通道、服务与图像/状态负载。仅在 `-DENABLE_FOXGLOVE_CALIBRATION=ON` 时构建。用法为 `foxglove_calibration_test <port>`，通常由 CTest 调用。
-- `foxglove_vision_test`：配合 `tests/foxglove_vision_protocol_test.py` 校验自瞄的图像/遥测通道、图像缩放与时间戳，以及单端口和双端口的主题隔离。仅在 `-DENABLE_FOXGLOVE_VISION=ON` 时构建。用法为 `foxglove_vision_test <image_port> [data_port] [duration_ms]`，通常由 CTest 调用。
+- `foxglove_calibration_test`：配合 `tests/calibration/foxglove_calibration_protocol_test.py` 以合成图像驱动 Foxglove 服务端，校验通道、服务与图像/状态负载。仅在 `-DENABLE_FOXGLOVE_CALIBRATION=ON` 时构建。用法为 `foxglove_calibration_test <port>`，通常由 CTest 调用。
+- `foxglove_vision_test`：配合 `tests/visualization/foxglove_vision_protocol_test.py` 校验自瞄的图像/遥测通道、图像缩放与时间戳，以及单端口和双端口的主题隔离。仅在 `-DENABLE_FOXGLOVE_VISION=ON` 时构建。用法为 `foxglove_vision_test <image_port> [data_port] [duration_ms]`，通常由 CTest 调用。
 
 ### 离线视觉与算法
 
@@ -385,13 +399,11 @@ src/                      主程序入口
   auto_aim_runtime.cpp    运行编排：相机/检测/跟踪/规划三线程与运行期选项
 tasks/
   auto_aim/               自瞄核心算法
-    armor / detector / classifier / solver / target / tracker
-    voter
-    dynamic_roi           动态 ROI：网络 ROI 与灯条 ROI
-    yolo + net_detector   OpenVINO 推理与请求池
-    yolos/yolov5          YOLOv5 输出解码适配器
-    multithread/          有序异步检测（MultiThreadDetector）
-    planner/              TinyMPC 轨迹规划 + 装甲板选择与开火判定，tinympc/ 为内置求解器
+    model/                装甲板与灯条数据模型（armor）
+    detection/            传统检测、分类、动态 ROI、网络推理、YOLOv5 与异步检测
+    geometry/             PnP 与相机/云台/世界坐标解算（solver）
+    tracking/             目标状态与跟踪状态机（target、tracker）
+    planner/              TinyMPC 轨迹规划、装甲板选择与开火判定；tinympc/ 为内置求解器
   omniperception/         全向感知模块（保留源码，未接入默认构建）
 io/                       硬件和通信抽象
   camera.cpp              工业相机统一接口与工厂
@@ -404,30 +416,35 @@ io/                       硬件和通信抽象
   serial/                 跨平台串口库
   socketcan.hpp           SocketCAN 工具（当前无调用方）
 tools/                    通用工具
-  plotter.cpp             UDP 调试数据发送
-  extended_kalman_filter  EKF 实现（含 NIS/NEES 诊断）
-  trajectory.cpp          弹道模型
-  quaternion_buffer.hpp   有界姿态历史与插值
-  ordered_delivery.hpp    有序事件交付
-  latency_stats.hpp       延迟分位数统计
-  thread_safe_queue       线程安全队列
-  thread_pool             线程池
-  recorder.cpp            录像与姿态记录
-  ransac_sine_fitter.cpp  RANSAC 正弦拟合（当前无调用方）
-  crc / exiter / logger / math_tools / img_tools / pid / yaml
+  math/                   数学与坐标辅助、弹道模型、PID
+  estimation/             EKF、角速度估计、姿态历史与插值
+  concurrency/            线程池、线程安全队列、有序事件交付
+  diagnostics/            日志、UDP 曲线、录像与姿态记录、延迟统计
+  image/                  图像绘制辅助
+  runtime/                退出信号、命令行辅助、YAML 配置读取
+  protocol/               CRC 与串口 CRC 调试脚本
 calibration/              标定工具
 visualization/            Foxglove 图像与遥测推送、检测叠加绘制
 configs/                  YAML 配置
 assets/                   模型、演示数据
 systemd/                  systemd 服务模板
-tests/                    调试和测试程序
+tests/                    调试和测试程序（CMakeLists.txt 集中注册目标）
+  detection/              检测、ROI、异步推理与 TensorRT 后端验证
+  performance/            OpenVINO 推理性能测量
+  planner/                规划反馈回归、诊断与离线重放
+  camera/                 相机采集与相机线程联调
+  gimbal/                 云台通信、响应与开火联调
+  calibration/            手眼验证与 Foxglove 标定协议测试
+  visualization/          Foxglove 图像/遥测协议测试
+  tools/                  有序交付与姿态缓冲回归
+  integration/            自瞄回放、最小视觉系统与仿真禁用检查
 ```
 
 ### 保留与未接入的模块
 
 为避免误判，以下内容存在于仓库中但不参与默认运行链路：
 
-- `tasks/omniperception/`：源码保留，根 `CMakeLists.txt` 未 `add_subdirectory`，不参与构建；`tasks/auto_aim/tracker.cpp` 只包含其纯头文件 `detection.hpp` 使用类型定义。
+- `tasks/omniperception/`：源码保留，根 `CMakeLists.txt` 未 `add_subdirectory`，不参与构建；`tasks/auto_aim/tracking/tracker.cpp` 只包含其纯头文件 `detection.hpp` 使用类型定义。
 - `io/usbcamera/`：已编译进 `io`，但 `io::Camera` 工厂只识别 `hikrobot` 与 `mindvision`，无法选用。
 - `io/socketcan.hpp`：头文件存在，全仓无引用。
 - `auto_aim::Voter`、`tools::RansacSineFitter`：参与编译，但无调用方。
@@ -903,7 +920,7 @@ ctest --test-dir build-ninja --output-on-failure -R 'planner_(feedback|diagnosti
 
 - 构建产物集中在 `build/`、`build-ninja/`、`install/`、`log/`、`logs/`、`records/`、`neo/`，不要提交。
 - 代码风格和提交规范以仓库根目录 `AGENTS.md` 为准。
-- 新增测试放在 `tests/`，命名以 `_test.cpp` 结尾，并在根目录 `CMakeLists.txt` 注册；需要自动回归的用 `add_test` 注册到 CTest。
+- 新增测试放在 `tests/` 对应功能子目录，命名以 `_test.cpp` 结尾，并在 `tests/CMakeLists.txt` 注册；需要自动回归的用 `add_test` 注册到 CTest。
 - 处理姿态时遵守“姿态随帧传递”的约定，不要在异步结果处理阶段重新消费云台队列。
 - 不要提交机器人私有的设备 ID、绝对路径和大型日志。
 - 项目私有记忆保存在 git 忽略的 `.codex/` 下（`memory.md` 为长期事实，`current.md`/`current.json` 为当前任务状态，`sessions/` 为单次任务回顾），不要强制提交。

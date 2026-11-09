@@ -51,13 +51,11 @@ foxglove::ServiceSchema trigger_schema()
   })");
 
   foxglove::ServiceMessageSchema request{
-    "json",
-    foxglove::Schema{
-      "CalibrationTriggerRequest", "jsonschema", request_schema.data(), request_schema.size()}};
+    "json", foxglove::Schema{"CalibrationTriggerRequest", "jsonschema", request_schema.data(),
+                             request_schema.size()}};
   foxglove::ServiceMessageSchema response{
-    "json",
-    foxglove::Schema{
-      "CalibrationTriggerResponse", "jsonschema", response_schema.data(), response_schema.size()}};
+    "json", foxglove::Schema{"CalibrationTriggerResponse", "jsonschema", response_schema.data(),
+                             response_schema.size()}};
   return {"CalibrationTrigger", request, response};
 }
 
@@ -86,49 +84,52 @@ public:
 
     auto server_result = foxglove::WebSocketServer::create(std::move(server_options));
     if (!server_result.has_value()) {
-      throw std::runtime_error(
-        std::string("Failed to start Foxglove server: ") +
-        foxglove::strerror(server_result.error()));
+      throw std::runtime_error(std::string("Failed to start Foxglove server: ") +
+                               foxglove::strerror(server_result.error()));
     }
     server_ = std::make_unique<foxglove::WebSocketServer>(std::move(server_result.value()));
 
     auto image_result =
       foxglove::messages::CompressedImageChannel::create("/calibration/image/compressed");
     if (!image_result.has_value()) {
-      throw std::runtime_error(
-        std::string("Failed to create Foxglove image channel: ") +
-        foxglove::strerror(image_result.error()));
+      throw std::runtime_error(std::string("Failed to create Foxglove image channel: ") +
+                               foxglove::strerror(image_result.error()));
     }
-    image_channel_ = std::make_unique<foxglove::messages::CompressedImageChannel>(
-      std::move(image_result.value()));
+    image_channel_ =
+      std::make_unique<foxglove::messages::CompressedImageChannel>(std::move(image_result.value()));
 
     auto status_result = foxglove::RawChannel::create("/calibration/status", "json");
     if (!status_result.has_value()) {
-      throw std::runtime_error(
-        std::string("Failed to create Foxglove status channel: ") +
-        foxglove::strerror(status_result.error()));
+      throw std::runtime_error(std::string("Failed to create Foxglove status channel: ") +
+                               foxglove::strerror(status_result.error()));
     }
-    status_channel_ =
-      std::make_unique<foxglove::RawChannel>(std::move(status_result.value()));
+    status_channel_ = std::make_unique<foxglove::RawChannel>(std::move(status_result.value()));
 
     register_services();
   }
 
   ~Impl()
   {
-    if (server_) (void)server_->stop();
+    if (server_)
+      (void)server_->stop();
   }
 
-  bool take_save_request() { return save_requested_.exchange(false); }
+  bool take_save_request()
+  {
+    return save_requested_.exchange(false);
+  }
 
-  bool quit_requested() const { return quit_requested_.load(); }
+  bool quit_requested() const
+  {
+    return quit_requested_.load();
+  }
 
-  void publish(
-    const cv::Mat & preview, bool grid_detected, const Eigen::Vector3d & zyx_degree,
-    int saved_count, const std::string & last_event)
+  void publish(const cv::Mat & preview, bool grid_detected, const Eigen::Vector3d & zyx_degree,
+               int saved_count, const std::string & last_event)
   {
     auto now = std::chrono::steady_clock::now();
-    if (now < next_publish_) return;
+    if (now < next_publish_)
+      return;
     next_publish_ = now + std::chrono::duration_cast<std::chrono::steady_clock::duration>(
                             std::chrono::duration<double>(1.0 / options_.fps));
 
@@ -136,12 +137,11 @@ public:
     size_t jpeg_size = 0;
     if (image_channel_->hasSinks()) {
       std::vector<uint8_t> jpeg;
-      if (cv::imencode(
-            ".jpg", preview, jpeg, {cv::IMWRITE_JPEG_QUALITY, options_.jpeg_quality})) {
+      if (cv::imencode(".jpg", preview, jpeg, {cv::IMWRITE_JPEG_QUALITY, options_.jpeg_quality})) {
         foxglove::messages::CompressedImage message;
-        message.timestamp = foxglove::messages::Timestamp{
-          static_cast<uint32_t>(timestamp_ns / 1000000000ULL),
-          static_cast<uint32_t>(timestamp_ns % 1000000000ULL)};
+        message.timestamp =
+          foxglove::messages::Timestamp{static_cast<uint32_t>(timestamp_ns / 1000000000ULL),
+                                        static_cast<uint32_t>(timestamp_ns % 1000000000ULL)};
         message.frame_id = "camera";
         message.format = "jpeg";
         message.data.resize(jpeg.size());
@@ -152,68 +152,65 @@ public:
     }
 
     if (status_channel_->hasSinks()) {
-      nlohmann::json status{
-        {"grid_detected", grid_detected},
-        {"orientation_valid", zyx_degree.allFinite()},
-        {"save_pending", save_requested_.load()},
-        {"saved_count", saved_count},
-        {"last_event", last_event},
-        {"yaw_degree", zyx_degree[0]},
-        {"pitch_degree", zyx_degree[1]},
-        {"roll_degree", zyx_degree[2]},
-        {"jpeg_bytes", jpeg_size},
-        {"connected_clients", server_->clientCount()},
-        {"server_time_ns", timestamp_ns}};
+      nlohmann::json status{{"grid_detected", grid_detected},
+                            {"orientation_valid", zyx_degree.allFinite()},
+                            {"save_pending", save_requested_.load()},
+                            {"saved_count", saved_count},
+                            {"last_event", last_event},
+                            {"yaw_degree", zyx_degree[0]},
+                            {"pitch_degree", zyx_degree[1]},
+                            {"roll_degree", zyx_degree[2]},
+                            {"jpeg_bytes", jpeg_size},
+                            {"connected_clients", server_->clientCount()},
+                            {"server_time_ns", timestamp_ns}};
       auto payload = status.dump();
-      (void)status_channel_->log(
-        reinterpret_cast<const std::byte *>(payload.data()), payload.size(), timestamp_ns);
+      (void)status_channel_->log(reinterpret_cast<const std::byte *>(payload.data()),
+                                 payload.size(), timestamp_ns);
     }
   }
 
-  uint16_t port() const { return server_->port(); }
+  uint16_t port() const
+  {
+    return server_->port();
+  }
 
 private:
   void register_services()
   {
-    save_handler_ = [this](
-                      const foxglove::ServiceRequest &, foxglove::ServiceResponder && responder) {
+    save_handler_ = [this](const foxglove::ServiceRequest &,
+                           foxglove::ServiceResponder && responder) {
       bool already_pending = save_requested_.exchange(true);
-      respond_json(
-        std::move(responder),
-        {{"success", !already_pending},
-         {"message", already_pending ? "save already pending" : "save requested"}});
+      respond_json(std::move(responder),
+                   {{"success", !already_pending},
+                    {"message", already_pending ? "save already pending" : "save requested"}});
     };
-    quit_handler_ = [this](
-                      const foxglove::ServiceRequest &, foxglove::ServiceResponder && responder) {
+    quit_handler_ = [this](const foxglove::ServiceRequest &,
+                           foxglove::ServiceResponder && responder) {
       quit_requested_.store(true);
       respond_json(std::move(responder), {{"success", true}, {"message", "quit requested"}});
     };
 
     auto schema = trigger_schema();
-    auto save_service =
-      foxglove::Service::create("/calibration/save", schema, save_handler_);
+    auto save_service = foxglove::Service::create("/calibration/save", schema, save_handler_);
     if (!save_service.has_value()) {
-      throw std::runtime_error(
-        std::string("Failed to create Foxglove save service: ") +
-        foxglove::strerror(save_service.error()));
+      throw std::runtime_error(std::string("Failed to create Foxglove save service: ") +
+                               foxglove::strerror(save_service.error()));
     }
     auto error = server_->addService(std::move(save_service.value()));
     if (error != foxglove::FoxgloveError::Ok) {
-      throw std::runtime_error(
-        std::string("Failed to register Foxglove save service: ") + foxglove::strerror(error));
+      throw std::runtime_error(std::string("Failed to register Foxglove save service: ") +
+                               foxglove::strerror(error));
     }
 
-    auto quit_service =
-      foxglove::Service::create("/calibration/quit", schema, quit_handler_);
+    auto quit_service = foxglove::Service::create("/calibration/quit", schema, quit_handler_);
     if (!quit_service.has_value()) {
-      throw std::runtime_error(
-        std::string("Failed to create Foxglove quit service: ") +
-        foxglove::strerror(quit_service.error()));
+      throw std::runtime_error(std::string("Failed to create Foxglove quit service: ") +
+                               foxglove::strerror(quit_service.error()));
     }
     error = server_->addService(std::move(quit_service.value()));
     if (error != foxglove::FoxgloveError::Ok) {
-      throw std::runtime_error(
-        std::string("Failed to register Foxglove quit service: ") + foxglove::strerror(error));
+      throw std::runtime_error(std::string("Failed to register Foxglove quit service: ") +
+                               foxglove::strerror(error));
     }
   }
 
@@ -229,19 +226,25 @@ private:
 };
 
 FoxgloveCalibration::FoxgloveCalibration(FoxgloveOptions options)
-: impl_(std::make_unique<Impl>(std::move(options)))
+    : impl_(std::make_unique<Impl>(std::move(options)))
 {
 }
 
 FoxgloveCalibration::~FoxgloveCalibration() = default;
 
-bool FoxgloveCalibration::take_save_request() { return impl_->take_save_request(); }
+bool FoxgloveCalibration::take_save_request()
+{
+  return impl_->take_save_request();
+}
 
-bool FoxgloveCalibration::quit_requested() const { return impl_->quit_requested(); }
+bool FoxgloveCalibration::quit_requested() const
+{
+  return impl_->quit_requested();
+}
 
-void FoxgloveCalibration::publish(
-  const cv::Mat & preview, bool grid_detected, const Eigen::Vector3d & zyx_degree,
-  int saved_count, const std::string & last_event)
+void FoxgloveCalibration::publish(const cv::Mat & preview, bool grid_detected,
+                                  const Eigen::Vector3d & zyx_degree, int saved_count,
+                                  const std::string & last_event)
 {
   impl_->publish(preview, grid_detected, zyx_degree, saved_count, last_event);
 }

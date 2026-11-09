@@ -1,21 +1,14 @@
 #include "hikrobot.hpp"
 
-#include "tools/logger.hpp"
+#include "tools/diagnostics/logger.hpp"
 
 using namespace std::chrono_literals;
 
 namespace io
 {
 HikRobot::HikRobot(double exposure_ms, double gain, double frame_rate, const std::string & vid_pid)
-: exposure_us_(exposure_ms * 1e3),
-  gain_(gain),
-  frame_rate_(frame_rate),
-  daemon_quit_(false),
-  capturing_(false),
-  capture_quit_(false),
-  queue_(1),
-  vid_(-1),
-  pid_(-1)
+    : exposure_us_(exposure_ms * 1e3), gain_(gain), frame_rate_(frame_rate), daemon_quit_(false),
+      capturing_(false), capture_quit_(false), queue_(1), vid_(-1), pid_(-1)
 {
   set_vid_pid(vid_pid);
 
@@ -27,13 +20,17 @@ HikRobot::HikRobot(double exposure_ms, double gain, double frame_rate, const std
     while (!daemon_quit_) {
       std::this_thread::sleep_for(100ms);
 
-      if (daemon_quit_) break;
+      if (daemon_quit_)
+        break;
 
-      if (capturing_) continue;
+      if (capturing_)
+        continue;
 
       capture_stop();
-      for (int i = 0; i < 10 && !daemon_quit_; ++i) std::this_thread::sleep_for(100ms);
-      if (daemon_quit_) break;
+      for (int i = 0; i < 10 && !daemon_quit_; ++i)
+        std::this_thread::sleep_for(100ms);
+      if (daemon_quit_)
+        break;
       capture_start();
     }
 
@@ -46,7 +43,8 @@ HikRobot::HikRobot(double exposure_ms, double gain, double frame_rate, const std
 HikRobot::~HikRobot()
 {
   stop();
-  if (daemon_thread_.joinable()) daemon_thread_.join();
+  if (daemon_thread_.joinable())
+    daemon_thread_.join();
   tools::logger()->info("HikRobot destructed.");
 }
 
@@ -92,7 +90,8 @@ void HikRobot::capture_start()
   MV_CC_DEVICE_INFO * selected = nullptr;
   for (unsigned int i = 0; i < device_list.nDeviceNum; ++i) {
     auto * info = device_list.pDeviceInfo[i];
-    if (!info || info->nTLayerType != MV_USB_DEVICE) continue;
+    if (!info || info->nTLayerType != MV_USB_DEVICE)
+      continue;
     const auto & usb = info->SpecialInfo.stUsb3VInfo;
     tools::logger()->info("HikRobot USB device {}: {:04x}:{:04x}", i, usb.idVendor, usb.idProduct);
     if (usb.idVendor == static_cast<unsigned short>(vid_) &&
@@ -151,9 +150,10 @@ void HikRobot::capture_start()
 
       ret = MV_CC_GetImageBuffer(handle_, &raw, nMsec);
       if (ret != MV_OK) {
-        if (ret == MV_E_NODATA && ++no_data_count < 10) continue;
+        if (ret == MV_E_NODATA && ++no_data_count < 10)
+          continue;
         tools::logger()->warn("MV_CC_GetImageBuffer failed: {:#x} after {} no-data timeouts", ret,
-          no_data_count);
+                              no_data_count);
         break;
       }
       no_data_count = 0;
@@ -201,8 +201,10 @@ void HikRobot::capture_start()
 void HikRobot::capture_stop()
 {
   capture_quit_ = true;
-  if (capture_thread_.joinable()) capture_thread_.join();
-  if (!handle_) return;
+  if (capture_thread_.joinable())
+    capture_thread_.join();
+  if (!handle_)
+    return;
 
   unsigned int ret;
 

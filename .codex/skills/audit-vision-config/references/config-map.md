@@ -4,7 +4,7 @@
 
 - `configs/standard3.yaml`: robot runtime configuration; default model is YOLOv5 and default device is GPU.
 - `configs/calibration.yaml`: camera calibration tool configuration.
-- `tools/yaml.hpp`: shared YAML loading/reading helpers.
+- `tools/runtime/yaml.hpp`: shared YAML loading/reading helpers.
 
 ## Conditional fields
 

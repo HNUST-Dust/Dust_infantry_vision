@@ -54,18 +54,18 @@ constexpr double kEmaAlpha = 0.1;
 const char * sched_policy_name(int policy)
 {
   switch (policy) {
-    case SCHED_OTHER:
-      return "SCHED_OTHER";
-    case SCHED_FIFO:
-      return "SCHED_FIFO";
-    case SCHED_RR:
-      return "SCHED_RR";
-    case SCHED_BATCH:
-      return "SCHED_BATCH";
-    case SCHED_IDLE:
-      return "SCHED_IDLE";
-    default:
-      return "unknown";
+  case SCHED_OTHER:
+    return "SCHED_OTHER";
+  case SCHED_FIFO:
+    return "SCHED_FIFO";
+  case SCHED_RR:
+    return "SCHED_RR";
+  case SCHED_BATCH:
+    return "SCHED_BATCH";
+  case SCHED_IDLE:
+    return "SCHED_IDLE";
+  default:
+    return "unknown";
   }
 }
 
@@ -73,18 +73,18 @@ const char * sched_policy_name(int policy)
 const char * sched_errno_name(int error)
 {
   switch (error) {
-    case 0:
-      return "";
-    case EPERM:
-      return "EPERM";
-    case EACCES:
-      return "EACCES";
-    case EINVAL:
-      return "EINVAL";
-    case ESRCH:
-      return "ESRCH";
-    default:
-      return "error";
+  case 0:
+    return "";
+  case EPERM:
+    return "EPERM";
+  case EACCES:
+    return "EACCES";
+  case EINVAL:
+    return "EINVAL";
+  case ESRCH:
+    return "ESRCH";
+  default:
+    return "error";
   }
 }
 
@@ -139,8 +139,7 @@ std::chrono::nanoseconds clock_offset()
 uint64_t to_epoch_ns(std::chrono::steady_clock::time_point time)
 {
   const auto epoch = time.time_since_epoch() + clock_offset();
-  return static_cast<uint64_t>(
-    std::chrono::duration_cast<std::chrono::nanoseconds>(epoch).count());
+  return static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(epoch).count());
 }
 
 class FoxgloveVision::Impl
@@ -153,9 +152,8 @@ public:
     foxglove::setLogLevel(foxglove::LogLevel::Info);
 
     image_context_ = foxglove::Context::create();
-    image_server_ = create_server(
-      "dust-vision-image", image_context_, options_.image_port,
-      split_ ? options_.image_backlog : options_.data_backlog);
+    image_server_ = create_server("dust-vision-image", image_context_, options_.image_port,
+                                  split_ ? options_.image_backlog : options_.data_backlog);
 
     // 单端口模式：遥测与图像共用同一个 context 与服务器。
     // 双端口模式：遥测另起一个 context 与服务器，两条连接各自独立积压，
@@ -163,33 +161,31 @@ public:
     data_context_ = image_context_;
     if (split_) {
       data_context_ = foxglove::Context::create();
-      data_server_ = create_server(
-        "dust-vision-data", data_context_, options_.data_port, options_.data_backlog);
+      data_server_ =
+        create_server("dust-vision-data", data_context_, options_.data_port, options_.data_backlog);
     }
 
     auto image_result =
       foxglove::messages::CompressedImageChannel::create(kImageTopic, image_context_);
     if (!image_result.has_value())
-      throw std::runtime_error(
-        std::string("Failed to create Foxglove image channel: ") +
-        foxglove::strerror(image_result.error()));
-    image_channel_ = std::make_unique<foxglove::messages::CompressedImageChannel>(
-      std::move(image_result.value()));
+      throw std::runtime_error(std::string("Failed to create Foxglove image channel: ") +
+                               foxglove::strerror(image_result.error()));
+    image_channel_ =
+      std::make_unique<foxglove::messages::CompressedImageChannel>(std::move(image_result.value()));
 
     auto telemetry_result =
       foxglove::RawChannel::create(kTelemetryTopic, "json", telemetry_schema(), data_context_);
     if (!telemetry_result.has_value())
-      throw std::runtime_error(
-        std::string("Failed to create Foxglove telemetry channel: ") +
-        foxglove::strerror(telemetry_result.error()));
+      throw std::runtime_error(std::string("Failed to create Foxglove telemetry channel: ") +
+                               foxglove::strerror(telemetry_result.error()));
     telemetry_channel_ =
       std::make_unique<foxglove::RawChannel>(std::move(telemetry_result.value()));
 
-    auto status_result = foxglove::RawChannel::create(kStatusTopic, "json", std::nullopt, data_context_);
+    auto status_result =
+      foxglove::RawChannel::create(kStatusTopic, "json", std::nullopt, data_context_);
     if (!status_result.has_value())
-      throw std::runtime_error(
-        std::string("Failed to create Foxglove status channel: ") +
-        foxglove::strerror(status_result.error()));
+      throw std::runtime_error(std::string("Failed to create Foxglove status channel: ") +
+                               foxglove::strerror(status_result.error()));
     status_channel_ = std::make_unique<foxglove::RawChannel>(std::move(status_result.value()));
 
     // 两个发布线程都放在最后创建：上面任何一步抛异常时都还没有线程存在，析构可以直接返回。
@@ -211,31 +207,44 @@ public:
     data_ready_.notify_all();
 
     // 先等两个发布线程退出，再停 server，保证没有线程在使用 channel/server。
-    if (worker_.joinable()) worker_.join();
-    if (data_worker_.joinable()) data_worker_.join();
+    if (worker_.joinable())
+      worker_.join();
+    if (data_worker_.joinable())
+      data_worker_.join();
 
-    if (data_server_) (void)data_server_->stop();
-    if (image_server_) (void)image_server_->stop();
+    if (data_server_)
+      (void)data_server_->stop();
+    if (image_server_)
+      (void)image_server_->stop();
   }
 
-  bool image_requested() const { return image_channel_->hasSinks(); }
+  bool image_requested() const
+  {
+    return image_channel_->hasSinks();
+  }
 
-  bool data_requested() const { return telemetry_channel_->hasSinks(); }
+  bool data_requested() const
+  {
+    return telemetry_channel_->hasSinks();
+  }
 
   void publish_image(const cv::Mat & image, std::chrono::steady_clock::time_point capture_time)
   {
-    if (image.empty()) return;
+    if (image.empty())
+      return;
 
     const auto now = std::chrono::steady_clock::now();
-    if (now < next_image_publish_) return;    // 过密的帧直接丢弃，保持画面时延
-    if (!image_channel_->hasSinks()) return;  // 无人订阅：不缩放、不编码、不入队
-    next_image_publish_ =
-      now + std::chrono::duration_cast<std::chrono::steady_clock::duration>(
-              std::chrono::duration<double>(1.0 / options_.image_fps));
+    if (now < next_image_publish_)
+      return;  // 过密的帧直接丢弃，保持画面时延
+    if (!image_channel_->hasSinks())
+      return;  // 无人订阅：不缩放、不编码、不入队
+    next_image_publish_ = now + std::chrono::duration_cast<std::chrono::steady_clock::duration>(
+                                  std::chrono::duration<double>(1.0 / options_.image_fps));
 
     {
       std::lock_guard<std::mutex> lock(frame_mutex_);
-      if (pending_frame_) dropped_images_.fetch_add(1);
+      if (pending_frame_)
+        dropped_images_.fetch_add(1);
       pending_frame_ = PendingFrame{image, to_epoch_ns(capture_time)};
     }
     frame_ready_.notify_one();
@@ -244,15 +253,18 @@ public:
   // 100 Hz 的规划线程只做订阅判断、取时间戳和入队，序列化与 SDK 调用交给数据线程。
   void publish_telemetry(nlohmann::json data, std::chrono::steady_clock::time_point t)
   {
-    if (!telemetry_channel_->hasSinks()) return;  // 无人订阅：不序列化、不入队
+    if (!telemetry_channel_->hasSinks())
+      return;  // 无人订阅：不序列化、不入队
     enqueue(PendingMessage::Kind::Telemetry, std::move(data), to_epoch_ns(t));
   }
 
   void publish_status(nlohmann::json fields, std::chrono::steady_clock::time_point sample_time)
   {
-    if (!status_channel_->hasSinks()) return;
+    if (!status_channel_->hasSinks())
+      return;
     const auto now = std::chrono::steady_clock::now();
-    if (now < next_status_publish_) return;
+    if (now < next_status_publish_)
+      return;
     next_status_publish_ = now + std::chrono::seconds(1);
 
     const auto image_clients = static_cast<uint64_t>(image_server_->clientCount());
@@ -285,9 +297,15 @@ public:
     enqueue(PendingMessage::Kind::Status, std::move(fields), to_epoch_ns(sample_time));
   }
 
-  uint16_t image_port() const { return image_server_->port(); }
+  uint16_t image_port() const
+  {
+    return image_server_->port();
+  }
 
-  uint16_t data_port() const { return split_ ? data_server_->port() : image_server_->port(); }
+  uint16_t data_port() const
+  {
+    return split_ ? data_server_->port() : image_server_->port();
+  }
 
 private:
   struct PendingFrame
@@ -298,10 +316,14 @@ private:
 
   struct PendingMessage
   {
-    enum class Kind : uint8_t { Telemetry, Status };
+    enum class Kind : uint8_t
+    {
+      Telemetry,
+      Status
+    };
 
     Kind kind = Kind::Telemetry;
-    nlohmann::json payload;    // 不在这里序列化：dump() 在数据线程上做
+    nlohmann::json payload;  // 不在这里序列化：dump() 在数据线程上做
     uint64_t log_time_ns = 0;  // 调用线程入队时算好，线上时间戳与改动前逐字节一致
   };
 
@@ -324,10 +346,12 @@ private:
       if (allow_idle) {
         sched_param param{};
         param.sched_priority = 0;
-        if (::sched_setscheduler(0, SCHED_IDLE, &param) != 0) report.error.store(errno);
+        if (::sched_setscheduler(0, SCHED_IDLE, &param) != 0)
+          report.error.store(errno);
       }
       // 提高 nice 值（降低优先级）不需要任何特权，是 SCHED_IDLE 不可用时的兜底。
-      if (::setpriority(PRIO_PROCESS, 0, 19) != 0) report.error.store(errno);
+      if (::setpriority(PRIO_PROCESS, 0, 19) != 0)
+        report.error.store(errno);
     }
 
     errno = 0;  // getpriority 返回 -1 既可能是失败也可能是合法的 nice = -1，必须先清 errno
@@ -392,7 +416,8 @@ private:
       {
         std::unique_lock<std::mutex> lock(data_mutex_);
         data_ready_.wait(lock, [this] { return data_stop_ || !data_queue_.empty(); });
-        if (data_stop_) break;  // 退出时不排空：与图像路径一致，退出就是要快
+        if (data_stop_)
+          break;  // 退出时不排空：与图像路径一致，退出就是要快
         message = std::move(data_queue_.front());
         data_queue_.pop_front();
       }
@@ -404,17 +429,19 @@ private:
   {
     const bool is_status = message.kind == PendingMessage::Kind::Status;
     foxglove::RawChannel & channel = is_status ? *status_channel_ : *telemetry_channel_;
-    if (!channel.hasSinks()) return;  // 排队期间客户端可能已经断开
+    if (!channel.hasSinks())
+      return;  // 排队期间客户端可能已经断开
 
     const auto payload = message.payload.dump();
-    (void)channel.log(
-      reinterpret_cast<const std::byte *>(payload.data()), payload.size(), message.log_time_ns);
-    if (!is_status) published_telemetry_.fetch_add(1);
+    (void)channel.log(reinterpret_cast<const std::byte *>(payload.data()), payload.size(),
+                      message.log_time_ns);
+    if (!is_status)
+      published_telemetry_.fetch_add(1);
   }
 
-  std::unique_ptr<foxglove::WebSocketServer> create_server(
-    const std::string & name, const foxglove::Context & context, uint16_t port,
-    std::size_t backlog)
+  std::unique_ptr<foxglove::WebSocketServer> create_server(const std::string & name,
+                                                           const foxglove::Context & context,
+                                                           uint16_t port, std::size_t backlog)
   {
     foxglove::WebSocketServerOptions server_options;
     server_options.name = name;
@@ -427,9 +454,8 @@ private:
 
     auto server_result = foxglove::WebSocketServer::create(std::move(server_options));
     if (!server_result.has_value())
-      throw std::runtime_error(
-        std::string("Failed to start Foxglove server: ") +
-        foxglove::strerror(server_result.error()));
+      throw std::runtime_error(std::string("Failed to start Foxglove server: ") +
+                               foxglove::strerror(server_result.error()));
     return std::make_unique<foxglove::WebSocketServer>(std::move(server_result.value()));
   }
 
@@ -445,7 +471,8 @@ private:
       {
         std::unique_lock<std::mutex> lock(frame_mutex_);
         frame_ready_.wait(lock, [this] { return stop_ || pending_frame_.has_value(); });
-        if (stop_) break;
+        if (stop_)
+          break;
         frame = std::move(*pending_frame_);
         pending_frame_.reset();
       }
@@ -455,35 +482,36 @@ private:
 
   void encode_and_log(const PendingFrame & frame)
   {
-    if (frame.image.empty() || frame.log_time_ns == 0) return;
-    if (!image_channel_->hasSinks()) return;  // 排队期间客户端可能已经断开
+    if (frame.image.empty() || frame.log_time_ns == 0)
+      return;
+    if (!image_channel_->hasSinks())
+      return;  // 排队期间客户端可能已经断开
 
     // 只统计真正吃 CPU 的缩放 + 编码，供 /vision/status 判断这台机器上编码到底占多少。
     const auto encode_started = std::chrono::steady_clock::now();
     cv::Mat to_encode = frame.image;
     if (options_.image_scale < 1.0) {
       cv::Mat scaled;
-      cv::resize(
-        frame.image, scaled, {}, options_.image_scale, options_.image_scale, cv::INTER_AREA);
+      cv::resize(frame.image, scaled, {}, options_.image_scale, options_.image_scale,
+                 cv::INTER_AREA);
       to_encode = scaled;
     }
 
     std::vector<uint8_t> jpeg;
-    if (!cv::imencode(
-          ".jpg", to_encode, jpeg, {cv::IMWRITE_JPEG_QUALITY, options_.jpeg_quality}))
+    if (!cv::imencode(".jpg", to_encode, jpeg, {cv::IMWRITE_JPEG_QUALITY, options_.jpeg_quality}))
       return;
 
-    const double encode_ms = 0.001 * static_cast<double>(
-                                        std::chrono::duration_cast<std::chrono::microseconds>(
-                                          std::chrono::steady_clock::now() - encode_started)
-                                          .count());
+    const double encode_ms =
+      0.001 * static_cast<double>(std::chrono::duration_cast<std::chrono::microseconds>(
+                                    std::chrono::steady_clock::now() - encode_started)
+                                    .count());
     encode_ms_last_.store(encode_ms);
     update_ema(encode_ms_ema_, encode_ema_valid_, encode_ms);
 
     foxglove::messages::CompressedImage message;
-    message.timestamp = foxglove::messages::Timestamp{
-      static_cast<uint32_t>(frame.log_time_ns / 1000000000ULL),
-      static_cast<uint32_t>(frame.log_time_ns % 1000000000ULL)};
+    message.timestamp =
+      foxglove::messages::Timestamp{static_cast<uint32_t>(frame.log_time_ns / 1000000000ULL),
+                                    static_cast<uint32_t>(frame.log_time_ns % 1000000000ULL)};
     message.frame_id = "camera";
     message.format = "jpeg";
     message.data.resize(jpeg.size());
@@ -535,36 +563,48 @@ private:
 };
 
 FoxgloveVision::FoxgloveVision(FoxgloveVisionOptions options)
-: impl_(std::make_unique<Impl>(std::move(options)))
+    : impl_(std::make_unique<Impl>(std::move(options)))
 {
 }
 
 FoxgloveVision::~FoxgloveVision() = default;
 
-bool FoxgloveVision::image_requested() const { return impl_->image_requested(); }
+bool FoxgloveVision::image_requested() const
+{
+  return impl_->image_requested();
+}
 
-bool FoxgloveVision::data_requested() const { return impl_->data_requested(); }
+bool FoxgloveVision::data_requested() const
+{
+  return impl_->data_requested();
+}
 
-void FoxgloveVision::publish_image(
-  const cv::Mat & image, std::chrono::steady_clock::time_point capture_time)
+void FoxgloveVision::publish_image(const cv::Mat & image,
+                                   std::chrono::steady_clock::time_point capture_time)
 {
   impl_->publish_image(image, capture_time);
 }
 
-void FoxgloveVision::publish_telemetry(
-  nlohmann::json data, std::chrono::steady_clock::time_point sample_time)
+void FoxgloveVision::publish_telemetry(nlohmann::json data,
+                                       std::chrono::steady_clock::time_point sample_time)
 {
   impl_->publish_telemetry(std::move(data), sample_time);
 }
 
-void FoxgloveVision::publish_status(
-  nlohmann::json fields, std::chrono::steady_clock::time_point sample_time)
+void FoxgloveVision::publish_status(nlohmann::json fields,
+                                    std::chrono::steady_clock::time_point sample_time)
 {
   impl_->publish_status(std::move(fields), sample_time);
 }
 
-uint16_t FoxgloveVision::image_port() const { return impl_->image_port(); }
+uint16_t FoxgloveVision::image_port() const
+{
+  return impl_->image_port();
+}
 
-uint16_t FoxgloveVision::data_port() const { return impl_->data_port(); }
+uint16_t FoxgloveVision::data_port() const
+{
+  return impl_->data_port();
+}
 
 }  // namespace visualization

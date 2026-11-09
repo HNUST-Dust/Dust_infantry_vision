@@ -1,17 +1,16 @@
 #include "gimbal.hpp"
 
-#include "tools/crc.hpp"
-#include "tools/logger.hpp"
-#include "tools/math_tools.hpp"
-#include "tools/yaml.hpp"
+#include "tools/protocol/crc.hpp"
+#include "tools/diagnostics/logger.hpp"
+#include "tools/math/math_tools.hpp"
+#include "tools/runtime/yaml.hpp"
 
 #include <cmath>
 #include <stdexcept>
 
 namespace io
 {
-Gimbal::Gimbal(const std::string & config_path, bool simulate)
-: simulate_(simulate)
+Gimbal::Gimbal(const std::string & config_path, bool simulate) : simulate_(simulate)
 {
   if (simulate_) {
     state_.bullet_speed = 23.0F;
@@ -45,7 +44,8 @@ Gimbal::Gimbal(const std::string & config_path, bool simulate)
   if (!orientations_.wait_first(std::chrono::seconds(5))) {
     quit_ = true;
     orientations_.close();
-    if (thread_.joinable()) thread_.join();
+    if (thread_.joinable())
+      thread_.join();
     serial_.close();
     throw std::runtime_error("[Gimbal] Timed out waiting for first quaternion");
   }
@@ -56,8 +56,10 @@ Gimbal::~Gimbal()
 {
   quit_ = true;
   orientations_.close();
-  if (thread_.joinable()) thread_.join();
-  if (!simulate_) serial_.close();
+  if (thread_.joinable())
+    thread_.join();
+  if (!simulate_)
+    serial_.close();
 }
 
 GimbalMode Gimbal::mode() const
@@ -80,14 +82,18 @@ std::chrono::steady_clock::time_point Gimbal::feedback_timestamp() const
 GimbalFeedback Gimbal::feedback() const
 {
   std::lock_guard<std::mutex> lock(mutex_);
-  const auto at = simulate_ && !external_feedback_ ? std::chrono::steady_clock::now()
-                                                 : feedback_timestamp_;
-  return {state_, feedback_q_, at, feedback_sequence_, feedback_valid_,
+  const auto at =
+    simulate_ && !external_feedback_ ? std::chrono::steady_clock::now() : feedback_timestamp_;
+  return {state_,
+          feedback_q_,
+          at,
+          feedback_sequence_,
+          feedback_valid_,
           !simulate_ && !external_feedback_};
 }
 
-void Gimbal::set_external_feedback(
-  const Eigen::Quaterniond & q, std::chrono::steady_clock::time_point t)
+void Gimbal::set_external_feedback(const Eigen::Quaterniond & q,
+                                   std::chrono::steady_clock::time_point t)
 {
   std::lock_guard<std::mutex> lock(mutex_);
   external_feedback_ = true;
@@ -112,18 +118,20 @@ void Gimbal::set_external_feedback(
 std::string Gimbal::str(GimbalMode mode) const
 {
   switch (mode) {
-    case GimbalMode::IDLE:
-      return "IDLE";
-    case GimbalMode::AUTO_AIM:
-      return "AUTO_AIM";
-    default:
-      return "INVALID";
+  case GimbalMode::IDLE:
+    return "IDLE";
+  case GimbalMode::AUTO_AIM:
+    return "AUTO_AIM";
+  default:
+    return "INVALID";
   }
 }
 
-std::optional<tools::QuaternionSample> Gimbal::orientation_at(std::chrono::steady_clock::time_point t)
+std::optional<tools::QuaternionSample>
+Gimbal::orientation_at(std::chrono::steady_clock::time_point t)
 {
-  if (simulate_) return tools::QuaternionSample{Eigen::Quaterniond::Identity(), t, t};
+  if (simulate_)
+    return tools::QuaternionSample{Eigen::Quaterniond::Identity(), t, t};
   return orientations_.at(t);
 }
 
@@ -136,17 +144,17 @@ void Gimbal::send(io::VisionToGimbal VisionToGimbal)
   tx_data_.pitch = VisionToGimbal.pitch;
   tx_data_.pitch_vel = VisionToGimbal.pitch_vel;
   tx_data_.pitch_acc = VisionToGimbal.pitch_acc;
-  tx_data_.crc16 = tools::get_crc16(
-    reinterpret_cast<uint8_t *>(&tx_data_), sizeof(tx_data_) - sizeof(tx_data_.crc16));
+  tx_data_.crc16 = tools::get_crc16(reinterpret_cast<uint8_t *>(&tx_data_),
+                                    sizeof(tx_data_) - sizeof(tx_data_.crc16));
 
-  if (simulate_) return;
+  if (simulate_)
+    return;
 
   write_tx_data();
 }
 
-void Gimbal::send(
-  bool control, bool fire, float yaw, float yaw_vel, float yaw_acc, float pitch, float pitch_vel,
-  float pitch_acc)
+void Gimbal::send(bool control, bool fire, float yaw, float yaw_vel, float yaw_acc, float pitch,
+                  float pitch_vel, float pitch_acc)
 {
   tx_data_.mode = control ? (fire ? 2 : 1) : 0;
   tx_data_.yaw = yaw;
@@ -155,10 +163,11 @@ void Gimbal::send(
   tx_data_.pitch = pitch;
   tx_data_.pitch_vel = pitch_vel;
   tx_data_.pitch_acc = pitch_acc;
-  tx_data_.crc16 = tools::get_crc16(
-    reinterpret_cast<uint8_t *>(&tx_data_), sizeof(tx_data_) - sizeof(tx_data_.crc16));
+  tx_data_.crc16 = tools::get_crc16(reinterpret_cast<uint8_t *>(&tx_data_),
+                                    sizeof(tx_data_) - sizeof(tx_data_.crc16));
 
-  if (simulate_) return;
+  if (simulate_)
+    return;
 
   // // 打印十六进制数据
   // std::string hex_str;
@@ -175,16 +184,17 @@ bool Gimbal::write_tx_data()
 {
   try {
     const auto written = serial_.write(reinterpret_cast<uint8_t *>(&tx_data_), sizeof(tx_data_));
-    if (written == sizeof(tx_data_)) return true;
+    if (written == sizeof(tx_data_))
+      return true;
     const auto failures = ++write_failure_count_;
     if (failures <= 3 || failures % 100 == 0)
-      tools::logger()->warn(
-        "[Gimbal] Short serial write: {}/{} bytes (failures={})", written, sizeof(tx_data_),
-        failures);
+      tools::logger()->warn("[Gimbal] Short serial write: {}/{} bytes (failures={})", written,
+                            sizeof(tx_data_), failures);
   } catch (const std::exception & e) {
     const auto failures = ++write_failure_count_;
     if (failures <= 3 || failures % 100 == 0)
-      tools::logger()->warn("[Gimbal] Failed to write serial (failures={}): {}", failures, e.what());
+      tools::logger()->warn("[Gimbal] Failed to write serial (failures={}): {}", failures,
+                            e.what());
   }
   return false;
 }
@@ -218,13 +228,13 @@ void Gimbal::read_thread()
       continue;
     }
 
-    if (rx_data_.head[0] != 'S' || rx_data_.head[1] != 'P') continue;
+    if (rx_data_.head[0] != 'S' || rx_data_.head[1] != 'P')
+      continue;
 
     auto t = std::chrono::steady_clock::now();
 
-    if (!read(
-          reinterpret_cast<uint8_t *>(&rx_data_) + sizeof(rx_data_.head),
-          sizeof(rx_data_) - sizeof(rx_data_.head))) {
+    if (!read(reinterpret_cast<uint8_t *>(&rx_data_) + sizeof(rx_data_.head),
+              sizeof(rx_data_) - sizeof(rx_data_.head))) {
       error_count++;
       continue;
     }
@@ -235,9 +245,11 @@ void Gimbal::read_thread()
     if (!tools::check_crc16(reinterpret_cast<uint8_t *>(&rx_data_), sizeof(rx_data_))) {
       if (!skip_crc_) {
         uint16_t received_crc = rx_data_.crc16;
-        uint16_t calculated_crc = tools::get_crc16(
-          reinterpret_cast<uint8_t *>(&rx_data_), sizeof(rx_data_) - sizeof(rx_data_.crc16));
-        tools::logger()->info("[Gimbal] CRC16 check failed. Received: 0x{:04X}, Calculated: 0x{:04X}", received_crc, calculated_crc);
+        uint16_t calculated_crc = tools::get_crc16(reinterpret_cast<uint8_t *>(&rx_data_),
+                                                   sizeof(rx_data_) - sizeof(rx_data_.crc16));
+        tools::logger()->info(
+          "[Gimbal] CRC16 check failed. Received: 0x{:04X}, Calculated: 0x{:04X}", received_crc,
+          calculated_crc);
         error_count++;
         continue;
       }
@@ -257,11 +269,12 @@ void Gimbal::read_thread()
       feedback_valid_ = false;
       continue;
     }
-    if (!orientations_.push(q, t)) continue;
+    if (!orientations_.push(q, t))
+      continue;
     q.normalize();
     // 云台关节轴为 Z(yaw)-X(pitch)-Y(roll)，按同一顺序提取反馈角。
     Eigen::Vector3d zxy = tools::eulers(q, 2, 0, 1);
-    double yaw_angle   = zxy[0];  // Z
+    double yaw_angle = zxy[0];    // Z
     double pitch_angle = zxy[1];  // X
     // double roll_angle  = zxy[2];  // Y
 
@@ -273,7 +286,7 @@ void Gimbal::read_thread()
     // 打印原始数据
     std::string raw_hex;
     for (size_t i = 0; i < sizeof(rx_data_); ++i) {
-      raw_hex += fmt::format("{:02x} ", reinterpret_cast<uint8_t*>(&rx_data_)[i]);
+      raw_hex += fmt::format("{:02x} ", reinterpret_cast<uint8_t *>(&rx_data_)[i]);
     }
     // tools::logger()->debug("[Gimbal] Raw data: {}", raw_hex);
 
@@ -304,16 +317,16 @@ void Gimbal::read_thread()
     feedback_valid_ = true;
 
     switch (rx_data_.mode) {
-      case 0:
-        mode_ = GimbalMode::IDLE;
-        break;
-      case 1:
-        mode_ = GimbalMode::AUTO_AIM;
-        break;
-      default:
-        mode_ = GimbalMode::IDLE;
-        tools::logger()->warn("[Gimbal] Invalid mode: {}", rx_data_.mode);
-        break;
+    case 0:
+      mode_ = GimbalMode::IDLE;
+      break;
+    case 1:
+      mode_ = GimbalMode::AUTO_AIM;
+      break;
+    default:
+      mode_ = GimbalMode::IDLE;
+      tools::logger()->warn("[Gimbal] Invalid mode: {}", rx_data_.mode);
+      break;
     }
   }
 

@@ -16,17 +16,17 @@
 #ifdef DUST_ENABLE_SIMULATOR
 #include "io/talos/talos.hpp"
 #endif
-#include "tasks/auto_aim/multithread/mt_detector.hpp"
+#include "tasks/auto_aim/detection/mt_detector.hpp"
 #include "tasks/auto_aim/planner/planner.hpp"
-#include "tasks/auto_aim/solver.hpp"
-#include "tasks/auto_aim/tracker.hpp"
-#include "tools/exiter.hpp"
-#include "tools/latency_stats.hpp"
-#include "tools/logger.hpp"
-#include "tools/math_tools.hpp"
-#include "tools/plotter.hpp"
-#include "tools/thread_safe_queue.hpp"
-#include "tools/yaml.hpp"
+#include "tasks/auto_aim/geometry/solver.hpp"
+#include "tasks/auto_aim/tracking/tracker.hpp"
+#include "tools/runtime/exiter.hpp"
+#include "tools/diagnostics/latency_stats.hpp"
+#include "tools/diagnostics/logger.hpp"
+#include "tools/math/math_tools.hpp"
+#include "tools/diagnostics/plotter.hpp"
+#include "tools/concurrency/thread_safe_queue.hpp"
+#include "tools/runtime/yaml.hpp"
 #include "visualization/vision_overlay.hpp"
 
 #ifdef DUST_ENABLE_FOXGLOVE
@@ -62,10 +62,11 @@ struct PlanUpdate
   float distance_m = -1.0F;
 };
 
-void add_latency_metrics(
-  nlohmann::json & data, const std::optional<tools::LatencySummary> & latency_summary)
+void add_latency_metrics(nlohmann::json & data,
+                         const std::optional<tools::LatencySummary> & latency_summary)
 {
-  if (!latency_summary) return;
+  if (!latency_summary)
+    return;
 
   const auto & summary = *latency_summary;
   data["vision_latency_ms"] = summary.latest_ms;
@@ -93,13 +94,19 @@ RuntimeConfig load_runtime_config(const std::string & config_path)
 {
   RuntimeConfig config;
   const auto node = tools::load(config_path)["runtime"];  // 加载失败时抛 runtime_error
-  if (!node) return config;
+  if (!node)
+    return config;
 
-  if (node["io_backend"]) config.io_backend = node["io_backend"].as<std::string>();
-  if (node["simulate_gimbal"]) config.simulate_gimbal = node["simulate_gimbal"].as<bool>();
-  if (node["headless"]) config.headless = node["headless"].as<bool>();
-  if (node["verbose_ekf"]) config.verbose_ekf = node["verbose_ekf"].as<bool>();
-  if (node["foxglove"]) config.foxglove_enabled = node["foxglove"].as<bool>();
+  if (node["io_backend"])
+    config.io_backend = node["io_backend"].as<std::string>();
+  if (node["simulate_gimbal"])
+    config.simulate_gimbal = node["simulate_gimbal"].as<bool>();
+  if (node["headless"])
+    config.headless = node["headless"].as<bool>();
+  if (node["verbose_ekf"])
+    config.verbose_ekf = node["verbose_ekf"].as<bool>();
+  if (node["foxglove"])
+    config.foxglove_enabled = node["foxglove"].as<bool>();
   if (node["fire_timeout_ms"])
     config.fire_timeout = std::chrono::milliseconds(node["fire_timeout_ms"].as<int>());
   if (node["control_timeout_ms"])
@@ -115,9 +122,8 @@ RuntimeConfig load_runtime_config(const std::string & config_path)
     throw std::runtime_error(
       "Talos simulator backend is not compiled in; configure with -DENABLE_SIMULATOR=ON");
 #endif
-  if (
-    config.fire_timeout <= 0ms || config.control_timeout <= 0ms || config.feedback_timeout <= 0ms ||
-    config.plan_timeout <= 0ms)
+  if (config.fire_timeout <= 0ms || config.control_timeout <= 0ms ||
+      config.feedback_timeout <= 0ms || config.plan_timeout <= 0ms)
     throw std::runtime_error("runtime safety timeout values must be positive");
   return config;
 }
@@ -140,14 +146,21 @@ FoxgloveConfig load_foxglove_config(const std::string & config_path)
 {
   FoxgloveConfig config;
   const auto node = tools::load(config_path)["foxglove"];  // 加载失败时抛 runtime_error
-  if (!node) return config;
+  if (!node)
+    return config;
 
-  if (node["host"]) config.host = node["host"].as<std::string>();
-  if (node["port"]) config.image_port = node["port"].as<int>();
-  if (node["data_port"]) config.data_port = node["data_port"].as<int>();
-  if (node["fps"]) config.image_fps = node["fps"].as<double>();
-  if (node["scale"]) config.image_scale = node["scale"].as<double>();
-  if (node["jpeg_quality"]) config.jpeg_quality = node["jpeg_quality"].as<int>();
+  if (node["host"])
+    config.host = node["host"].as<std::string>();
+  if (node["port"])
+    config.image_port = node["port"].as<int>();
+  if (node["data_port"])
+    config.data_port = node["data_port"].as<int>();
+  if (node["fps"])
+    config.image_fps = node["fps"].as<double>();
+  if (node["scale"])
+    config.image_scale = node["scale"].as<double>();
+  if (node["jpeg_quality"])
+    config.jpeg_quality = node["jpeg_quality"].as<int>();
   if (node["sched"]) {
     const auto sched = node["sched"].as<std::string>();
     if (sched != "auto" && sched != "off")
@@ -187,12 +200,11 @@ int run(const RuntimeOptions & options)
       tools::logger()->error("[Foxglove] {}", e.what());
       return 2;
     }
-    if (
-      foxglove_config.image_port < 1 || foxglove_config.image_port > 65535 ||
-      foxglove_config.data_port < 0 || foxglove_config.data_port > 65535 ||
-      foxglove_config.image_fps <= 0 || foxglove_config.image_scale <= 0 ||
-      foxglove_config.image_scale > 1.0 || foxglove_config.jpeg_quality < 1 ||
-      foxglove_config.jpeg_quality > 100) {
+    if (foxglove_config.image_port < 1 || foxglove_config.image_port > 65535 ||
+        foxglove_config.data_port < 0 || foxglove_config.data_port > 65535 ||
+        foxglove_config.image_fps <= 0 || foxglove_config.image_scale <= 0 ||
+        foxglove_config.image_scale > 1.0 || foxglove_config.jpeg_quality < 1 ||
+        foxglove_config.jpeg_quality > 100) {
       tools::logger()->error(
         "[Foxglove] Invalid port, fps, scale, or JPEG quality in the foxglove section");
       return 2;
@@ -207,9 +219,9 @@ int run(const RuntimeOptions & options)
     foxglove_options.yield_cpu = foxglove_config.yield_cpu;
     try {
       foxglove = std::make_unique<visualization::FoxgloveVision>(foxglove_options);
-      tools::logger()->info(
-        "[Foxglove] image ws://{}:{}, telemetry ws://{}:{}", foxglove_options.host,
-        foxglove->image_port(), foxglove_options.host, foxglove->data_port());
+      tools::logger()->info("[Foxglove] image ws://{}:{}, telemetry ws://{}:{}",
+                            foxglove_options.host, foxglove->image_port(), foxglove_options.host,
+                            foxglove->data_port());
     } catch (const std::exception & e) {
       // 构造失败只记日志，视觉主链路继续运行
       tools::logger()->error("[Foxglove] disabled: {}", e.what());
@@ -275,7 +287,8 @@ int run(const RuntimeOptions & options)
       const auto started = std::chrono::steady_clock::now();
       Plan plan;
       std::optional<PlanningTrace> trace;
-      if (planner_diagnostics.trace_enabled()) trace.emplace();
+      if (planner_diagnostics.trace_enabled())
+        trace.emplace();
       PlanSource source;
       source.frame_sequence = update.sequence;
       source.frame_timestamp = update.frame_timestamp;
@@ -298,12 +311,12 @@ int run(const RuntimeOptions & options)
           tools::logger()->error(
             "[Planner] IMU axis calibration needs a matching joint-rate mapping; control disabled");
         unsupported_frame_reported = !rate_frame_supported;
-        state.valid = feedback.fresh_at(control_at, runtime_config.feedback_timeout) &&
-          rate_frame_supported;
+        state.valid =
+          feedback.fresh_at(control_at, runtime_config.feedback_timeout) && rate_frame_supported;
         state.rates_measured = feedback.rates_measured;
         plan = planner.plan_at(update.target, control_at, feedback.state.bullet_speed, state,
                                trace ? &*trace : nullptr);
-      } catch (const std::exception &e) {
+      } catch (const std::exception & e) {
         plan = Plan{};
         plan.planned_at = started;
         plan.status = PlanStatus::exception;
@@ -319,9 +332,8 @@ int run(const RuntimeOptions & options)
           const auto x = update.target->ekf_x();
           distance_m = static_cast<float>(std::hypot(x[0], x[2]));
         }
-        plan_queue.push({
-          plan, generated_at, update.frame_timestamp, update.last_observed_timestamp, planning_ms,
-          update.sequence, distance_m});
+        plan_queue.push({plan, generated_at, update.frame_timestamp, update.last_observed_timestamp,
+                         planning_ms, update.sequence, distance_m});
       }
       planner_diagnostics.observe(plan, update.target.has_value(), planning_ms, generated_at,
                                   source, trace ? &*trace : nullptr);
@@ -353,18 +365,22 @@ int run(const RuntimeOptions & options)
       const auto feedback = gimbal.feedback();
       const auto now = std::chrono::steady_clock::now();
       auto plan = update.plan.relative_to(feedback.state.yaw, feedback.state.pitch);
-      const bool plan_fresh =
-        update.generated_at != epoch && now >= update.generated_at &&
-        now - update.generated_at <= runtime_config.plan_timeout && now <= update.plan.valid_at;
-      const bool feedback_fresh =
-        feedback.fresh_at(now, runtime_config.feedback_timeout);
+      const bool plan_fresh = update.generated_at != epoch && now >= update.generated_at &&
+                              now - update.generated_at <= runtime_config.plan_timeout &&
+                              now <= update.plan.valid_at;
+      const bool feedback_fresh = feedback.fresh_at(now, runtime_config.feedback_timeout);
       const bool observation_known = update.last_observed_timestamp != epoch;
-      const auto observation_age = observation_known ? now - update.last_observed_timestamp : now - epoch;
+      const auto observation_age =
+        observation_known ? now - update.last_observed_timestamp : now - epoch;
       // 0=ready, 1=no_control, 2=no_plan, 3=plan_expired, 4=feedback_stale,
       // 5=no_observation, 6=observation_stale. The gating below is unchanged.
-      const int send_status = update.generated_at == epoch ? 2 : !update.plan.control ? 1 :
-          !plan_fresh ? 3 : !feedback_fresh ? 4 : !observation_known ? 5 :
-          observation_age > runtime_config.control_timeout ? 6 : 0;
+      const int send_status = update.generated_at == epoch                       ? 2
+                              : !update.plan.control                             ? 1
+                              : !plan_fresh                                      ? 3
+                              : !feedback_fresh                                  ? 4
+                              : !observation_known                               ? 5
+                              : observation_age > runtime_config.control_timeout ? 6
+                                                                                 : 0;
       latest_send_status.store(send_status);
       planner_diagnostics.observe_send(send_status);
 
@@ -383,17 +399,15 @@ int run(const RuntimeOptions & options)
         const double absolute_yaw = plan.control ? plan.absolute_yaw : feedback.state.yaw;
         const double absolute_pitch = plan.control ? plan.absolute_pitch : feedback.state.pitch;
         // Talos consumes an absolute solver target; the hardware planner command is relative.
-        const float pitch_deg = static_cast<float>(
-          -(90.0 + absolute_pitch * 57.29577951308232));
-        const int result = talos->send(
-          static_cast<float>(absolute_yaw * 57.29577951308232), pitch_deg, distance_m,
-          plan.control && plan.fire);
-        if (result != 0) tools::logger()->error("[Talos] command write failed: {}", result);
+        const float pitch_deg = static_cast<float>(-(90.0 + absolute_pitch * 57.29577951308232));
+        const int result = talos->send(static_cast<float>(absolute_yaw * 57.29577951308232),
+                                       pitch_deg, distance_m, plan.control && plan.fire);
+        if (result != 0)
+          tools::logger()->error("[Talos] command write failed: {}", result);
       } else {
 #endif
-        gimbal.send(
-          plan.control, plan.fire, plan.yaw, plan.yaw_vel, plan.yaw_acc, plan.pitch,
-          plan.pitch_vel, plan.pitch_acc);
+        gimbal.send(plan.control, plan.fire, plan.yaw, plan.yaw_vel, plan.yaw_acc, plan.pitch,
+                    plan.pitch_vel, plan.pitch_acc);
 #ifdef DUST_ENABLE_SIMULATOR
       }
 #endif
@@ -457,8 +471,9 @@ int run(const RuntimeOptions & options)
       data["mpc_pitch"] = mpc_diagnostics_json(plan_update.plan.pitch_mpc);
       const int send_status = latest_send_status.load();
       data["send_status_code"] = send_status;
-      static constexpr const char *send_names[] = {"ready", "no_control", "no_plan",
-          "plan_expired", "feedback_stale", "no_observation", "observation_stale"};
+      static constexpr const char * send_names[] = {
+        "ready",          "no_control",     "no_plan",          "plan_expired",
+        "feedback_stale", "no_observation", "observation_stale"};
       data["send_status"] = send_names[send_status];
       data["planner_diagnostic_dropped"] = planner_diagnostics.dropped();
       data["planner_trace_written"] = planner_diagnostics.written();
@@ -568,8 +583,8 @@ int run(const RuntimeOptions & options)
         timestamp = frame.timestamp;
         talos_orientation = frame.gimbal_to_world;
         if (!talos_intrinsics_applied) {
-          solver.set_camera_intrinsics(
-            frame.camera.fx, frame.camera.fy, frame.camera.cx, frame.camera.cy);
+          solver.set_camera_intrinsics(frame.camera.fx, frame.camera.fy, frame.camera.cx,
+                                       frame.camera.cy);
           talos_intrinsics_applied = true;
         }
         gimbal.set_external_feedback(frame.gimbal_to_world, timestamp);
@@ -582,15 +597,17 @@ int run(const RuntimeOptions & options)
       const double capture_ms = std::chrono::duration<double, std::milli>(
                                   std::chrono::steady_clock::now() - capture_started)
                                   .count();
-      if (image.empty()) break;
-      const auto orientation = talos_orientation
-                                 ? std::optional<tools::QuaternionSample>(tools::QuaternionSample{
-                                     *talos_orientation, timestamp, timestamp})
-                                 : gimbal.orientation_at(timestamp);
+      if (image.empty())
+        break;
+      const auto orientation =
+        talos_orientation ? std::optional<tools::QuaternionSample>(
+                              tools::QuaternionSample{*talos_orientation, timestamp, timestamp})
+                          : gimbal.orientation_at(timestamp);
       const bool was_valid = orientation_was_valid;
       orientation_was_valid = orientation.has_value();
       if (!orientation) {
-        if (was_valid) tools::logger()->warn("[Gimbal] No synchronized pose; skipping images");
+        if (was_valid)
+          tools::logger()->warn("[Gimbal] No synchronized pose; skipping images");
         continue;
       }
       const auto & q = orientation->q;
@@ -601,7 +618,8 @@ int run(const RuntimeOptions & options)
 
   while (!quit) {
     // SIGINT 通过 Exiter 的全局标志进来，这里统一转成 quit，让所有线程走同一条退出路径
-    if (exiter.exit()) quit = true;
+    if (exiter.exit())
+      quit = true;
 
 #ifdef DUST_ENABLE_FOXGLOVE
     // 必须放在 wait_pop_for 之前：跳帧时的 continue 会跳过这里。
@@ -612,7 +630,8 @@ int run(const RuntimeOptions & options)
 #endif
 
     auto detection = detector.wait_pop_for(50ms);
-    if (!detection || !detection->q) continue;
+    if (!detection || !detection->q)
+      continue;
     latest_capture_ms.store(detection->capture_ms);
     latest_submit_ms.store(detection->submit_ms);
     latest_inference_ms.store(detection->inference_ms);
@@ -623,10 +642,12 @@ int run(const RuntimeOptions & options)
       const auto drops = detector.drop_counts();
       tools::logger()->info(
         "[DetectorTiming] capture: {:.2f} ms, submit: {:.2f} ms, inference: {:.2f} ms "
-        "(wait: {:.2f} ms, postprocess: {:.2f} ms), result delivery: {:.2f} ms; dropped overwritten/result-capacity/busy/empty/error: {}/{}/{}/{}/{}",
+        "(wait: {:.2f} ms, postprocess: {:.2f} ms), result delivery: {:.2f} ms; dropped "
+        "overwritten/result-capacity/busy/empty/error: {}/{}/{}/{}/{}",
         detection->capture_ms, detection->submit_ms, detection->inference_ms,
-        detection->inference_wait_ms, detection->postprocess_ms, detection->delivery_ms, drops.overwritten, drops.result_capacity, drops.skipped_busy,
-        drops.skipped_empty, drops.skipped_error);
+        detection->inference_wait_ms, detection->postprocess_ms, detection->delivery_ms,
+        drops.overwritten, drops.result_capacity, drops.skipped_busy, drops.skipped_empty,
+        drops.skipped_error);
       last_detector_timing_log = std::chrono::steady_clock::now();
     }
     const auto & q = *detection->q;
@@ -639,14 +660,14 @@ int run(const RuntimeOptions & options)
 
     const auto current_state = tracker.state_enum();
     if (current_state != last_state) {
-      tools::logger()->info("[Tracker] State: {} -> {}", to_string(last_state), to_string(current_state));
+      tools::logger()->info("[Tracker] State: {} -> {}", to_string(last_state),
+                            to_string(current_state));
       last_state = current_state;
     }
     tracker_state_code.store(static_cast<int>(current_state));
 
-    target_queue.push(
-      {targets.empty() ? std::nullopt : std::optional<Target>(targets.front()), t,
-       tracker.last_observed_timestamp(), detection->sequence});
+    target_queue.push({targets.empty() ? std::nullopt : std::optional<Target>(targets.front()), t,
+                       tracker.last_observed_timestamp(), detection->sequence});
 
     if (!targets.empty() && runtime_config.verbose_ekf) {
       // 在终端上显示 EKF 状态信息；默认关闭，165 fps 下会把日志刷满
@@ -667,8 +688,8 @@ int run(const RuntimeOptions & options)
 
     // 本地窗口与 Foxglove 图像通道共用同一份叠加绘制
     if ((!headless || publish_frame) && detection->inferred && !img_det.empty()) {
-      visualization::VisionOverlayInput overlay{
-        armors, detection->net_roi, detection->light_roi, to_string(current_state)};
+      visualization::VisionOverlayInput overlay{armors, detection->net_roi, detection->light_roi,
+                                                to_string(current_state)};
       if (!targets.empty()) {
         overlay.target = &targets.front();
         const auto completed_plan = plan_queue.front();
@@ -679,36 +700,44 @@ int run(const RuntimeOptions & options)
 
 #ifdef DUST_ENABLE_FOXGLOVE
       // 在缩放之前发布，通道内部再按 image_scale 缩放
-      if (publish_frame) foxglove->publish_image(img_det, t);
+      if (publish_frame)
+        foxglove->publish_image(img_det, t);
 #endif
 
       if (!headless) {
         cv::resize(img_det, img_det, {}, 0.5, 0.5);  // 显示时缩小图片尺寸
         cv::imshow(options.window_name, img_det);
         // 与 SIGINT 走同一条退出路径：置位后由循环条件收尾
-        if (cv::waitKey(1) == 'q') quit = true;
+        if (cv::waitKey(1) == 'q')
+          quit = true;
       }
     }
   }
 
-  if (camera) camera->stop();
+  if (camera)
+    camera->stop();
   detector.close();
-  if (capture_thread.joinable()) capture_thread.join();
+  if (capture_thread.joinable())
+    capture_thread.join();
   // 排空时必须复用检测帧里携带的姿态，不能重新消费云台队列
   while (auto detection = detector.wait_pop()) {
     auto armors = std::move(detection->armors);
-    if (!detection->q) continue;
+    if (!detection->q)
+      continue;
     solver.set_R_gimbal2world(*detection->q);
     auto targets = tracker.track(armors, detection->timestamp);
-    target_queue.push(
-      {targets.empty() ? std::nullopt : std::optional<Target>(targets.front()),
-       detection->timestamp, tracker.last_observed_timestamp(), detection->sequence});
+    target_queue.push({targets.empty() ? std::nullopt : std::optional<Target>(targets.front()),
+                       detection->timestamp, tracker.last_observed_timestamp(),
+                       detection->sequence});
   }
   detector.join();
   quit = true;
-  if (plan_thread.joinable()) plan_thread.join();
-  if (send_thread.joinable()) send_thread.join();
-  if (telemetry_thread.joinable()) telemetry_thread.join();
+  if (plan_thread.joinable())
+    plan_thread.join();
+  if (send_thread.joinable())
+    send_thread.join();
+  if (telemetry_thread.joinable())
+    telemetry_thread.join();
 #ifdef DUST_ENABLE_SIMULATOR
   if (talos_backend)
     talos->send(0.0F, -90.0F, -1.0F, false);
