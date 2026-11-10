@@ -140,8 +140,35 @@ void self_test()
   p.yaw_acc = yaw.inputs()(0, 0) * 150;
   p.pitch_acc = pitch.inputs()(0, 0) * 100;
   const auto j = json::parse(planner_trace_json(event, now, "self-test").dump());
+  require(j.at("yaw_config").at("input_scale") == 20.0 &&
+            j.at("yaw_config").at("normalized_input_limit") == 7.5 &&
+            j.at("pitch_config").at("normalized_input_limit") == 5.0 &&
+            j.at("yaw_config").at("b") == json::array({0.0, 0.2}) &&
+            j.at("yaw_config").at("normalized_r") == j.at("pitch_config").at("normalized_r"),
+          "Trace must distinguish fixed input scaling from physical acceleration limits");
   reproduce(parse_sample(j));
   auto bad = j;
+  for (const auto * field : {"input_scale", "normalized_input_limit"}) {
+    bad = j;
+    bad["yaw_config"][field] = 1.0;
+    bool rejected_scaling = false;
+    try {
+      parse_sample(bad);
+    } catch (const std::exception &) {
+      rejected_scaling = true;
+    }
+    require(rejected_scaling, "Reject incompatible input scaling or bounds");
+  }
+  bad = j;
+  bad["yaw_config"].erase("input_scale");
+  bool rejected_legacy = false;
+  try {
+    parse_sample(bad);
+  } catch (const std::exception &) {
+    rejected_legacy = true;
+  }
+  require(rejected_legacy, "Reject traces without the fixed input scaling contract");
+  bad = j;
   bad["yaw_config"]["a"][0][1] = 0.02;
   bool rejected = false;
   try {

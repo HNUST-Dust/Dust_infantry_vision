@@ -11,6 +11,8 @@ namespace auto_aim
 constexpr double DT = 0.01;
 constexpr int HORIZON = 60;
 constexpr int COMMAND_STEP = 1;
+// Physical acceleration per internal input unit (rad/s²), independent of max_acc.
+constexpr double MPC_INPUT_SCALE = 20.0;
 using AxisReference = Eigen::Matrix<double, 2, HORIZON>;
 
 enum class MpcStatus
@@ -78,6 +80,7 @@ public:
   }
   const tinyMatrix & inputs() const
   {
+    // Keep the command interface: inputs() * config().max_acc is physical acceleration.
     return solver_->work->u;
   }
   const MpcConfig & config() const

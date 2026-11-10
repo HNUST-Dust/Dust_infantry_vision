@@ -453,6 +453,7 @@ int run(const RuntimeOptions & options)
       data["gimbal_pitch_vel"] = gs.pitch_vel;
       data["target_yaw"] = plan_update.plan.target_yaw;
       data["target_pitch"] = plan_update.plan.target_pitch;
+      data["plan_control"] = plan_update.plan.control;
       data["plan_yaw"] = plan_update.plan.yaw;
       data["plan_yaw_vel"] = plan_update.plan.yaw_vel;
       data["plan_yaw_acc"] = plan_update.plan.yaw_acc;

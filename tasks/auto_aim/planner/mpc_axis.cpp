@@ -62,21 +62,22 @@ MpcAxis::MpcAxis(const MpcConfig & config) : config_(config)
       !std::isfinite(config.dual_tolerance) || config.dual_tolerance <= 0)
     throw std::invalid_argument("Invalid MPC configuration");
   const double scale =
-    std::max({config.q[0], config.q[1], config.r * config.max_acc * config.max_acc});
+    std::max({config.q[0], config.q[1], config.r * MPC_INPUT_SCALE * MPC_INPUT_SCALE});
   if (!std::isfinite(scale))
     throw std::invalid_argument("MPC cost scale overflow");
   const Eigen::Vector2d q = config.q / scale;
   const Eigen::Matrix<double, 1, 1> r =
-    Eigen::Matrix<double, 1, 1>::Constant(config.r * config.max_acc * config.max_acc / scale);
+    Eigen::Matrix<double, 1, 1>::Constant(config.r * MPC_INPUT_SCALE * MPC_INPUT_SCALE / scale);
   const Eigen::Matrix2d a{{1, DT}, {0, 1}};
-  const Eigen::Vector2d b{0.0, config.max_acc * DT};
+  const Eigen::Vector2d b{0.0, MPC_INPUT_SCALE * DT};
   if (tiny_setup(&solver_, a, b, Eigen::Vector2d::Zero(), q.asDiagonal(), r, config.rho, 2, 1,
                  HORIZON, 0) != 0)
     throw std::runtime_error("TinyMPC setup failed");
-  tiny_set_bound_constraints(solver_, Eigen::MatrixXd::Constant(2, HORIZON, -1e17),
-                             Eigen::MatrixXd::Constant(2, HORIZON, 1e17),
-                             Eigen::MatrixXd::Constant(1, HORIZON - 1, -1.0),
-                             Eigen::MatrixXd::Constant(1, HORIZON - 1, 1.0));
+  tiny_set_bound_constraints(
+    solver_, Eigen::MatrixXd::Constant(2, HORIZON, -1e17),
+    Eigen::MatrixXd::Constant(2, HORIZON, 1e17),
+    Eigen::MatrixXd::Constant(1, HORIZON - 1, -config.max_acc / MPC_INPUT_SCALE),
+    Eigen::MatrixXd::Constant(1, HORIZON - 1, config.max_acc / MPC_INPUT_SCALE));
   solver_->settings->abs_pri_tol = config.primal_tolerance;
   solver_->settings->abs_dua_tol = config.dual_tolerance;
   solver_->settings->max_iter = config.max_iterations;
@@ -133,7 +134,8 @@ MpcDiagnostics MpcAxis::solve(const Eigen::Vector2d & x0, const AxisReference & 
   diagnostic.input_dual_residual = work.dual_residual_input;
   diagnostic.primal_residual = std::max(work.primal_residual_state, work.primal_residual_input);
   diagnostic.dual_residual = std::max(work.dual_residual_state, work.dual_residual_input);
-  diagnostic.input_violation = std::max(0.0, work.u.cwiseAbs().maxCoeff() - 1.0) * config_.max_acc;
+  diagnostic.input_violation =
+    std::max(0.0, work.u.cwiseAbs().maxCoeff() * MPC_INPUT_SCALE - config_.max_acc);
   diagnostic.initial_state_error = (work.x.col(0) - x0).norm();
   diagnostic.max_dynamics_error = 0.0;
   for (int k = 0; k < HORIZON - 1; ++k)
@@ -149,12 +151,14 @@ MpcDiagnostics MpcAxis::solve(const Eigen::Vector2d & x0, const AxisReference & 
     return finish(MpcStatus::initial_state_mismatch);
   if (!(diagnostic.max_dynamics_error < 1e-8))
     return finish(MpcStatus::dynamics_mismatch);
-  if (!(diagnostic.input_violation <= config_.max_acc * config_.primal_tolerance))
+  if (!(diagnostic.input_violation <= MPC_INPUT_SCALE * config_.primal_tolerance))
     return finish(MpcStatus::input_violation);
   work.u = solver_->solution->u;
   work.x.col(0) = x0;
   for (int k = 0; k < HORIZON - 1; ++k)
     work.x.col(k + 1) = work.Adyn * work.x.col(k) + work.Bdyn * work.u.col(k);
+  // Roll out in solver units first, then adapt to the existing command interface.
+  work.u *= MPC_INPUT_SCALE / config_.max_acc;
   return finish(MpcStatus::solved);
 }
 }  // namespace auto_aim

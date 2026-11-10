@@ -81,7 +81,7 @@ judge_distance: 2 #距离判断阈值
 auto_fire: true # 是否由自瞄控制射击
 
 camera_name: "hikrobot"
-exposure_ms: 0.5
+exposure_ms: 1
 gain: 16.9
 frame_rate: 250
 vid_pid: "2bdf:0001"
@@ -118,10 +118,10 @@ foxglove:
 fire_thresh_high_speed: 1e-3   # 高速旋转时使用较宽松的阈值
 fire_thresh_low_speed: 1e-4    # 低速/静止时使用较严格的阈值
 
-max_yaw_acc: 100
-Q_yaw: [9e9, 0]
-R_yaw: [1e4]
+max_yaw_acc: 55
+Q_yaw: [9e9, 1e7]
+R_yaw: [1]
 
-max_pitch_acc: 200
-Q_pitch: [9e9, 0]
+max_pitch_acc: 60
+Q_pitch: [1, 9e9]
 R_pitch: [1]

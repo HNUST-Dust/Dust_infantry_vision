@@ -131,6 +131,54 @@ void check_tiny_costs()
   }
 }
 
+void check_acceleration_scaling()
+{
+  using namespace auto_aim;
+  MpcConfig low_config;
+  low_config.max_acc = 20;
+  low_config.q = {9e9, 1e7};
+  auto high_config = low_config;
+  high_config.max_acc = 50;
+  MpcAxis low(low_config), high(high_config);
+  for (double error : {-0.01, -0.003, -0.001, 0.0, 0.001, 0.003, 0.01}) {
+    for (double velocity : {-0.1, 0.0, 0.1}) {
+      AxisReference reference = AxisReference::Zero();
+      reference.row(0).setConstant(error);
+      const auto low_result = low.solve({0, velocity}, reference);
+      const auto high_result = high.solve({0, velocity}, reference);
+      require(low_result.solved && high_result.solved, "Scaling comparison must solve");
+      const auto low_acc = (low.inputs() * low_config.max_acc).eval();
+      const auto high_acc = (high.inputs() * high_config.max_acc).eval();
+      require(low_acc.cwiseAbs().maxCoeff() < 19 && high_acc.cwiseAbs().maxCoeff() < 19,
+              "Scaling comparison must stay inside both physical limits for the full horizon");
+      require((low_acc - high_acc).cwiseAbs().maxCoeff() < 1e-9 &&
+                (low.states() - high.states()).cwiseAbs().maxCoeff() < 1e-10,
+              "Inactive acceleration limits must not change low-amplitude control");
+    }
+  }
+  for (double error : {-0.5, 0.5}) {
+    AxisReference reference = AxisReference::Zero();
+    reference.row(0).setConstant(error);
+    const auto result = high.solve({0, 0}, reference);
+    require(result.solved, "Large acceleration request must solve");
+    const auto accelerations = (high.inputs() * high_config.max_acc).eval();
+    require(accelerations.cwiseAbs().maxCoeff() <= 50.0 + 1e-9 && accelerations(0, 0) * error > 0 &&
+              std::abs(accelerations(0, 0)) > 20,
+            "Fixed scaling must still allow the configured physical acceleration");
+    for (int k = 0; k < HORIZON - 1; ++k) {
+      require(std::abs(high.states()(0, k + 1) - high.states()(0, k) - DT * high.states()(1, k)) <
+                  1e-10 &&
+                std::abs(high.states()(1, k + 1) - high.states()(1, k) - DT * accelerations(0, k)) <
+                  1e-10,
+              "Returned states and physical acceleration must use consistent units");
+    }
+    const auto repeated = high.solve({0, 0}, reference);
+    require(repeated.solved &&
+              (high.inputs() * high_config.max_acc - accelerations).cwiseAbs().maxCoeff() < 1e-12,
+            "Repeated cold solves must preserve acceleration units");
+  }
+}
+
 void check_feedback()
 {
   io::Gimbal gimbal("unused", true);
@@ -180,6 +228,7 @@ int main(int argc, char ** argv)
 {
   try {
     check_tiny_costs();
+    check_acceleration_scaling();
     check_feedback();
     Config config(argc > 1 ? std::stoi(argv[1]) : 0, true, argc > 2 ? std::stod(argv[2]) : 0.0);
     auto_aim::Planner planner(config.path);

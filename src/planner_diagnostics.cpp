@@ -107,8 +107,10 @@ Json mpc_diagnostics_json(const MpcDiagnostics & d)
 
 Json mpc_config_json(const MpcConfig & c)
 {
-  const double scale = std::max({c.q[0], c.q[1], c.r * c.max_acc * c.max_acc});
+  const double scale = std::max({c.q[0], c.q[1], c.r * MPC_INPUT_SCALE * MPC_INPUT_SCALE});
   return {{"max_acc", c.max_acc},
+          {"input_scale", MPC_INPUT_SCALE},
+          {"normalized_input_limit", c.max_acc / MPC_INPUT_SCALE},
           {"q", {c.q[0], c.q[1]}},
           {"r", c.r},
           {"rho", c.rho},
@@ -116,9 +118,9 @@ Json mpc_config_json(const MpcConfig & c)
           {"primal_tolerance", c.primal_tolerance},
           {"dual_tolerance", c.dual_tolerance},
           {"normalized_q", {c.q[0] / scale, c.q[1] / scale}},
-          {"normalized_r", c.r * c.max_acc * c.max_acc / scale},
+          {"normalized_r", c.r * MPC_INPUT_SCALE * MPC_INPUT_SCALE / scale},
           {"a", {{1.0, DT}, {0.0, 1.0}}},
-          {"b", {0.0, c.max_acc * DT}}};
+          {"b", {0.0, MPC_INPUT_SCALE * DT}}};
 }
 
 MpcConfig mpc_config_from_json(const Json & j)
@@ -135,8 +137,9 @@ MpcConfig mpc_config_from_json(const Json & j)
   c.dual_tolerance = j.at("dual_tolerance").get<double>();
   MpcAxis validate(c);
   const auto expected = mpc_config_json(c);
-  for (const auto * key : {"a", "b", "normalized_q", "normalized_r"})
-    if (j.at(key) != expected.at(key))
+  for (const auto * key :
+       {"a", "b", "normalized_q", "normalized_r", "input_scale", "normalized_input_limit"})
+    if (!j.contains(key) || j.at(key) != expected.at(key))
       throw std::invalid_argument("MPC model/scaling mismatch");
   return c;
 }

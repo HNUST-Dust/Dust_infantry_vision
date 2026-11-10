@@ -551,7 +551,7 @@ tests/                    调试和测试程序（CMakeLists.txt 集中注册目
 | 射击 | `first_tolerance` / `second_tolerance` | 近距离/远距离射击角度容差（度） |
 | 射击 | `judge_distance` | 近/远距离判定阈值（米） |
 | 规划 | `fire_thresh_high_speed` / `fire_thresh_low_speed` | 高/低速下的射击阈值 |
-| 规划 | `max_yaw_acc` / `max_pitch_acc` | 云台角加速度约束（rad/s²） |
+| 规划 | `max_yaw_acc` / `max_pitch_acc` | 云台物理角加速度约束（rad/s²），独立于固定归一化尺度 |
 | 规划 | `Q_yaw` / `R_yaw` / `Q_pitch` / `R_pitch` | TinyMPC 权重 |
 | 运行模式 | `runtime.simulate_gimbal` | 虚拟云台姿态与串口输出，不依赖真机，默认 `false` |
 | 运行模式 | `runtime.headless` | 关闭检测可视化与窗口事件，无桌面运行必须为 `true`，默认 `false` |
@@ -883,6 +883,8 @@ id
 
 ### Planner 安全约定
 
+两轴 MPC 使用固定的输入归一化尺度 `MPC_INPUT_SCALE=20 rad/s²`，不随 `max_yaw_acc` / `max_pitch_acc` 改变。内部加速度为 `20*u`，约束为 `|u| <= max_acc/20`；例如上限 50 对应内部约束 ±2.5，仍允许输出 ±50 rad/s²。B、输入成本与约束残差的物理单位换算均使用固定尺度，避免仅调整最大加速度就改变低幅度近似求解行为。返回时保留现有 `inputs()*config.max_acc` 的命令接口，状态轨迹先按内部输入重建再转换返回值。该尺度是经过离线对照的起点，不代表实机最优值或执行器模型已包含真实延迟。
+
 Planner 的瞄准点、有效标志与时间由完成的 `Plan` 一起发布。新一轮计算期间仍读取上次完成结果；真实失败结果发布后立即隐藏，显示年龄超过 20 ms 也隐藏。显示保鲜期与指令的 10 ms 有效时刻分别处理。
 
 `PlanStatus` 区分反馈、轨迹与 MPC 失败，每轴 `MpcStatus` 区分 `not_run`、`iteration_limit` 和解验证拒绝。未执行轴的 JSON 残差为 `null`。`ok` 表示控制解成功，开火仍需通过原有门控。`selection_valid`、`ballistic_converged` 和 `display_valid` 独立记录。
@@ -903,6 +905,8 @@ runtime:
 `failures` 只采集有目标的失败，每秒最多 5 份；`all` 采集全部规划，供短时连续分析。规划线程只复制数值并入队；容量 128，满时丢弃新记录并计数。独立线程序列化和落盘，每条刷新；达到文件限额或写入失败后停止完整记录，原因汇总继续。`trace_written` 是完成写入及流刷新的记录数，不保证掉电持久性。退出时排空队列。trace 缺失可能来自限频、丢样或限额，不能据此认定没有失败。
 
 JSONL 保存实际初值、4x60 参考、姿态/速度来源、目标状态、有效成本/约束/动力学配置、构建标识、两轴诊断和输出。耗时为整次规划及每轴 solve，不包含单独的选板/弹道阶段耗时。目标 11 维状态仅用于解释参考变化；离线程序重放轴求解，不重建完整 Tracker 历史。
+
+两轴配置中的 `input_scale` 与 `normalized_input_limit` 分别记录固定尺度和内部输入边界，`b`、`normalized_q`、`normalized_r` 与实际求解器一致。回放会拒绝缺少这些字段或模型/尺度不匹配的旧记录；修改前采集的 trace 不可直接用于新模型的精确回放或 sweep。
 
 ```bash
 cmake --build build-ninja --target planner_feedback_test planner_diagnostics_test planner_replay_test -j4
