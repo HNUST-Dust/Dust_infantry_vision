@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "src/planner_diagnostics.hpp"
+#include "planner_precision.hpp"
 
 using nlohmann::json;
 using namespace auto_aim;
@@ -204,6 +205,59 @@ void self_test()
   reproduce(parse_sample(json::parse(planner_trace_json(event, now, "failed").dump())));
   std::cout << "PASS planner replay success/failure round-trip, model/schema validation\n";
 }
+void precision(const std::vector<Sample> & samples, bool synthetic = false)
+{
+  for (const auto & sample : samples) {
+    if (!synthetic)
+      reproduce(sample);
+    json result = {{"precision_schema", 1},
+                   {"synthetic", synthetic},
+                   {"session", sample.record.at("session")},
+                   {"plan_id", sample.record.at("plan_id")},
+                   {"recorded_planning_ms", sample.record.at("planning_ms")},
+                   {"axes", json::array()}};
+    if (sample.record.at("reference_available").get<bool>()) {
+      for (int i = 0; i < 2; ++i) {
+        const std::string name = i == 0 ? "yaw" : "pitch";
+        if (sample.record.at(name + "_mpc").at("attempted").get<bool>())
+          result["axes"].push_back(
+            planner_precision::axis(i == 0 ? sample.yaw_config : sample.pitch_config,
+                                    i == 0 ? sample.yaw_x0 : sample.pitch_x0,
+                                    i == 0 ? sample.yaw_reference : sample.pitch_reference, name));
+      }
+    }
+    std::cout << result.dump() << '\n';
+  }
+}
+void precision_fixture()
+{
+  std::vector<Sample> samples;
+  for (double error : {0.1, 0.6, 1.0}) {
+    Sample s;
+    s.record = {{"session", "synthetic-precision-self-test"},
+                {"plan_id", samples.size() + 1},
+                {"planning_ms", nullptr},
+                {"reference_available", true},
+                {"yaw_mpc", {{"attempted", true}}},
+                {"pitch_mpc", {{"attempted", true}}}};
+    s.pitch_x0 = {-.04, 0};
+    s.pitch_config.q = {9e9, 1};
+    s.pitch_config.max_acc = 10;
+    s.yaw_config.q = {9e9, 1e7};
+    s.yaw_config.max_acc = 50;
+    s.pitch_reference.row(0).setConstant(-.04 + error * M_PI / 180);
+    s.yaw_reference.row(0).setConstant(error * M_PI / 180);
+    samples.push_back(s);
+  }
+  // Exercise the non-identity state coordinates through the C++ export and Python oracle.
+  auto normalized = samples.back();
+  normalized.record["plan_id"] = samples.size() + 1;
+  normalized.pitch_config.state_scale = {.1, 1.};
+  normalized.pitch_config.q = {100., 1.};
+  normalized.pitch_config.r = .003;
+  samples.push_back(normalized);
+  precision(samples, true);
+}
 void sweep(const std::vector<Sample> & samples)
 {
   std::cout << "rho,max_iter,axis,samples,solved,p95_solve_ms,p99_solve_ms,max_solve_ms,over_2ms,"
@@ -277,16 +331,22 @@ void sweep(const std::vector<Sample> & samples)
 int main(int argc, char ** argv)
 {
   try {
+    if (argc == 2 && std::string(argv[1]) == "--precision-self-test") {
+      precision_fixture();
+      return 0;
+    }
     if (argc == 2 && std::string(argv[1]) == "--self-test") {
       self_test();
       return 0;
     }
     if (argc < 2 || argc > 3) {
-      std::cerr << "Usage: planner_replay_test trace.jsonl [--mode=reproduce|--mode=sweep]\n";
+      std::cerr << "Usage: planner_replay_test trace.jsonl "
+                   "[--mode=reproduce|--mode=sweep|--mode=precision]\n";
       return 2;
     }
     const std::string mode = argc == 3 ? argv[2] : "--mode=reproduce";
-    require(mode == "--mode=reproduce" || mode == "--mode=sweep", "Invalid mode argument");
+    require(mode == "--mode=reproduce" || mode == "--mode=sweep" || mode == "--mode=precision",
+            "Invalid mode argument");
     std::ifstream input(argv[1]);
     require(bool(input), "Cannot open trace");
     std::vector<Sample> samples;
@@ -297,7 +357,9 @@ int main(int argc, char ** argv)
         samples.push_back(parse_sample(json::parse(line)));
     }
     require(!input.bad() && !samples.empty(), "Empty or unreadable trace");
-    if (mode == "--mode=sweep")
+    if (mode == "--mode=precision")
+      precision(samples);
+    else if (mode == "--mode=sweep")
       sweep(samples);
     else {
       size_t skipped = 0;

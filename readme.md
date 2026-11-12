@@ -476,6 +476,7 @@ tests/                    调试和测试程序（CMakeLists.txt 集中注册目
 - `Tracker`：维护 lost/detecting/tracking/temp_lost/switching 状态机，使用 11 维 EKF（含 2/3/4 装甲板模型与前哨站专用处理）预测旋转目标；`focus_rois()` 根据预测四角生成网络 ROI 与灯条 ROI。
 - `Planner`：生产规划器，负责装甲板选择、弹道飞行时间迭代和两轴 TinyMPC。每轮必须传入完整 `PlanningState`（绝对 ZXY yaw/pitch、对应角速度、同包姿态矩阵、反馈时间、有效性和速度来源）。角度单位 rad、角速度 rad/s；硬件角度来自归一化四元数，下位机上行角速度已为 rad/s，IO 层直接使用，不做度到弧度转换。初值使用实测状态，并按短时常速传播到统一规划时刻；禁止用参考第一列或上一轮预测代替。
 - 预测步长 10ms、60 个状态列，列 k 对应规划时刻后 k*10ms。每列对该时刻加发弹延迟和迭代飞行时间求瞄准参考；参考角在绝对关节坐标中表达，保留原局部 yaw/pitch offset 所代表的射向。yaw 以本轮实测角为数值原点连续展开。当前锁只提交一次，未来各列使用局部锁；远期弹道失败时沿用上一列参考，近期无效/不收敛的决策禁止开火。
+- pitch 速度参考只在相邻、有效且属于同一装甲板 ID 的预测点之间求导。连续段内部用中心差分，段首/段尾用单边差分；孤立点、保持值、选板无效或弹道未收敛点的速度参考为 0。位置参考仍保留切换，yaw 参考沿用原算法；这里的 0 只表示该预测点没有可用的连续速度参考，不会直接将云台命令或整个 Plan 清零。判据使用预测点身份，不使用角度跳变阈值，因此同一目标的快速运动不被裁掉。
 - 两轴保留前向 Euler 模型：角度下一步为当前角度加 DT*角速度，角速度下一步加 DT*加速度。输出改为第 1 列位置/速度和第 0 列加速度，目标有效时刻为规划后 10ms；不再直接发送第 30 列。此模型的第一步位置只含实测速度积分，下位机必须实际消费速度/加速度前馈。规划和发送仍各按 2ms 周期调度，错过周期不补发积压任务。
 - TinyMPC 将加速度归一化到 [-1,1]、整体等比例缩放 YAML 的 Q/R；默认 rho=0.05、最多 300 次迭代、原始/对偶残差容差 1e-3。修正了内部 ADMM 惩罚项重复计入和冷启动首次参考未生效的问题。仅采用收敛、有限且通过初值/动力学/输入约束检查的解；使用有界投影输入重新 rollout 配套状态，求解失败返回不控制结果。可选顶层参数 `mpc_rho`、`mpc_max_iter`、`mpc_max_state_age_ms`（默认 20ms）无需添加到已有配置即可生效。
 - `Plan` 保存独立的绝对预测目标、绝对参考和规划/有效时刻；原 `yaw/pitch/target_yaw/target_pitch` 字段仍表示相对关节增量。硬件发送线程每次调用 `relative_to(latest_yaw, latest_pitch)` 重新计算增量，同一计划重发时绝对目标保持不变；速度/加速度保留物理前馈含义。Talos 直接消费绝对目标。计划超过自身 10ms 有效时刻、计划生成超时、反馈或真实观测超时都会停止控制。
@@ -483,6 +484,7 @@ tests/                    调试和测试程序（CMakeLists.txt 集中注册目
 - `Planner::plan_at(target, now, bullet_speed, state)` 提供确定性回放入口；`plan(target, bullet_speed, state)` 取当前 steady_clock。图像 PnP/Tracker 仍使用随图像传递的采集时刻姿态，规划使用当前反馈姿态，不覆盖图像解算的共享 R。Gimbal 新增 `feedback()`，一次锁取得同包角度、速度、q、接收时间、序号与有效性；接收时间不是 MCU 采样时间。Talos/旧视频仅有姿态时用相邻样本估速，首帧、重复/倒退时间及大于 100ms 的间隔无有效速度。
 - 当前硬件速度映射限定为已对齐的 IMU/关节坐标；若 `R_gimbal2imubody` 改变实际旋转坐标，运行时会报错并禁止控制，需实现对应速度映射后再启用。上行速度是否为关节角导数、pitch 是否按相对增量解释，以及前馈是否被下位机使用，须通过协议与无开火实机测试确认。现有反馈停止阈值 100ms 不会放宽 MPC 默认 20ms 外推上限。
 - 离线回归：`./build-ninja/planner_feedback_test` 或 `ctest --test-dir build-ninja -R planner_feedback --output-on-failure`，无需相机、串口、模型或显示。覆盖真实初值、速度/制动、坐标和时间、角度环绕、重复发送、估算反馈、原子快照、ADMM 解析对照及求解失败。
+- `planner_reference_test` 覆盖连续快速运动、不同高度切换、A→B→A 孤立段、同 ID 无效/保持点和时域端点；`planner_feedback_test` 同时通过真实 Planner 入口检查旋转目标的切换与参考标签。
 - `Gimbal`：通过串口读取四元数、云台状态和弹速，发送视觉控制帧。
 - `Camera`：统一工业相机取流接口，`stop()` 提供安全的停止与 SDK 清理入口（HikRobot 启动失败时清理流程无操作兜底）。取流结束后队列关闭，`read()` 返回空图。
 - `Plotter`：将 JSON 调试数据发送到 UDP `127.0.0.1:9870`，无需接收端即可运行。
@@ -906,16 +908,115 @@ runtime:
 
 JSONL 保存实际初值、4x60 参考、姿态/速度来源、目标状态、有效成本/约束/动力学配置、构建标识、两轴诊断和输出。耗时为整次规划及每轴 solve，不包含单独的选板/弹道阶段耗时。目标 11 维状态仅用于解释参考变化；离线程序重放轴求解，不重建完整 Tracker 历史。
 
-两轴配置中的 `input_scale` 与 `normalized_input_limit` 分别记录固定尺度和内部输入边界，`b`、`normalized_q`、`normalized_r` 与实际求解器一致。回放会拒绝缺少这些字段或模型/尺度不匹配的旧记录；修改前采集的 trace 不可直接用于新模型的精确回放或 sweep。
+新记录另有 `reference_armor_ids` 和 `reference_pitch_rate_valid` 两个长度为 60 的可选数组，分别记录实际生成各位置参考的装甲板 ID、该点是否允许参与 pitch 速度求导；无参考时两字段为 null。保持上一列位置时 ID 为 -1、有效性为 false；有候选但选板无效或弹道未收敛时保留候选 ID，但有效性为 false。这些标签只在本次预测时域内比较。旧 trace 缺少这两字段，仍可按已有完整参考回放求解器，但不能用角度阈值补造目标身份来宣称验证了生产连续段算法。
+
+两轴配置中的 `input_scale` 与 `normalized_input_limit` 分别记录固定尺度和内部输入边界，`a`、`b`、`normalized_q`、`normalized_r` 与实际求解器一致。`state_scale` 记录每个内部状态单位对应的物理量，旧记录缺省为 `[1, 1]`。回放会拒绝模型/尺度字段不一致的记录；缺少输入尺度字段的更早版本记录仍不兼容。生产求解器源码变化会改变构建指纹，旧 trace 的严格 `reproduce` / `precision` 需要原构建；离线 `sweep` / 代价对照可读取兼容的旧模型输入，但不构成原样回放。
 
 ```bash
-cmake --build build-ninja --target planner_feedback_test planner_diagnostics_test planner_replay_test -j4
-ctest --test-dir build-ninja --output-on-failure -R 'planner_(feedback|diagnostics|replay)'
+cmake --build build-ninja --target planner_feedback_test planner_reference_test planner_diagnostics_test planner_replay_test -j4
+ctest --test-dir build-ninja --output-on-failure -R 'planner_(feedback|reference|diagnostics|replay)'
 ./build-ninja/planner_replay_test logs/planner_trace/<session>.jsonl --mode=reproduce
 ./build-ninja/planner_replay_test logs/planner_trace/<session>.jsonl --mode=sweep
 ```
 
-`reproduce` 使用记录的配置和共享生产 `MpcAxis`，验证状态、迭代数、四种残差、约束误差及成功控制输出；构建指纹、schema、单位或模型不兼容时明确失败。无参考记录标为上游拒绝，不执行 MPC。`sweep` 扫描 rho 与迭代上限，输出两轴和合计的收敛数、P95/P99/最大耗时及超过 2/10 ms 次数；计时仅含 solve，不含初始化和参考生成，不自动修改配置。本批仍使用原来的冷启动、Q/R、rho、容差、控制周期、输出列和开火门控；调整求解参数前先采集实机有目标失败并确认速度单位、符号与关节导数约定。
+`reproduce` 使用记录的配置和共享生产 `MpcAxis`，验证状态、迭代数、四种残差、约束误差及成功控制输出；构建指纹、schema、单位或模型不兼容时明确失败。无参考记录标为上游拒绝，不执行 MPC。`sweep` 扫描 rho 与迭代上限，输出两轴和合计的收敛数、P95/P99/最大耗时及超过 2/10 ms 次数；计时仅含 solve，不含初始化和参考生成，不自动修改配置。该诊断工具本身不改变生产配置；比较求解参数前应采集实机输入并确认速度单位、符号与关节导数约定。
+
+
+#### MPC 离线控制量精度对照
+
+`planner_replay_test --mode=precision` 先逐条执行原样回放验证，再导出原配置和
+`tol=1e-4/1e-5 × max_iter=300/1000` 四个候选的全输入序列、求解诊断及独立QP所需模型。
+候选仅改变离线容差和迭代预算，保留记录中的Q/R、rho、输入尺度、上限、模型和终端缓存；
+不修改生产参数，不发送硬件指令。记录不兼容或原样回放不一致时直接失败。
+
+Python驱动需要 `numpy`、`scipy`、`osqp>=1.0`，仅用于离线评估，不增加生产链接依赖。
+建议放入独立Python环境。完成真实采集并正常退出应用后，`--latest`会选择
+`logs/planner_trace/`中修改时间最新的JSONL；省略`--output`时自动创建唯一结果目录。
+也可以显式指定日志 `[PlannerTrace] path=...` 显示的文件路径：
+
+```bash
+cmake --build build-ninja --target planner_replay_test -j2
+./build-ninja/planner_replay_test --self-test
+python3 scripts/planner_precision.py --self-test
+python3 scripts/planner_precision.py --latest
+# 无真实trace时只验证整条离线链路；结果会明确标注synthetic=true。
+python3 scripts/planner_precision.py --synthetic
+python3 tests/planner/planner_precision_cli_test.py
+```
+
+评估会显示已处理/总规划记录数、候选对照条数和耗时。Ctrl+C会取消评估、停止并回收
+回放子进程，以退出码130结束；OSQP内部返回的中断状态也按取消处理，不误报为JSON解析失败。
+未完成的运行不能作为完整评估结果。
+
+输入路径不存在、最新记录为空或尚未采集时，会在创建结果目录前给出明确提示，
+不会自动使用旧记录、合成记录或启动应用。普通回放失败显示错误原因，不输出Python堆栈。
+
+`details.csv`逐帧列出最终参考相对初值的角差、速度、小角差/低速/未来参考跳变标记、
+首拍加速度、与独立QP解的误差、目标函数差、输入约束违反量、KKT误差、失败原因与耗时。
+`summary.json`分别汇总所有样本和上述分组的误差P95/最大值、成功数、P95/P99/最大solve耗时。
+失败候选的控制量误差留空，不会记为零；独立QP未严格成功或KKT/约束检查不通过时返回非零退出码，
+不把该样本算作有效精度基准。输出目录若已有同名结果也会拒绝覆盖。
+
+独立QP使用生产缓存的终端矩阵：终端Hessian为 `Pinf-rho*I`，终端参考线性项为
+`-Pinf.transpose()*xref`。这是现有终端反向传播中ADMM项在一致性成立时的还原，
+不同于直接以Pinf构造普通终端跟踪代价。终端缓存的有限Riccati迭代残差也会导出，
+因此与QP参考的差异包含ADMM停止精度和缓存近似的影响。当前终端代价本身依赖rho，
+精度候选固定rho；现有rho扫描不能单纯解释为同一目标函数的求解速度比较。
+
+合计耗时只统计同一帧yaw与pitch的两次solve之和，**不含初始化、参考生成等开销**。
+在线调度间隔为2ms，模型DT为10ms；整次规划仍应看 `[PlannerTiming]`、`over_2ms`、
+`expired_at_completion`和实际发送门控，不能把此离线合计冒充整次规划耗时。
+精度改善或更大加速度不代表实机追踪已经改善；候选通过软件筛选后仍需保持其他控制参数一致，
+对比最终角误差RMS/P95、切换后到位时间、到位振荡及规划/发送过期情况。
+
+完整trace按已有 `runtime.planner_diagnostics` 配置启用，`trace_mode: all`会记录成功和失败规划。
+默认32MiB到限后停止写入，可观察 `planner_trace_written/enabled`；采样有丢弃时也应保留该信息。
+采集结束后按需要关闭trace，以便区分记录开销和候选算法开销。
+
+#### Pitch 阶段代价与状态尺度
+
+`configs/standard3.yaml` 的 pitch 使用下列无量纲阶段代价：
+
+```text
+J_stage = (位置误差 / 0.1 rad)² + (速度误差 / 1 rad/s)²
+          + 0.3 * (加速度 / 10 rad/s²)²
+```
+
+```yaml
+max_pitch_acc: 10
+mpc_cost_pitch:
+  scales: [0.1, 1.0, 10.0] # 位置、速度、加速度的物理尺度
+  weights: [1.0, 1.0, 0.3]
+```
+
+等价的物理阶段成本为 `Q=[100, 1]`、`R=0.003`。前两个尺度同时用于内部状态
+`[theta/0.1, omega/1]`，减轻量纲差异；A、B、初值、参考和残差单位同步转换。
+对外状态仍为 rad / rad/s，加速度仍通过 `inputs()*max_acc` 取得，输入固定尺度仍是20，
+10只是本配置的加速度成本尺度和独立约束上限。单独修改 `max_pitch_acc` 不会自动修改成本尺度。
+原始ADMM四种残差及停止容差使用内部求解器坐标；初值/动力学验证误差使用物理坐标。
+
+旧格式 `Q_pitch` / `R_pitch` 仍受支持，默认状态尺度为1；同一轴不能同时提供两种格式。
+yaw继续使用原配置。保持冷启动、rho、300次预算、1e-3容差、动力学、下位机参数和开火门控。
+终端项仍由现有TinyMPC缓存生成，不能把上述阶段代价当作完整有限时域目标函数；
+本轮没有增加加速度变化率项。
+
+离线代价比较使用同一条实际trace的初值与参考，另在明确假设的下位机模型上比较阶跃、
+匀速、0.85Hz周期跟踪和录波参考。模型采用名义惯量、PID、前馈0.5、100Hz测速滤波、
+±6Nm限矩、精确重力补偿及0/10/20ms纯延迟，未辨识实际摩擦、负载或延迟。
+固定实测状态回放只证明求解和命令表现，不证明实际跟踪改善。
+
+```bash
+cmake --build build-ninja --target mpc_cost_test -j2
+./build-ninja/mpc_cost_test
+# TRACE应为实际文件路径；输出CSV包含旧配置与9组成本，且不访问硬件。
+./build-ninja/mpc_cost_test --benchmark TRACE.jsonl > logs/planner_cost/comparison.csv
+```
+
+当前候选在3609帧实测状态回放均成功；假设20ms延迟时，阶跃到位从0.514s缩短到0.408s，
+0.85Hz跟踪RMS从0.262°降到0.182°，阶跃加速度逐拍变化RMS从0.104降到0.040 rad/s²。
+代价是该阶跃全过程角误差RMS从1.039°增至1.072°、P95从1.545°增至2.354°；
+大误差瞬态没有全面改善，不能只凭到位时间判定更优。上述为离线模型结果，需保持其他
+控制参数不变，在实机对比最终角误差、到位振荡与整次规划/发送过期情况后验收。
 
 - 飞行时间迭代最多执行 10 次；未在 1 ms 容差内收敛时仍可输出跟踪控制，但该拍禁止开火，且不会提交新的装甲板锁。
 - 弹道模型的水平距离和高度都使用世界坐标系；yaw 角仍由云台坐标系中的目标向量计算。

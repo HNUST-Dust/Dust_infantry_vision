@@ -21,6 +21,31 @@ void require(bool value, const char * message)
   if (!value)
     throw std::runtime_error(message);
 }
+void reference_metadata_trace()
+{
+  auto trace = std::make_shared<PlanningTrace>();
+  trace->reference_available = true;
+  trace->reference_tags[0] = {2, true};
+  trace->reference_tags[1] = {3, false};
+  PlannerDiagnosticEvent event;
+  event.trace = trace;
+  const auto origin = std::chrono::steady_clock::now();
+  event.plan.planned_at = origin;
+  const auto j = planner_trace_json(event, origin, "reference-metadata-test");
+  const auto & ids = j.at("reference_armor_ids");
+  const auto & valid = j.at("reference_pitch_rate_valid");
+  require(ids.size() == HORIZON && valid.size() == HORIZON,
+          "Trace reference metadata must cover the complete horizon");
+  require(ids.at(0) == 2 && valid.at(0) == true && ids.at(1) == 3 && valid.at(1) == false &&
+            ids.at(2) == -1 && valid.at(2) == false,
+          "Trace must preserve selected, unusable and unavailable reference identities");
+  trace->reference_available = false;
+  const auto absent = planner_trace_json(event, origin, "reference-metadata-test");
+  require(absent.at("reference_armor_ids").is_null() &&
+            absent.at("reference_pitch_rate_valid").is_null(),
+          "Unavailable reference metadata must not look like a valid horizon");
+}
+
 void completed_snapshot()
 {
   tools::ThreadSafeQueue<Plan, true> queue(1);
@@ -73,6 +98,7 @@ int main()
 {
   std::filesystem::path directory;
   try {
+    reference_metadata_trace();
     completed_snapshot();
     char pattern[] = "/tmp/dust-planner-diagnostics-XXXXXX";
     const char * path = mkdtemp(pattern);

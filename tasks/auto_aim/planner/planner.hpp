@@ -8,11 +8,10 @@
 
 #include "tasks/auto_aim/tracking/target.hpp"
 #include "mpc_axis.hpp"
+#include "reference.hpp"
 
 namespace auto_aim
 {
-using Trajectory = Eigen::Matrix<double, 4, HORIZON>;
-
 enum class PlanStatus
 {
   not_run,
@@ -96,6 +95,7 @@ struct PlanningTrace
 {
   bool reference_available = false;
   Trajectory reference = Trajectory::Zero();
+  ReferenceTags reference_tags{};
   PlanningState received_state;
   MpcConfig yaw_config;
   MpcConfig pitch_config;
@@ -166,7 +166,8 @@ private:
                         int initial_lock, AimDecision & decision) const;
   bool get_trajectory(const Target & launch_target, double yaw_origin, double bullet_speed,
                       const Eigen::Matrix3d & R_gimbal2world, Trajectory & out,
-                      AimDecision & decision, Eigen::Vector4d & aim_xyza) const;
+                      ReferenceTags & tags, AimDecision & decision,
+                      Eigen::Vector4d & aim_xyza) const;
 };
 }  // namespace auto_aim
 

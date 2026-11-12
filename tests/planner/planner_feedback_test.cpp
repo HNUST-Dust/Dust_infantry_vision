@@ -179,6 +179,51 @@ void check_acceleration_scaling()
   }
 }
 
+void check_pitch_reference_switches()
+{
+  Config config;
+  auto_aim::Planner planner(config.path);
+  const auto t = std::chrono::steady_clock::time_point{} + 1s;
+  auto_aim::Target target(3.0, 3.0, 0.2, -0.1);
+  target.jumped = true;
+  target.predict(t);
+  bool saw_switch = false;
+  bool saw_tagged_switch = false;
+  bool saw_valid_rate = false;
+  double peak_rate = 0.0;
+  for (int sample = 0; sample < 16; ++sample) {
+    const auto now = t + sample * 40ms;
+    auto_aim::PlanningTrace trace;
+    const auto plan = planner.plan_at(target, now, 23, state_at(now, M_PI / 2, -0.03), &trace);
+    require(trace.reference_available, "Spinning target must produce a reference");
+    require(trace.reference_tags[0].armor_id == plan.aim_debug.armor_id,
+            "Trace identity must describe the armor used for the reference");
+    for (int k = 0; k < auto_aim::HORIZON; ++k) {
+      const auto & tag = trace.reference_tags[k];
+      saw_valid_rate = saw_valid_rate || tag.rate_valid;
+      require(!tag.rate_valid || tag.armor_id >= 0, "A valid rate requires a known armor");
+      if (!tag.rate_valid)
+        require(trace.reference(3, k) == 0, "Unavailable candidates must break rate segments");
+      if (k > 0 && tag.armor_id >= 0 && trace.reference_tags[k - 1].armor_id >= 0)
+        saw_tagged_switch =
+          saw_tagged_switch || tag.armor_id != trace.reference_tags[k - 1].armor_id;
+      peak_rate = std::max(peak_rate, std::abs(trace.reference(3, k)));
+      if (k > 0)
+        saw_switch =
+          saw_switch || std::abs(trace.reference(2, k) - trace.reference(2, k - 1)) > 0.015;
+      const int left = std::max(0, k - 1), right = std::min(auto_aim::HORIZON - 1, k + 1);
+      const double yaw_rate =
+        (trace.reference(0, right) - trace.reference(0, left)) / ((right - left) * auto_aim::DT);
+      require(std::abs(trace.reference(1, k) - yaw_rate) < 1e-12,
+              "Pitch continuity must preserve the existing yaw reference");
+    }
+  }
+  require(saw_switch, "Regression must exercise different-height armor switches");
+  require(saw_tagged_switch && saw_valid_rate,
+          "Production reference must retain armor identities and usable continuous samples");
+  require(peak_rate < 0.5, "Armor switches must not become pitch reference velocity spikes");
+}
+
 void check_feedback()
 {
   io::Gimbal gimbal("unused", true);
@@ -229,6 +274,7 @@ int main(int argc, char ** argv)
   try {
     check_tiny_costs();
     check_acceleration_scaling();
+    check_pitch_reference_switches();
     check_feedback();
     Config config(argc > 1 ? std::stoi(argv[1]) : 0, true, argc > 2 ? std::stod(argv[2]) : 0.0);
     auto_aim::Planner planner(config.path);

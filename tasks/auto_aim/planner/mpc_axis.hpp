@@ -32,6 +32,8 @@ const char * to_string(MpcStatus status);
 struct MpcConfig
 {
   double max_acc = 150.0;
+  // Physical units per dimensionless solver state. Identity preserves legacy costs.
+  Eigen::Vector2d state_scale{1.0, 1.0};
   Eigen::Vector2d q{9e9, 0.0};
   double r = 1.0;
   double rho = 0.05;
@@ -40,6 +42,16 @@ struct MpcConfig
   double dual_tolerance = 1e-3;
   static MpcConfig load(const std::string & path, const std::string & axis);
 };
+
+struct MpcModel
+{
+  Eigen::Matrix2d a;
+  Eigen::Vector2d b;
+  Eigen::Vector2d q;
+  double r;
+};
+// Shared by production, trace serialization and independent precision evaluation.
+MpcModel mpc_model(const MpcConfig & config);
 
 struct MpcDiagnostics
 {

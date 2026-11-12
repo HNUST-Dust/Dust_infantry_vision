@@ -287,8 +287,10 @@ bool Planner::resolve_aim_time(Target base, double bullet_speed,
 
 bool Planner::get_trajectory(const Target & launch_target, double yaw_origin, double bullet_speed,
                              const Eigen::Matrix3d & rotation, Trajectory & out,
-                             AimDecision & first_decision, Eigen::Vector4d & aim_xyza) const
+                             ReferenceTags & tags, AimDecision & first_decision,
+                             Eigen::Vector4d & aim_xyza) const
 {
+  tags = {};
   int lock = lock_id_;
   double previous_yaw = yaw_origin;
   for (int k = 0; k < HORIZON; ++k) {
@@ -319,6 +321,7 @@ bool Planner::get_trajectory(const Target & launch_target, double yaw_origin, do
     const double yaw = previous_yaw + tools::limit_rad(solution->yaw - previous_yaw);
     out(0, k) = yaw - yaw_origin;
     out(2, k) = solution->pitch;
+    tags[k] = {decision.id, decision.valid && decision.converged};
     previous_yaw = yaw;
     if (decision.converged)
       lock = decision.lock;
@@ -336,8 +339,8 @@ bool Planner::get_trajectory(const Target & launch_target, double yaw_origin, do
     const int right = std::min(HORIZON - 1, k + 1);
     const double span = (right - left) * DT;
     out(1, k) = (out(0, right) - out(0, left)) / span;
-    out(3, k) = (out(2, right) - out(2, left)) / span;
   }
+  fill_pitch_reference_velocity(out, tags);
   return out.allFinite();
 }
 
@@ -446,10 +449,11 @@ Plan Planner::plan_at(std::optional<Target> target, std::chrono::steady_clock::t
   target->predict(now + std::chrono::duration_cast<std::chrono::steady_clock::duration>(
                           std::chrono::duration<double>(delay)));
   Trajectory reference;
+  ReferenceTags reference_tags;
   AimDecision decision;
   Eigen::Vector4d aim_xyza;
   if (!get_trajectory(*target, initial.yaw, bullet_speed, initial.R_gimbal2world, reference,
-                      decision, aim_xyza))
+                      reference_tags, decision, aim_xyza))
     return fail(PlanStatus::trajectory_unavailable);
 
   result.aim_debug.xyza = aim_xyza;
@@ -459,6 +463,7 @@ Plan Planner::plan_at(std::optional<Target> target, std::chrono::steady_clock::t
   result.aim_debug.ballistic_converged = decision.converged;
   if (trace) {
     trace->reference = reference;
+    trace->reference_tags = reference_tags;
     trace->reference_available = true;
   }
 

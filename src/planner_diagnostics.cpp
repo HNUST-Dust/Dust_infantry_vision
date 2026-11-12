@@ -107,8 +107,9 @@ Json mpc_diagnostics_json(const MpcDiagnostics & d)
 
 Json mpc_config_json(const MpcConfig & c)
 {
-  const double scale = std::max({c.q[0], c.q[1], c.r * MPC_INPUT_SCALE * MPC_INPUT_SCALE});
+  const auto model = mpc_model(c);
   return {{"max_acc", c.max_acc},
+          {"state_scale", {c.state_scale[0], c.state_scale[1]}},
           {"input_scale", MPC_INPUT_SCALE},
           {"normalized_input_limit", c.max_acc / MPC_INPUT_SCALE},
           {"q", {c.q[0], c.q[1]}},
@@ -117,16 +118,22 @@ Json mpc_config_json(const MpcConfig & c)
           {"max_iterations", c.max_iterations},
           {"primal_tolerance", c.primal_tolerance},
           {"dual_tolerance", c.dual_tolerance},
-          {"normalized_q", {c.q[0] / scale, c.q[1] / scale}},
-          {"normalized_r", c.r * MPC_INPUT_SCALE * MPC_INPUT_SCALE / scale},
-          {"a", {{1.0, DT}, {0.0, 1.0}}},
-          {"b", {0.0, MPC_INPUT_SCALE * DT}}};
+          {"normalized_q", {model.q[0], model.q[1]}},
+          {"normalized_r", model.r},
+          {"a", {{model.a(0, 0), model.a(0, 1)}, {model.a(1, 0), model.a(1, 1)}}},
+          {"b", {model.b[0], model.b[1]}}};
 }
 
 MpcConfig mpc_config_from_json(const Json & j)
 {
   MpcConfig c;
   c.max_acc = j.at("max_acc").get<double>();
+  if (j.contains("state_scale")) {
+    if (j.at("state_scale").size() != 2)
+      throw std::invalid_argument("MPC state scale dimension");
+    c.state_scale = {j.at("state_scale").at(0).get<double>(),
+                     j.at("state_scale").at(1).get<double>()};
+  }
   if (j.at("q").size() != 2)
     throw std::invalid_argument("MPC q dimension");
   c.q = {j.at("q").at(0).get<double>(), j.at("q").at(1).get<double>()};
@@ -152,6 +159,16 @@ Json planner_trace_json(const PlannerDiagnosticEvent & event,
   const auto & t = *event.trace;
   const auto & p = event.plan;
   const auto & a = p.aim_debug;
+  Json reference_armor_ids = nullptr;
+  Json reference_pitch_rate_valid = nullptr;
+  if (t.reference_available) {
+    reference_armor_ids = Json::array();
+    reference_pitch_rate_valid = Json::array();
+    for (const auto & tag : t.reference_tags) {
+      reference_armor_ids.push_back(tag.armor_id);
+      reference_pitch_rate_valid.push_back(tag.rate_valid);
+    }
+  }
   Json j = {{"schema_version", 1},
             {"units", "rad,rad/s,rad/s2,s"},
             {"solver_mode", "cold"},
@@ -176,6 +193,8 @@ Json planner_trace_json(const PlannerDiagnosticEvent & event,
             {"target_state", t.target_state},
             {"reference_available", t.reference_available},
             {"reference", t.reference_available ? matrix(t.reference) : Json(nullptr)},
+            {"reference_armor_ids", std::move(reference_armor_ids)},
+            {"reference_pitch_rate_valid", std::move(reference_pitch_rate_valid)},
             {"yaw_origin", number(p.initial_state.yaw)},
             {"yaw_config", mpc_config_json(t.yaw_config)},
             {"pitch_config", mpc_config_json(t.pitch_config)},

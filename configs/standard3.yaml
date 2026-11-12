@@ -11,6 +11,11 @@ runtime:
   control_timeout_ms: 80  # 最后一次真实匹配超过此时间后停止目标控制
   feedback_timeout_ms: 100 # 云台姿态反馈超时后停止目标控制
   plan_timeout_ms: 20     # 计划生成超时后停止目标控制
+  planner_diagnostics:
+    trace_enabled: true  # 下一次运行记录完整规划；达到上限后自动停止记录
+    trace_mode: all
+    trace_directory: logs/planner_trace
+    trace_max_mb: 512
   
 #####-----神经网络参数-----#####
 classify_model: assets/tiny_resnet.onnx
@@ -67,7 +72,7 @@ armor_association:
 
 #####-----planner 瞄准/弹道参数（原 aimer，2026-10-03 并入）-----#####
 yaw_offset: -15.0 # degree -2.5  向右为负
-pitch_offset: -5.0 # degree 2  向上为正
+pitch_offset: 0 # degree 2  向上为正
 comming_angle: 55 # degree
 leaving_angle: 20 # degree
 decision_speed: 8 # rad/s
@@ -123,5 +128,7 @@ Q_yaw: [9e9, 1e7]
 R_yaw: [1]
 
 max_pitch_acc: 60
-Q_pitch: [1, 9e9]
-R_pitch: [1]
+# 无量纲阶段代价：位置误差、速度误差、加速度；离线筛选候选，待实机验收
+mpc_cost_pitch:
+  scales: [0.1, 1.0, 10.0] # rad, rad/s, rad/s²
+  weights: [2.0, 1.0, 0.3]
