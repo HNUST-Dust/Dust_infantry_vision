@@ -71,8 +71,8 @@ armor_association:
     angle_prior_rad: 0.15
 
 #####-----planner 瞄准/弹道参数（原 aimer，2026-10-03 并入）-----#####
-yaw_offset: -15.0 # degree -2.5  向右为负
-pitch_offset: 0 # degree 2  向上为正
+yaw_offset: -10.0 # degree -2.5  向右为负
+pitch_offset: -5 # degree 2  向上为正
 comming_angle: 55 # degree
 leaving_angle: 20 # degree
 decision_speed: 8 # rad/s
@@ -86,7 +86,7 @@ judge_distance: 2 #距离判断阈值
 auto_fire: true # 是否由自瞄控制射击
 
 camera_name: "hikrobot"
-exposure_ms: 1
+exposure_ms: 0.5
 gain: 16.9
 frame_rate: 250
 vid_pid: "2bdf:0001"
@@ -100,9 +100,9 @@ R_gimbal2imubody: [1, 0, 0, 0, 1, 0, 0, 0, 1]
 camera_matrix: [1808.8304696430803, 0, 713.70459283498224, 0, 1808.0411873540195, 566.09347726083934, 0, 0, 1]
 distort_coeffs: [-0.073241403353599299, 0.14495759982904788, 0.00028937879061362732, -0.00026770913811837289, 0]
 
-# 相机同理想情况的偏角: yaw77.32 pitch3.16 roll-3.15 degree
-R_camera2gimbal: [-0.97477295614453796, -0.04155903544245064, 0.21929553242674979, -0.21633519687120553, -0.065859247409107979, -0.97409529417064877, 0.054925099580567724, -0.99696309164572339, 0.055207131172210655]
-t_camera2gimbal: [0.11357667283627036, -0.11551828418637766, 0.032185558486523859]
+# 相机同理想情况的偏角: yaw82.81 pitch3.49 roll-2.46 degree
+R_camera2gimbal: [-0.99153817901037278, -0.034980202117288653, 0.12501369934782194, -0.12253954917548156, -0.06566653124624855, -0.99028882936341101, 0.042849719400058162, -0.99722830492015169, 0.060824414616313494]
+t_camera2gimbal: [0.10267747996289879, -0.11839733724650914, 0.033797580181542899]
 
 #####-----gimbal参数-----#####
 com_port: "/dev/gimbal"
@@ -124,11 +124,11 @@ fire_thresh_high_speed: 1e-3   # 高速旋转时使用较宽松的阈值
 fire_thresh_low_speed: 1e-4    # 低速/静止时使用较严格的阈值
 
 max_yaw_acc: 55
-Q_yaw: [9e9, 1e7]
-R_yaw: [1]
+mpc_cost_yaw:
+  scales: [0.1, 1.0, 10.0] # rad, rad/s, rad/s²
+  weights: [1.0, 0.09, 0.09]
 
-max_pitch_acc: 60
-# 无量纲阶段代价：位置误差、速度误差、加速度；离线筛选候选，待实机验收
+max_pitch_acc: 50
 mpc_cost_pitch:
   scales: [0.1, 1.0, 10.0] # rad, rad/s, rad/s²
-  weights: [2.0, 1.0, 0.3]
+  weights: [1.0, 0.09, 0.09]
