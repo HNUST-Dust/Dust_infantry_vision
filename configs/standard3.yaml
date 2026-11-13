@@ -86,7 +86,7 @@ judge_distance: 2 #距离判断阈值
 auto_fire: true # 是否由自瞄控制射击
 
 camera_name: "hikrobot"
-exposure_ms: 0.5
+exposure_ms: 2.0
 gain: 16.9
 frame_rate: 250
 vid_pid: "2bdf:0001"
@@ -128,7 +128,7 @@ mpc_cost_yaw:
   scales: [0.1, 1.0, 10.0] # rad, rad/s, rad/s²
   weights: [1.0, 0.09, 0.09]
 
-max_pitch_acc: 50
+max_pitch_acc: 10
 mpc_cost_pitch:
   scales: [0.1, 1.0, 10.0] # rad, rad/s, rad/s²
-  weights: [1.0, 0.09, 0.09]
+  weights: [2.5, 0.09, 0.15]
