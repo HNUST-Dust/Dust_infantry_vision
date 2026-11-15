@@ -5,6 +5,7 @@
 #include <cmath>
 #include <limits>
 #include <numeric>
+#include <stdexcept>
 
 #include "tasks/auto_aim/geometry/solver.hpp"
 #include "tools/diagnostics/logger.hpp"
@@ -464,6 +465,35 @@ std::vector<Eigen::Vector4d> Target::armor_xyza_list() const
     _armor_xyza_list.push_back({xyz[0], xyz[1], xyz[2], angle});
   }
   return _armor_xyza_list;
+}
+
+TargetPredictionState Target::prediction_state() const
+{
+  TargetPredictionState state;
+  if (ekf_.x.size() == 11)
+    state.x = ekf_.x;
+  state.timestamp = t_;
+  state.name = name;
+  state.armor_type = armor_type;
+  state.armor_num = armor_num_;
+  state.jumped = jumped;
+  return state;
+}
+
+Target Target::from_prediction_state(const TargetPredictionState & state)
+{
+  if (!state.x.allFinite() || state.armor_num < 0 || state.armor_num > 4 ||
+      state.name < ArmorName::one || state.name > ArmorName::not_armor ||
+      state.armor_type < ArmorType::big || state.armor_type > ArmorType::small)
+    throw std::invalid_argument("Invalid target prediction state");
+  Target target(0.0, 0.0, state.x[8], 0.0);
+  target.ekf_.x = state.x;
+  target.t_ = state.timestamp;
+  target.name = state.name;
+  target.armor_type = state.armor_type;
+  target.armor_num_ = state.armor_num;
+  target.jumped = state.jumped;
+  return target;
 }
 
 void Target::set_initial_omega(double w)

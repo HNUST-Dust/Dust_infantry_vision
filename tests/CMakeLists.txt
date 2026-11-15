@@ -134,3 +134,7 @@ if(ENABLE_FOXGLOVE_VISION)
   )
   set_tests_properties(foxglove_vision_protocol PROPERTIES TIMEOUT 60)
 endif()
+
+add_executable(planner_preaim_test planner/planner_preaim_test.cpp ../src/planner_diagnostics.cpp)
+target_link_libraries(planner_preaim_test PRIVATE auto_aim tools io nlohmann_json::nlohmann_json)
+add_test(NAME planner_preaim COMMAND planner_preaim_test ${PROJECT_SOURCE_DIR}/configs/standard3.yaml)

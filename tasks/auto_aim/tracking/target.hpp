@@ -15,6 +15,17 @@ namespace auto_aim
 {
 class Solver;
 
+// Complete input to predict()/armor_xyza_list(), not an EKF update checkpoint.
+struct TargetPredictionState
+{
+  Eigen::Matrix<double, 11, 1> x = Eigen::Matrix<double, 11, 1>::Zero();
+  std::chrono::steady_clock::time_point timestamp{};
+  ArmorName name = ArmorName::not_armor;
+  ArmorType armor_type = ArmorType::small;
+  int armor_num = 0;
+  bool jumped = false;
+};
+
 class Target
 {
 public:
@@ -42,6 +53,8 @@ public:
   const tools::ExtendedKalmanFilter & ekf() const;
   std::vector<Eigen::Vector4d> armor_xyza_list() const;
 
+  TargetPredictionState prediction_state() const;
+  static Target from_prediction_state(const TargetPredictionState & state);
   void set_initial_omega(double w);
   int virtual_update_count() const;
   int record_virtual_update();

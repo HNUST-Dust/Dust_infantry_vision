@@ -906,9 +906,9 @@ runtime:
 
 `failures` 只采集有目标的失败，每秒最多 5 份；`all` 采集全部规划，供短时连续分析。规划线程只复制数值并入队；容量 128，满时丢弃新记录并计数。独立线程序列化和落盘，每条刷新；达到文件限额或写入失败后停止完整记录，原因汇总继续。`trace_written` 是完成写入及流刷新的记录数，不保证掉电持久性。退出时排空队列。trace 缺失可能来自限频、丢样或限额，不能据此认定没有失败。
 
-JSONL 保存实际初值、4x60 参考、姿态/速度来源、目标状态、有效成本/约束/动力学配置、构建标识、两轴诊断和输出。耗时为整次规划及每轴 solve，不包含单独的选板/弹道阶段耗时。目标 11 维状态仅用于解释参考变化；离线程序重放轴求解，不重建完整 Tracker 历史。
+JSONL 保存实际初值、4x60 参考、姿态/速度来源、目标状态、有效成本/约束/动力学配置、构建标识、两轴诊断和输出。耗时为整次规划及每轴 solve，不包含单独的选板/弹道阶段耗时。原有轴回放使用已记录参考；新增目标回放可从完整预测状态重新生成参考，但不重建检测或 Tracker 更新历史。
 
-新记录另有 `reference_armor_ids` 和 `reference_pitch_rate_valid` 两个长度为 60 的可选数组，分别记录实际生成各位置参考的装甲板 ID、该点是否允许参与 pitch 速度求导；无参考时两字段为 null。保持上一列位置时 ID 为 -1、有效性为 false；有候选但选板无效或弹道未收敛时保留候选 ID，但有效性为 false。这些标签只在本次预测时域内比较。旧 trace 缺少这两字段，仍可按已有完整参考回放求解器，但不能用角度阈值补造目标身份来宣称验证了生产连续段算法。
+新记录另有 `reference_armor_ids` 和 `reference_pitch_rate_valid` 两个长度为 60 的可选数组，分别记录实际生成各位置参考的装甲板 ID、该点是否允许参与 pitch 速度求导；无参考时两字段为 null。保持上一列位置时 ID 为 -1、有效性为 false；有候选但弹道未收敛时保留候选 ID，有效性为 false。开启空窗预瞄后，收敛的预瞄段也允许段内求导；此字段不代表发弹资格。这些标签只在本次预测时域内比较。旧 trace 缺少这两字段，仍可按已有完整参考回放求解器，但不能用角度阈值补造目标身份来宣称验证了生产连续段算法。
 
 两轴配置中的 `input_scale` 与 `normalized_input_limit` 分别记录固定尺度和内部输入边界，`a`、`b`、`normalized_q`、`normalized_r` 与实际求解器一致。`state_scale` 记录每个内部状态单位对应的物理量，旧记录缺省为 `[1, 1]`。回放会拒绝模型/尺度字段不一致的记录；缺少输入尺度字段的更早版本记录仍不兼容。生产求解器源码变化会改变构建指纹，旧 trace 的严格 `reproduce` / `precision` 需要原构建；离线 `sweep` / 代价对照可读取兼容的旧模型输入，但不构成原样回放。
 
@@ -921,6 +921,45 @@ ctest --test-dir build-ninja --output-on-failure -R 'planner_(feedback|reference
 
 `reproduce` 使用记录的配置和共享生产 `MpcAxis`，验证状态、迭代数、四种残差、约束误差及成功控制输出；构建指纹、schema、单位或模型不兼容时明确失败。无参考记录标为上游拒绝，不执行 MPC。`sweep` 扫描 rho 与迭代上限，输出两轴和合计的收敛数、P95/P99/最大耗时及超过 2/10 ms 次数；计时仅含 solve，不含初始化和参考生成，不自动修改配置。该诊断工具本身不改变生产配置；比较求解参数前应采集实机输入并确认速度单位、符号与关节导数约定。
 
+
+#### 固定窗口空窗预瞄与目标输入回放
+
+`gap_preaim_enabled: false` 为独立开关，缺省关闭。启用后，仅对已 `jumped` 的四板目标、
+`|ω| > 2 rad/s` 且弹道预测时刻窗口内无板的情况预瞄；前哨站和低速锁板保持原选板逻辑。
+正转预瞄 `−comming_angle`，反转预瞄 `+comming_angle`，按旋转方向的剩余相位选择最先入窗的板。
+边界点使用预测车心及该来板半径、高度，经原弹道解算生成 yaw/pitch；不额外叠加入窗等待时间。
+每列仍是已有延迟 + `k×10 ms` + 弹丸飞行时间，60 列 TinyMPC 成本、两轴加速度限制保持不变。
+
+模式为 `track` / `preaim` / `fallback`。开启后收敛要求飞行时间误差小于 1 ms 且模式、板号稳定，
+最多迭代 10 次；未收敛使用 fallback。预瞄可以控制，但选择有效性为 false，0 到 COMMAND_STEP
+任一列预瞄均不能发弹。真实板重入窗口仍须满足原有求解、实测反馈、位置误差和发送端门控。
+两轴速度仅在同一板、同一模式的连续有效段内差分，段端用单边差分，孤立点置零；关闭开关保留
+原 yaw 差分、pitch 分段差分和原收敛行为。窗口参数沿用项目的角度换算 `/57.3`。
+
+Foxglove 新增 `aim_mode` 和 `aim_preaim`（第 0 列）；trace 新增每列 `reference_modes`、
+`reference_xyza`、`reference_fly_time`、`reference_selection_valid`、`reference_converged`。
+`target_replay` v1 包含规划前的目标时间、11 维状态、名称/类型/板数/jumped、反馈精确时间、
+锁板及发弹历史、规划配置。配置只保存规划相关键。`planner_build_id` 独立记录目标预测、
+选板、弹道和参考代码指纹，不改变原轴回放的 MPC 指纹。
+
+```bash
+cmake --build build-ninja --target planner_preaim_test planner_replay_test -j4
+./build-ninja/planner_preaim_test configs/standard3.yaml /tmp/preaim-synthetic.jsonl
+./build-ninja/planner_replay_test /tmp/preaim-synthetic.jsonl --mode=target-reproduce
+./build-ninja/planner_replay_test /tmp/preaim-synthetic.jsonl --mode=target-ab > /tmp/preaim-ab.jsonl
+```
+
+`target-reproduce` 从记录的原配置重新生成参考，核对逐列参考/标签、控制、发弹与输出；
+要求相同代码指纹。`target-ab` 对每条记录恢复相同目标、反馈和规划前历史，仅切换预瞄开关，
+输出 off/on 的完整参考、规划结果和规划耗时（不含加载配置/构造 Planner 的时间）。它是相同
+输入的逐帧 A/B，不是让两个方案分别驱动云台的闭环模拟；即使采集不连续，也不猜补历史。
+缺失 `target_replay` 的旧记录明确拒绝目标回放，仍可用原有轴回放模式。非数值反馈无法从
+JSON null 恢复时也会报错。现场比较需 `trace_mode: all`，否则失败采样不能用于统计窗口时长。
+
+离线测试覆盖正反转、±π、长短半径、高低板、平移、入窗衔接、0/1 列发弹资格及两轴差分边界。
+实车收益需另外记录同步反馈，比较新板入窗到两轴到位延迟、换板后两轴最大过冲、每圈窗口内
+到位时长、当前板出窗前到位时长和规划失败率/耗时。MPC 看得到未来空窗，可能提前回转，
+需要同时检查当前板末段损失。固定车心、四板、12 rad/s 的约 51 ms 仅是理论空窗。
 
 #### MPC 离线控制量精度对照
 

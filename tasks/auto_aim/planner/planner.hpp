@@ -49,6 +49,7 @@ struct AimDebugSnapshot
 {
   Eigen::Vector4d xyza = Eigen::Vector4d::Zero();
   int armor_id = -1;
+  AimMode mode = AimMode::fallback;
   bool candidate_available = false;
   bool selection_valid = false;
   bool ballistic_converged = false;
@@ -91,6 +92,14 @@ struct Plan
   bool aim_visible_at(std::chrono::steady_clock::time_point now) const;
 };
 
+struct PlannerHistory
+{
+  int lock_id = -1;
+  bool have_last_command = false;
+  double last_target_yaw = 0.0;
+  std::chrono::steady_clock::time_point last_plan_at{};
+};
+
 struct PlanningTrace
 {
   bool reference_available = false;
@@ -102,6 +111,10 @@ struct PlanningTrace
   double bullet_speed = 0.0;
   double yaw_offset = 0.0;
   double pitch_offset = 0.0;
+  // Captured before target propagation/selection. YAML contains planner keys only.
+  std::string planner_config_yaml;
+  PlannerHistory history;
+  std::optional<TargetPredictionState> target_prediction;
   bool target_available = false;
   std::array<double, 11> target_state{};
 };
@@ -126,7 +139,11 @@ public:
   Plan plan_at(std::optional<Target> target, std::chrono::steady_clock::time_point now,
                double bullet_speed, const PlanningState & state, PlanningTrace * trace = nullptr);
 
+  // Offline single-sample replay restores the recorded selection/fire history explicitly.
+  void restore_history(const PlannerHistory & history);
+
 private:
+  std::string planner_config_yaml_;
   double yaw_offset_;
   double pitch_offset_;
   double low_speed_delay_time_, high_speed_delay_time_, decision_speed_;
@@ -134,6 +151,7 @@ private:
   double comming_angle_, leaving_angle_;
   double first_tolerance_, second_tolerance_, judge_distance_;
   bool auto_fire_;
+  bool gap_preaim_enabled_ = false;
   double max_state_age_ = 0.02;
   MpcAxis yaw_solver_;
   MpcAxis pitch_solver_;
@@ -150,6 +168,8 @@ private:
     int id = 0;
     int lock = -1;
     double fly_time = 0.0;
+    AimMode mode = AimMode::fallback;
+    Eigen::Vector4d reference_xyza = Eigen::Vector4d::Zero();
   };
   struct AimSolution
   {
@@ -160,6 +180,7 @@ private:
 
   int nearest_armor_id(const Target & target) const;
   AimPoint choose_aim_point(const Target & target, int & lock_id) const;
+  AimDecision choose_reference(const Target & target, int & lock, int previous_id) const;
   std::optional<AimSolution> solve_xyza(const Eigen::Vector4d & xyza, double bullet_speed,
                                         const Eigen::Matrix3d & R_gimbal2world) const;
   bool resolve_aim_time(Target base, double bullet_speed, const Eigen::Matrix3d & R_gimbal2world,

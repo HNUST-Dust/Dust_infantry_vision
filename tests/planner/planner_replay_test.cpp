@@ -8,6 +8,7 @@
 
 #include "src/planner_diagnostics.hpp"
 #include "planner_precision.hpp"
+#include "target_replay.hpp"
 
 using nlohmann::json;
 using namespace auto_aim;
@@ -341,10 +342,38 @@ int main(int argc, char ** argv)
     }
     if (argc < 2 || argc > 3) {
       std::cerr << "Usage: planner_replay_test trace.jsonl "
-                   "[--mode=reproduce|--mode=sweep|--mode=precision]\n";
+                   "[--mode=reproduce|--mode=sweep|--mode=precision|--mode=target-reproduce|--mode="
+                   "target-ab]\n";
       return 2;
     }
     const std::string mode = argc == 3 ? argv[2] : "--mode=reproduce";
+    if (mode == "--mode=target-reproduce" || mode == "--mode=target-ab") {
+      std::ifstream input(argv[1]);
+      require(bool(input), "Cannot open trace");
+      std::string line;
+      size_t records = 0;
+      while (std::getline(input, line)) {
+        if (line.empty())
+          continue;
+        const auto record = json::parse(line);
+        if (mode == "--mode=target-reproduce") {
+          target_replay::reproduce(record);
+        } else {
+          std::cout << json({{"session", record.at("session")},
+                             {"plan_id", record.at("plan_id")},
+                             {"off", target_replay::serialize(target_replay::run(record, false))},
+                             {"on", target_replay::serialize(target_replay::run(record, true))}})
+                         .dump()
+                    << '\n';
+        }
+        ++records;
+      }
+      require(!input.bad() && records > 0, "Empty or unreadable trace");
+      if (mode == "--mode=target-reproduce")
+        std::cout << "PASS target replay records=" << records << '\n';
+      return 0;
+    }
+
     require(mode == "--mode=reproduce" || mode == "--mode=sweep" || mode == "--mode=precision",
             "Invalid mode argument");
     std::ifstream input(argv[1]);

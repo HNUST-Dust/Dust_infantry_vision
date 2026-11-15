@@ -463,6 +463,8 @@ int run(const RuntimeOptions & options)
       data["plan_time_ms"] = plan_update.planning_ms;
       data["plan_status"] = to_string(plan_update.plan.status);
       data["plan_status_code"] = static_cast<int>(plan_update.plan.status);
+      data["aim_mode"] = to_string(plan_update.plan.aim_debug.mode);
+      data["aim_preaim"] = plan_update.plan.aim_debug.mode == AimMode::preaim;
       data["aim_selection_valid"] = plan_update.plan.aim_debug.selection_valid;
       data["aim_ballistic_converged"] = plan_update.plan.aim_debug.ballistic_converged;
       data["aim_display_valid"] = plan_update.plan.aim_visible_at(sampled_at);

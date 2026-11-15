@@ -12,6 +12,10 @@
 #include "tools/diagnostics/logger.hpp"
 #include "tools/runtime/yaml.hpp"
 
+#ifndef DUST_PLANNER_BUILD_ID
+#define DUST_PLANNER_BUILD_ID "unknown"
+#endif
+
 #ifndef DUST_MPC_BUILD_ID
 #define DUST_MPC_BUILD_ID "unknown"
 #endif
@@ -159,12 +163,21 @@ Json planner_trace_json(const PlannerDiagnosticEvent & event,
   const auto & t = *event.trace;
   const auto & p = event.plan;
   const auto & a = p.aim_debug;
+  Json reference_modes = nullptr, reference_xyza = nullptr, reference_fly_time = nullptr;
+  Json reference_selection_valid = nullptr, reference_converged = nullptr;
   Json reference_armor_ids = nullptr;
   Json reference_pitch_rate_valid = nullptr;
   if (t.reference_available) {
+    reference_modes = reference_xyza = reference_fly_time = Json::array();
+    reference_selection_valid = reference_converged = Json::array();
     reference_armor_ids = Json::array();
     reference_pitch_rate_valid = Json::array();
     for (const auto & tag : t.reference_tags) {
+      reference_modes.push_back(to_string(tag.mode));
+      reference_xyza.push_back(matrix(tag.reference_xyza));
+      reference_fly_time.push_back(number(tag.fly_time));
+      reference_selection_valid.push_back(tag.selection_valid);
+      reference_converged.push_back(tag.converged);
       reference_armor_ids.push_back(tag.armor_id);
       reference_pitch_rate_valid.push_back(tag.rate_valid);
     }
@@ -193,6 +206,11 @@ Json planner_trace_json(const PlannerDiagnosticEvent & event,
             {"target_state", t.target_state},
             {"reference_available", t.reference_available},
             {"reference", t.reference_available ? matrix(t.reference) : Json(nullptr)},
+            {"reference_modes", std::move(reference_modes)},
+            {"reference_xyza", std::move(reference_xyza)},
+            {"reference_fly_time", std::move(reference_fly_time)},
+            {"reference_selection_valid", std::move(reference_selection_valid)},
+            {"reference_converged", std::move(reference_converged)},
             {"reference_armor_ids", std::move(reference_armor_ids)},
             {"reference_pitch_rate_valid", std::move(reference_pitch_rate_valid)},
             {"yaw_origin", number(p.initial_state.yaw)},
@@ -203,6 +221,7 @@ Json planner_trace_json(const PlannerDiagnosticEvent & event,
             {"aim",
              {{"xyza", matrix(a.xyza)},
               {"armor_id", a.armor_id},
+              {"mode", to_string(a.mode)},
               {"candidate_available", a.candidate_available},
               {"selection_valid", a.selection_valid},
               {"ballistic_converged", a.ballistic_converged},
@@ -214,6 +233,38 @@ Json planner_trace_json(const PlannerDiagnosticEvent & event,
               {"pitch_vel", number(p.pitch_vel)},
               {"yaw_acc", number(p.yaw_acc)},
               {"pitch_acc", number(p.pitch_acc)}}}};
+  // Integer nanoseconds relative to planned_at preserve exact clock reconstruction.
+  const auto relative_ns = [&](auto timestamp) {
+    return std::chrono::duration_cast<std::chrono::nanoseconds>(timestamp - p.planned_at).count();
+  };
+  j["target_replay"] = nullptr;
+  if (!t.planner_config_yaml.empty()) {
+    Json target = nullptr;
+    if (t.target_prediction) {
+      const auto & s = *t.target_prediction;
+      target = {{"state", matrix(s.x)},
+                {"timestamp_ns", relative_ns(s.timestamp)},
+                {"name", static_cast<int>(s.name)},
+                {"armor_type", static_cast<int>(s.armor_type)},
+                {"armor_num", s.armor_num},
+                {"jumped", s.jumped}};
+    }
+    j["target_replay"] = {{"version", 1},
+                          {"planner_build_id", DUST_PLANNER_BUILD_ID},
+                          {"dt", DT},
+                          {"horizon", HORIZON},
+                          {"command_step", COMMAND_STEP},
+                          {"config_yaml", t.planner_config_yaml},
+                          {"target", target},
+                          {"feedback_timestamp_ns", relative_ns(t.received_state.timestamp)},
+                          {"feedback_timestamp_missing",
+                           t.received_state.timestamp == std::chrono::steady_clock::time_point{}},
+                          {"history",
+                           {{"lock_id", t.history.lock_id},
+                            {"have_last_command", t.history.have_last_command},
+                            {"last_target_yaw", number(t.history.last_target_yaw)},
+                            {"last_plan_ns", relative_ns(t.history.last_plan_at)}}}};
+  }
   j["frame_s"] =
     event.source.frame_timestamp == std::chrono::steady_clock::time_point{}
       ? Json(nullptr)

@@ -58,6 +58,8 @@ Planner::Planner(const std::string & config_path)
       pitch_solver_(MpcConfig::load(config_path, "pitch"))
 {
   auto yaml = tools::load(config_path);
+  if (yaml["gap_preaim_enabled"])
+    gap_preaim_enabled_ = yaml["gap_preaim_enabled"].as<bool>();
   yaw_offset_ = tools::read<double>(yaml, "yaw_offset") / 57.3;
   pitch_offset_ = tools::read<double>(yaml, "pitch_offset") / 57.3;
   fire_thresh_high_speed_ = tools::read<double>(yaml, "fire_thresh_high_speed");
@@ -65,6 +67,37 @@ Planner::Planner(const std::string & config_path)
   decision_speed_ = tools::read<double>(yaml, "decision_speed");
   high_speed_delay_time_ = tools::read<double>(yaml, "high_speed_delay_time");
   low_speed_delay_time_ = tools::read<double>(yaml, "low_speed_delay_time");
+  YAML::Node replay_config;
+  for (const auto * key : {"yaw_offset",
+                           "pitch_offset",
+                           "fire_thresh_high_speed",
+                           "fire_thresh_low_speed",
+                           "decision_speed",
+                           "high_speed_delay_time",
+                           "low_speed_delay_time",
+                           "comming_angle",
+                           "leaving_angle",
+                           "first_tolerance",
+                           "second_tolerance",
+                           "judge_distance",
+                           "auto_fire",
+                           "gap_preaim_enabled",
+                           "mpc_max_state_age_ms",
+                           "max_yaw_acc",
+                           "max_pitch_acc",
+                           "Q_yaw",
+                           "Q_pitch",
+                           "R_yaw",
+                           "R_pitch",
+                           "mpc_cost_yaw",
+                           "mpc_cost_pitch",
+                           "mpc_rho",
+                           "mpc_max_iter",
+                           "mpc_primal_tolerance",
+                           "mpc_dual_tolerance"})
+    if (yaml[key])
+      replay_config[key] = YAML::Clone(yaml[key]);
+  planner_config_yaml_ = YAML::Dump(replay_config);
   // 装甲板选择策略（原 Aimer）
   comming_angle_ = tools::read<double>(yaml, "comming_angle") / 57.3;
   leaving_angle_ = tools::read<double>(yaml, "leaving_angle") / 57.3;
@@ -173,6 +206,50 @@ AimPoint Planner::choose_aim_point(const Target & target, int & lock_id) const
   return {false, 0, armor_xyza_list[0]};
 }
 
+Planner::AimDecision Planner::choose_reference(const Target & target, int & lock,
+                                               int previous_id) const
+{
+  AimDecision result;
+  const auto point = choose_aim_point(target, lock);
+  const auto armors = target.armor_xyza_list();
+  result.lock = lock;
+  result.id = point.valid ? point.id : (previous_id >= 0 ? previous_id : nearest_armor_id(target));
+  if (result.id < 0 || result.id >= static_cast<int>(armors.size())) {
+    result.id = -1;
+    return result;
+  }
+  result.valid = point.valid;
+  result.mode = point.valid ? AimMode::track : AimMode::fallback;
+  result.reference_xyza = armors[result.id];
+  const auto x = target.ekf_x();
+  if (point.valid || !gap_preaim_enabled_ || !target.jumped || armors.size() != 4 ||
+      target.name == ArmorName::outpost || std::abs(x[7]) <= 2.0)
+    return result;
+
+  const double phi = std::atan2(x[2], x[0]);
+  const double direction = x[7] > 0.0 ? 1.0 : -1.0;
+  const double boundary = -direction * comming_angle_;
+  double best_phase = 2 * M_PI;
+  for (int i = 0; i < static_cast<int>(armors.size()); ++i) {
+    const double delta = tools::limit_rad(armors[i][3] - phi);
+    double phase = std::fmod(direction * (boundary - delta), 2 * M_PI);
+    if (phase < 0.0)
+      phase += 2 * M_PI;
+    if (phase < best_phase) {
+      best_phase = phase;
+      result.id = i;
+    }
+  }
+  const auto & incoming = armors[result.id];
+  const double radius = std::hypot(incoming[0] - x[0], incoming[1] - x[2]);
+  result.reference_xyza = {x[0] - radius * std::cos(phi + boundary),
+                           x[2] - radius * std::sin(phi + boundary), incoming[2],
+                           tools::limit_rad(phi + boundary)};
+  result.mode = AimMode::preaim;
+  // Remaining phase selects geometry only: no extra waiting time and no fire eligibility.
+  return result;
+}
+
 std::optional<Planner::AimSolution>
 Planner::solve_xyza(const Eigen::Vector4d & xyza, double bullet_speed,
                     const Eigen::Matrix3d & R_gimbal2world) const
@@ -217,52 +294,31 @@ bool Planner::resolve_aim_time(Target base, double bullet_speed,
                                const Eigen::Matrix3d & R_gimbal2world, int initial_lock,
                                AimDecision & decision) const
 {
-  // lock_id_ 每次规划只写回一次；迭代内部用局部副本，60 步前瞻不会污染持久状态
   int lock = initial_lock;
-  int last_id = -1;
-  bool selected = false;
-  double used = 0.0;
-  double evaluated_time = 0.0;
+  AimDecision candidate = choose_reference(base, lock, -1);
+  if (candidate.id < 0)
+    return false;
+  auto solution = solve_xyza(candidate.reference_xyza, bullet_speed, R_gimbal2world);
+  if (!solution)
+    return false;
+  double used = solution->fly_time;
+  double evaluated_time = used;
   bool converged = false;
 
-  {
-    const AimPoint p = choose_aim_point(base, lock);
-    const auto armor_xyza_list = base.armor_xyza_list();
-    const int id = p.valid ? p.id : nearest_armor_id(base);
-    if (id < 0 || id >= static_cast<int>(armor_xyza_list.size()))
-      return false;
-
-    const auto solution = solve_xyza(armor_xyza_list[id], bullet_speed, R_gimbal2world);
-    if (!solution)
-      return false;
-
-    used = solution->fly_time;
-    evaluated_time = used;
-    last_id = id;
-    selected = p.valid;
-  }
-
-  // 迭代求解飞行时间：每次都从 base 副本重新预测，误差不累积，只有标量 fly_time 在收敛
-  for (int iter = 0; iter < 10; iter++) {
+  for (int iter = 0; iter < 10; ++iter) {
     const double current_time = used;
     Target predicted = base;
-    predicted.predict(current_time);  // 绝对时刻 T1 + current_time
-
-    const AimPoint p = choose_aim_point(predicted, lock);
-    const auto armor_xyza_list = predicted.armor_xyza_list();
-    const int id = p.valid ? p.id : (last_id >= 0 ? last_id : nearest_armor_id(predicted));
-    if (id < 0 || id >= static_cast<int>(armor_xyza_list.size()))
+    predicted.predict(current_time);
+    auto next = choose_reference(predicted, lock, candidate.id);
+    if (next.id < 0)
       break;
-
-    const auto solution = solve_xyza(armor_xyza_list[id], bullet_speed, R_gimbal2world);
-    // 弹道不可解：保留上一轮的结果，不让一次失败毁掉整次规划
+    solution = solve_xyza(next.reference_xyza, bullet_speed, R_gimbal2world);
     if (!solution)
       break;
-
-    last_id = id;
-    selected = p.valid;
+    const bool stable = next.id == candidate.id && next.mode == candidate.mode;
+    candidate = next;
     evaluated_time = current_time;
-    if (std::abs(solution->fly_time - current_time) < 0.001) {
+    if (std::abs(solution->fly_time - current_time) < 0.001 && (!gap_preaim_enabled_ || stable)) {
       converged = true;
       used = current_time;
       break;
@@ -270,18 +326,23 @@ bool Planner::resolve_aim_time(Target base, double bullet_speed,
     used = solution->fly_time;
   }
 
-  if (last_id < 0)
-    return false;
-
-  // On exhaustion or a failed iteration, keep the last internally consistent candidate for
-  // tracking, but do not publish its lock as a settled decision or allow it to fire.
   if (!converged)
     used = evaluated_time;
-  decision.valid = selected;
-  decision.converged = converged;
-  decision.id = last_id;
-  decision.lock = lock;
-  decision.fly_time = used;
+  // Preserve the old reconstruction (including its fallback timing) when disabled.
+  if (!gap_preaim_enabled_) {
+    Target hit = base;
+    hit.predict(used);
+    candidate.reference_xyza = hit.armor_xyza_list()[candidate.id];
+  }
+  if (!converged) {
+    candidate.mode = AimMode::fallback;
+    if (gap_preaim_enabled_)
+      candidate.valid = false;
+  }
+  candidate.converged = converged;
+  candidate.lock = lock;
+  candidate.fly_time = used;
+  decision = candidate;
   return true;
 }
 
@@ -301,13 +362,8 @@ bool Planner::get_trajectory(const Target & launch_target, double yaw_origin, do
     std::optional<AimSolution> solution;
     Eigen::Vector4d selected_armor = Eigen::Vector4d::Zero();
     if (resolve_aim_time(base, bullet_speed, rotation, lock, decision)) {
-      Target hit = base;
-      hit.predict(decision.fly_time);
-      const auto armors = hit.armor_xyza_list();
-      if (decision.id >= 0 && decision.id < static_cast<int>(armors.size())) {
-        selected_armor = armors[decision.id];
-        solution = solve_xyza(selected_armor, bullet_speed, rotation);
-      }
+      selected_armor = decision.reference_xyza;
+      solution = solve_xyza(selected_armor, bullet_speed, rotation);
     }
     if (!solution) {
       if (k == 0)
@@ -321,7 +377,11 @@ bool Planner::get_trajectory(const Target & launch_target, double yaw_origin, do
     const double yaw = previous_yaw + tools::limit_rad(solution->yaw - previous_yaw);
     out(0, k) = yaw - yaw_origin;
     out(2, k) = solution->pitch;
-    tags[k] = {decision.id, decision.valid && decision.converged};
+    tags[k] = {
+      decision.id,       decision.converged && (decision.valid || decision.mode == AimMode::preaim),
+      decision.mode,     decision.reference_xyza,
+      decision.fly_time, decision.valid,
+      decision.converged};
     previous_yaw = yaw;
     if (decision.converged)
       lock = decision.lock;
@@ -340,7 +400,10 @@ bool Planner::get_trajectory(const Target & launch_target, double yaw_origin, do
     const double span = (right - left) * DT;
     out(1, k) = (out(0, right) - out(0, left)) / span;
   }
-  fill_pitch_reference_velocity(out, tags);
+  if (gap_preaim_enabled_)
+    fill_segment_reference_velocity(out, tags);
+  else
+    fill_pitch_reference_velocity(out, tags);
   return out.allFinite();
 }
 
@@ -363,6 +426,14 @@ bool Plan::aim_visible_at(std::chrono::steady_clock::time_point now) const
          now >= planned_at && now - planned_at <= 20ms;
 }
 
+void Planner::restore_history(const PlannerHistory & history)
+{
+  lock_id_ = history.lock_id;
+  have_last_command_ = history.have_last_command;
+  last_target_yaw_ = history.last_target_yaw;
+  last_plan_at_ = history.last_plan_at;
+}
+
 Plan Planner::plan(std::optional<Target> target, double bullet_speed, const PlanningState & state,
                    PlanningTrace * trace)
 {
@@ -383,6 +454,10 @@ Plan Planner::plan_at(std::optional<Target> target, std::chrono::steady_clock::t
     trace->bullet_speed = bullet_speed;
     trace->yaw_offset = yaw_offset_;
     trace->pitch_offset = pitch_offset_;
+    trace->planner_config_yaml = planner_config_yaml_;
+    trace->history = {lock_id_, have_last_command_, last_target_yaw_, last_plan_at_};
+    if (target)
+      trace->target_prediction = target->prediction_state();
     trace->target_available = target.has_value();
     if (target) {
       const auto x = target->ekf_x();
@@ -458,6 +533,7 @@ Plan Planner::plan_at(std::optional<Target> target, std::chrono::steady_clock::t
 
   result.aim_debug.xyza = aim_xyza;
   result.aim_debug.armor_id = decision.id;
+  result.aim_debug.mode = decision.mode;
   result.aim_debug.candidate_available = true;
   result.aim_debug.selection_valid = decision.valid;
   result.aim_debug.ballistic_converged = decision.converged;
