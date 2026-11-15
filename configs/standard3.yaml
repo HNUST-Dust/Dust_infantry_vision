@@ -132,4 +132,4 @@ mpc_cost_yaw:
 max_pitch_acc: 10
 mpc_cost_pitch:
   scales: [0.1, 1.0, 10.0] # rad, rad/s, rad/s²
-  weights: [2.5, 0.09, 0.15]
+  weights: [3, 0.09, 0.15]
