@@ -14,6 +14,25 @@ using namespace std::chrono_literals;
 
 namespace auto_aim
 {
+namespace
+{
+// Only ordinary four-plate targets use motion relative to the center line of sight.
+// This rate is for selection, not for propagating the physical target orientation.
+std::optional<double> selection_rate(const Eigen::VectorXd & x, int armor_num, ArmorName name)
+{
+  double rate = x[7];
+  if (armor_num == 4 && name != ArmorName::outpost) {
+    const double distance_squared = x[0] * x[0] + x[2] * x[2];
+    if (!std::isfinite(distance_squared) || distance_squared <= 1e-12)
+      return std::nullopt;
+    rate -= (x[0] * x[3] - x[2] * x[1]) / distance_squared;
+  }
+  if (!std::isfinite(rate))
+    return std::nullopt;
+  return rate;
+}
+}  // namespace
+
 const char * to_string(PlanStatus status)
 {
   switch (status) {
@@ -139,6 +158,10 @@ AimPoint Planner::choose_aim_point(const Target & target, int & lock_id) const
   if (armor_num == 0)
     return AimPoint{};
 
+  const auto rate = selection_rate(ekf_x, armor_num, target.name);
+  if (!rate)
+    return AimPoint{};
+
   // 装甲板未发生过跳变时，只有当前装甲板的位置已知
   if (!target.jumped)
     return {true, 0, armor_xyza_list[0]};
@@ -151,11 +174,8 @@ AimPoint Planner::choose_aim_point(const Target & target, int & lock_id) const
   for (int i = 0; i < armor_num; i++)
     delta_angle_list[i] = tools::limit_rad(armor_xyza_list[i][3] - center_yaw);
 
-  // 不考虑小陀螺：|w| <= 2 rad/s 走下面的锁定分支，转得更快才走 coming/leaving 分支。
-  // 索引别写错 —— 状态排列是 x vx y vy z vz a w r l h，w 在 [7]，r 在 [8]。
-  // 原 Aimer 这里误用了 ekf_x[8]（旋转半径 r，恒在 0.05-0.5），条件恒真，使该分支对非前哨站
-  // 目标成了死代码；2026-10-03 合并进 Planner 时按原样移植，随后修正为 ekf_x[7]。
-  if (std::abs(ekf_x[7]) <= 2 && target.name != ArmorName::outpost) {
+  // 相对视线变化慢时锁板；普通四板车的横移可能抵消或反转来板方向。
+  if (std::abs(*rate) <= 2 && target.name != ArmorName::outpost) {
     // 选择在可射击范围内的装甲板
     std::vector<int> id_list;
     for (int i = 0; i < armor_num; i++) {
@@ -197,9 +217,9 @@ AimPoint Planner::choose_aim_point(const Target & target, int & lock_id) const
   for (int i = 0; i < armor_num; i++) {
     if (std::abs(delta_angle_list[i]) > coming_angle)
       continue;
-    if (ekf_x[7] > 0 && delta_angle_list[i] < leaving_angle)
+    if (*rate > 0 && delta_angle_list[i] < leaving_angle)
       return {true, i, armor_xyza_list[i]};
-    if (ekf_x[7] < 0 && delta_angle_list[i] > -leaving_angle)
+    if (*rate < 0 && delta_angle_list[i] > -leaving_angle)
       return {true, i, armor_xyza_list[i]};
   }
 
@@ -210,8 +230,18 @@ Planner::AimDecision Planner::choose_reference(const Target & target, int & lock
                                                int previous_id) const
 {
   AimDecision result;
-  const auto point = choose_aim_point(target, lock);
   const auto armors = target.armor_xyza_list();
+  const auto x = target.ekf_x();
+  if (armors.empty()) {
+    result.id = -1;
+    return result;
+  }
+  const auto rate = selection_rate(x, static_cast<int>(armors.size()), target.name);
+  if (!rate) {
+    result.id = -1;
+    return result;
+  }
+  const auto point = choose_aim_point(target, lock);
   result.lock = lock;
   result.id = point.valid ? point.id : (previous_id >= 0 ? previous_id : nearest_armor_id(target));
   if (result.id < 0 || result.id >= static_cast<int>(armors.size())) {
@@ -221,13 +251,12 @@ Planner::AimDecision Planner::choose_reference(const Target & target, int & lock
   result.valid = point.valid;
   result.mode = point.valid ? AimMode::track : AimMode::fallback;
   result.reference_xyza = armors[result.id];
-  const auto x = target.ekf_x();
   if (point.valid || !gap_preaim_enabled_ || !target.jumped || armors.size() != 4 ||
-      target.name == ArmorName::outpost || std::abs(x[7]) <= 2.0)
+      target.name == ArmorName::outpost || std::abs(*rate) <= 2.0)
     return result;
 
   const double phi = std::atan2(x[2], x[0]);
-  const double direction = x[7] > 0.0 ? 1.0 : -1.0;
+  const double direction = *rate > 0.0 ? 1.0 : -1.0;
   const double boundary = -direction * comming_angle_;
   double best_phase = 2 * M_PI;
   for (int i = 0; i < static_cast<int>(armors.size()); ++i) {
