@@ -4,6 +4,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <cmath>
 #include <cstdint>
 #include <memory>
 #include <nlohmann/json.hpp>
@@ -55,6 +56,7 @@ struct PlanUpdate
   double planning_ms = 0.0;
   uint64_t sequence = 0;
   float distance_m = -1.0F;
+  uint64_t plan_id = 0;
 };
 
 }  // namespace
@@ -119,6 +121,9 @@ int run(const RuntimeOptions & options)
   std::atomic<double> latest_delivery_ms{0.0};
   std::atomic<int> latest_send_status{1};
   PlannerDiagnostics planner_diagnostics(config.diagnostics);
+  const auto telemetry_origin = std::chrono::steady_clock::now();
+  tools::ThreadSafeQueue<SendTelemetrySnapshot, true> send_queue(1);
+  send_queue.push(SendTelemetrySnapshot{});
 
   auto plan_thread = std::thread([&]() {
     constexpr auto period = 2ms;
@@ -177,7 +182,9 @@ int run(const RuntimeOptions & options)
           distance_m = static_cast<float>(std::hypot(x[0], x[2]));
         }
         plan_queue.push({plan, generated_at, update.frame_timestamp, update.last_observed_timestamp,
-                         planning_ms, update.sequence, distance_m});
+                         planning_ms, update.sequence, distance_m,
+                         // observe() below assigns this same planning-cycle ID to the trace.
+                         planner_diagnostics.counters().plans + 1});
       }
       planner_diagnostics.observe(plan, update.target.has_value(), planning_ms, generated_at,
                                   source, trace ? &*trace : nullptr);
@@ -204,6 +211,7 @@ int run(const RuntimeOptions & options)
   auto send_thread = std::thread([&]() {
     constexpr auto period = 2ms;
     auto next = std::chrono::steady_clock::now();
+    SendTelemetryAccumulator send_accumulator(telemetry_origin);
     while (!quit) {
       const auto update = plan_queue.front();
       const auto feedback = gimbal.feedback();
@@ -228,6 +236,35 @@ int run(const RuntimeOptions & options)
       latest_send_status.store(send_status);
       planner_diagnostics.observe_send(send_status);
 
+      SendTelemetrySnapshot send_sample;
+      send_sample.plan_id = update.plan_id;
+      send_sample.target_valid = update.plan.control && plan.control;
+      send_sample.target_yaw = plan.target_yaw;
+      send_sample.target_pitch = plan.target_pitch;
+      send_sample.fire_tolerance = update.plan.fire_tolerance;
+      auto & blocked = send_sample.fire_block_mask;
+      if (!plan.control)
+        blocked |= send_no_control;
+      if (update.plan.control && !update.plan.fire)
+        blocked |= send_planner_no_fire;
+      if (send_sample.target_valid &&
+          !(std::hypot(plan.target_yaw, plan.target_pitch) < update.plan.fire_tolerance))
+        blocked |= send_angle_outside;
+      if (update.generated_at == epoch)
+        blocked |= send_no_plan;
+      else if (!plan_fresh)
+        blocked |= send_plan_expired;
+      if (!feedback_fresh)
+        blocked |= send_feedback_stale;
+      if (!observation_known)
+        blocked |= send_no_observation;
+      else {
+        if (observation_age > runtime_config.control_timeout)
+          blocked |= send_observation_control_stale;
+        if (observation_age > runtime_config.fire_timeout)
+          blocked |= send_observation_fire_stale;
+      }
+
       if (!plan_fresh || !feedback_fresh || !observation_known ||
           observation_age > runtime_config.control_timeout) {
         plan = Plan{};  // startup, no target, stale plan/pose, or stale real observation
@@ -237,6 +274,7 @@ int run(const RuntimeOptions & options)
 
       // The gimbal must interpret a continuous mode=2 stream as a fire permission,
       // not as one trigger event per received frame.
+      const auto sent_at = std::chrono::steady_clock::now();
 #ifdef DUST_ENABLE_SIMULATOR
       if (talos_backend) {
         const float distance_m = plan.control ? update.distance_m : -1.0F;
@@ -256,6 +294,9 @@ int run(const RuntimeOptions & options)
       }
 #endif
 
+      send_sample.mode = plan.mode();
+      send_queue.push(send_accumulator.observe(sent_at, send_sample));
+
       next += period;
       if (next <= now)
         next = now + period;  // skip missed send slots; do not burst to catch up
@@ -267,7 +308,7 @@ int run(const RuntimeOptions & options)
   auto telemetry_thread = std::thread([&]() {
     constexpr auto period = 20ms;
     auto next = std::chrono::steady_clock::now();
-    const auto t0 = next;
+    const auto t0 = telemetry_origin;
     uint16_t last_bullet_count = 0;
     uint64_t last_latency_sequence = 0;
     auto last_latency_log = t0;
@@ -311,7 +352,8 @@ int run(const RuntimeOptions & options)
         {latest_capture_ms.load(), latest_submit_ms.load(), latest_inference_ms.load(),
          latest_inference_wait_ms.load(), latest_postprocess_ms.load(), latest_delivery_ms.load()},
         detector_drops,
-        latency_summary};
+        latency_summary,
+        send_queue.front()};
       auto data = telemetry_json(snapshot);
       plotter.plot(data);
       visualizer.publish_telemetry(std::move(data),

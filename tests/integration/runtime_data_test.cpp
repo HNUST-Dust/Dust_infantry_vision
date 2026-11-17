@@ -75,7 +75,19 @@ void check_telemetry()
                              {7, 8, true},
                              {10, 20, 30, 40, 50, 60},
                              drops,
-                             latency};
+                             latency,
+                             {}};
+  snapshot.send.sequence = 101;
+  snapshot.send.plan_id = 42;
+  snapshot.send.t = 0.038;
+  snapshot.send.mode = 1;
+  snapshot.send.target_valid = true;
+  snapshot.send.target_yaw = 0.04;
+  snapshot.send.target_pitch = -0.02;
+  snapshot.send.fire_tolerance = 0.035;
+  snapshot.send.fire_block_mask = send_observation_fire_stale | send_angle_outside;
+  snapshot.send.mode2_time_s = 0.012;
+  snapshot.send.total_time_s = 0.03;
   const auto data = telemetry_json(snapshot);
   assert(std::abs(data.at("t").get<double>() - 0.04) < 1e-12);
   assert(std::abs(data.at("aim_age_ms").get<double>() - 5.0) < 1e-12);
@@ -85,6 +97,17 @@ void check_telemetry()
   assert(data.at("aim_plan_sequence") == 17 && data.at("feedback_sequence") == 19);
   assert(data.at("plan_control").is_boolean() && data.at("plan_control") == true);
   assert(data.at("mode") == 2 && data.at("fire") == 1 && data.at("fired") == 1);
+  assert(data.at("send_valid") == true && data.at("send_mode") == 1);
+  assert(data.at("send_t") == 0.038 && data.at("send_sequence") == 101);
+  assert(data.at("send_plan_id") == 42 && data.at("send_plan_id") != data.at("aim_plan_sequence"));
+  assert(data.at("send_target_valid") == true);
+  assert(data.at("send_target_yaw") == 0.04 && data.at("send_target_pitch") == -0.02);
+  assert(data.at("send_fire_tolerance") == 0.035);
+  assert(data.at("send_fire_block_mask") == (send_observation_fire_stale | send_angle_outside));
+  assert(data.at("send_block_observation_fire_stale") == true);
+  assert(data.at("send_block_angle_outside") == true);
+  assert(data.at("send_block_plan_expired") == false);
+  assert(data.at("send_mode2_time_s") == 0.012 && data.at("send_total_time_s") == 0.03);
   assert(data.at("send_status_code") == 4 && data.at("send_status") == "feedback_stale");
   assert(data.at("has_target") == 1 && data.at("w") == 8.0 && data.at("angle") == 1.5);
   assert(data.at("target_z") == 0.5 && data.at("target_vz") == -0.25);
@@ -94,6 +117,52 @@ void check_telemetry()
   const auto missing = telemetry_json(snapshot);
   assert(missing.at("has_target") == 0 && missing.at("w") == 0.0);
   assert(!missing.contains("target_z") && !missing.contains("angle"));
+  snapshot.send = {};
+  const auto before_first_send = telemetry_json(snapshot);
+  assert(before_first_send.at("send_valid") == false);
+  assert(before_first_send.at("send_target_valid") == false);
+  assert(before_first_send.at("send_target_yaw").is_null());
+  assert(before_first_send.at("send_target_pitch").is_null());
+  assert(before_first_send.at("send_fire_tolerance").is_null());
+  assert(before_first_send.at("send_total_time_s") == 0.0);
+
+  // Control may be cleared after relative_to(); retain the error for diagnosing that gate.
+  snapshot.send.sequence = 102;
+  snapshot.send.target_valid = true;
+  snapshot.send.target_yaw = 0.2;
+  snapshot.send.fire_block_mask = send_plan_expired | send_feedback_stale;
+  const auto expired = telemetry_json(snapshot);
+  assert(expired.at("send_mode") == 0 && expired.at("send_target_yaw") == 0.2);
+  assert(expired.at("send_block_plan_expired") == true);
+  assert(expired.at("send_block_feedback_stale") == true);
+}
+
+void check_send_durations()
+{
+  const auto origin = std::chrono::steady_clock::time_point{} + 1s;
+  SendTelemetryAccumulator accumulator(origin);
+  SendTelemetrySnapshot sample;
+  sample.plan_id = 42;
+  sample.mode = 0;
+  const auto first = accumulator.observe(origin + 100ms, sample);
+  assert(first.sequence == 1 && first.plan_id == 42);
+  assert(std::abs(first.t - 0.1) < 1e-12);
+  assert(first.total_time_s == 0.0 && first.mode2_time_s == 0.0);
+  sample.mode = 2;
+  accumulator.observe(origin + 110ms, sample);
+  sample.mode = 1;
+  accumulator.observe(origin + 112ms, sample);
+  sample.mode = 2;
+  accumulator.observe(origin + 115ms, sample);
+  sample.mode = 0;
+  const auto last = accumulator.observe(origin + 130ms, sample);
+  assert(last.sequence == 5 && last.mode == 0);
+  assert(std::abs(last.total_time_s - 0.03) < 1e-12);
+  // Includes a 2 ms fire window, even though telemetry only sampled first and last.
+  assert(std::abs(last.mode2_time_s - 0.017) < 1e-12);
+  assert(
+    std::abs((last.mode2_time_s - first.mode2_time_s) / (last.total_time_s - first.total_time_s) -
+             17.0 / 30.0) < 1e-12);
 }
 }  // namespace
 
@@ -102,4 +171,5 @@ int main(int argc, char * argv[])
   assert(argc == 3);
   check_config(argv[1], argv[2]);
   check_telemetry();
+  check_send_durations();
 }

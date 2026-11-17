@@ -62,6 +62,33 @@ nlohmann::json telemetry_json(const TelemetrySnapshot & snapshot)
     "ready",          "no_control",     "no_plan",          "plan_expired",
     "feedback_stale", "no_observation", "observation_stale"};
   data["send_status"] = send_names[snapshot.send_status];
+  const auto & send = snapshot.send;
+  data["send_valid"] = send.sequence != 0;
+  data["send_mode"] = send.mode;
+  data["send_t"] = send.t;
+  data["send_sequence"] = send.sequence;
+  data["send_plan_id"] = send.plan_id;
+  data["send_target_valid"] = send.target_valid;
+  data["send_target_yaw"] =
+    send.target_valid ? nlohmann::json(send.target_yaw) : nlohmann::json(nullptr);
+  data["send_target_pitch"] =
+    send.target_valid ? nlohmann::json(send.target_pitch) : nlohmann::json(nullptr);
+  data["send_fire_tolerance"] =
+    send.target_valid ? nlohmann::json(send.fire_tolerance) : nlohmann::json(nullptr);
+  data["send_fire_block_mask"] = send.fire_block_mask;
+  data["send_block_no_control"] = (send.fire_block_mask & send_no_control) != 0;
+  data["send_block_planner_no_fire"] = (send.fire_block_mask & send_planner_no_fire) != 0;
+  data["send_block_angle_outside"] = (send.fire_block_mask & send_angle_outside) != 0;
+  data["send_block_no_plan"] = (send.fire_block_mask & send_no_plan) != 0;
+  data["send_block_plan_expired"] = (send.fire_block_mask & send_plan_expired) != 0;
+  data["send_block_feedback_stale"] = (send.fire_block_mask & send_feedback_stale) != 0;
+  data["send_block_no_observation"] = (send.fire_block_mask & send_no_observation) != 0;
+  data["send_block_observation_control_stale"] =
+    (send.fire_block_mask & send_observation_control_stale) != 0;
+  data["send_block_observation_fire_stale"] =
+    (send.fire_block_mask & send_observation_fire_stale) != 0;
+  data["send_mode2_time_s"] = send.mode2_time_s;
+  data["send_total_time_s"] = send.total_time_s;
   data["planner_diagnostic_dropped"] = snapshot.trace.dropped;
   data["planner_trace_written"] = snapshot.trace.written;
   data["planner_trace_enabled"] = snapshot.trace.enabled;

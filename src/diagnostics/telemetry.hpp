@@ -6,6 +6,7 @@
 #include <optional>
 
 #include "tools/diagnostics/latency_stats.hpp"
+#include "src/diagnostics/send_telemetry.hpp"
 
 namespace io
 {
@@ -56,6 +57,7 @@ struct TelemetrySnapshot
   DetectionTiming timing;
   const multithread::DetectorDropCounts & detector_drops;
   const std::optional<tools::LatencySummary> & latency;
+  SendTelemetrySnapshot send;
 };
 
 nlohmann::json telemetry_json(const TelemetrySnapshot & snapshot);

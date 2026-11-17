@@ -23,6 +23,30 @@
 
 `RuntimeVisualizer` 根据本地窗口开关和远程订阅决定是否保留源图，绘制叠加层并发布图像。绘制时借用检测帧和跟踪数据。Foxglove 队列持有自己的图像引用，本地缩放在发布之后执行。
 
+### 最终发送遥测
+
+`/vision/telemetry` 原有的 `mode`、`fire` 仍表示规划结果。`send_mode` 表示发送线程完成相对角更新、角度检查和超时门控后交给 IO 的模式（0 停止控制、1 控制但不允许开火、2 允许开火），不代表下位机已收到或实际发弹。
+
+发送线程每轮复制一份完整快照，遥测线程约 50 Hz 读取。`send_valid` 表示至少已有一次发送；`send_sequence` 是发送序号；`send_t` 是发送调用前的单调时间，单位秒，与遥测 `t` 共用起点。`send_plan_id` 对应同次运行 Planner trace 的 `plan_id`，不是检测帧编号；trace 的相对时间另有起点，应按 ID 关联。
+
+`send_target_yaw`、`send_target_pitch` 是使用该次发送反馈计算的目标角误差，`send_fire_tolerance` 是该计划的开火容差，单位均为 rad。有效性由 `send_target_valid` 表示；无有效目标时三项为 null。超时门控清空控制指令时，仍保留门控前的有效误差，便于分析拒绝原因。
+
+`send_fire_block_mask` 可同时包含多个未满足条件，另有对应的 `send_block_*` 布尔字段供 Plot 直接选择：
+
+| 位值 | 布尔字段后缀 | 含义 |
+| --- | --- | --- |
+| 1 | `no_control` | 无有效相对控制计划 |
+| 2 | `planner_no_fire` | 规划结果未允许开火；结合 trace 检查选板、预瞄和规划门控 |
+| 4 | `angle_outside` | 发送时合成目标角误差不小于开火容差 |
+| 8 | `no_plan` | 尚无生成的计划 |
+| 16 | `plan_expired` | 计划生成时间或有效期检查不通过 |
+| 32 | `feedback_stale` | 云台反馈有效性或新鲜度检查不通过 |
+| 64 | `no_observation` | 无真实匹配观测时间 |
+| 128 | `observation_control_stale` | 真实观测超过控制时限 |
+| 256 | `observation_fire_stale` | 真实观测超过开火时限；现有 `send_status` 此时仍可能为 ready |
+
+`send_total_time_s` 和 `send_mode2_time_s` 在约 500 Hz 的发送循环累计。上一模式占有到下一次发送调用前的时间间隔；从首次发送开始计时，不含启动等待。50 Hz 遥测之间短暂出现的 mode=2 也会被计入。区间许可占比使用 `Δsend_mode2_time_s / Δsend_total_time_s`；最新模式快照本身不能完整呈现两条遥测之间的每次切换。
+
 ## 构建和验证
 
 预设用到 CMake 3.21+、Ninja 和 C++17 工具链。从仓库根目录执行：

@@ -139,6 +139,7 @@ class Client:
         self.sock.settimeout(0.2)
 
         self.channels: dict[str, int] = {}
+        self.channel_details: dict[str, dict] = {}
         self.capabilities: set[str] = set()
         self.supported_encodings: list[str] = []
         self.images: list[tuple[int, bytes]] = []   # (log_time_ns, jpeg bytes)
@@ -173,6 +174,7 @@ class Client:
             # 通道可以在 serverInfo 之后才发广告，所以每条文本消息都要收集一次
             for channel in message.get("channels", []):
                 self.channels[channel["topic"]] = channel["id"]
+                self.channel_details[channel["topic"]] = channel
             if message.get("op") == "serviceCallFailure":
                 raise AssertionError(f"service call failed: {message}")
             return
@@ -255,6 +257,49 @@ def assert_telemetry_quality(telemetry: list[tuple[int, dict]], label: str) -> N
     assert telemetry[-1][1]["tracker_state"] == 2
 
 
+def assert_send_telemetry_schema(client: Client, label: str) -> None:
+    """Plot discovery needs explicitly advertised fields, not additionalProperties."""
+    channel = client.channel_details[TELEMETRY_TOPIC]
+    assert channel["encoding"] == "json", f"{label}: telemetry encoding is not JSON"
+    assert channel["schemaEncoding"] == "jsonschema", (
+        f"{label}: telemetry schema encoding is not JSON Schema"
+    )
+    schema = json.loads(channel["schema"])
+    assert schema["type"] == "object"
+    properties = schema["properties"]
+    expected_types = {
+        "send_valid": "boolean",
+        "send_mode": "integer",
+        "send_t": "number",
+        "send_sequence": "integer",
+        "send_plan_id": "integer",
+        "send_target_valid": "boolean",
+        "send_target_yaw": ["number", "null"],
+        "send_target_pitch": ["number", "null"],
+        "send_fire_tolerance": ["number", "null"],
+        "send_fire_block_mask": "integer",
+        "send_block_no_control": "boolean",
+        "send_block_planner_no_fire": "boolean",
+        "send_block_angle_outside": "boolean",
+        "send_block_no_plan": "boolean",
+        "send_block_plan_expired": "boolean",
+        "send_block_feedback_stale": "boolean",
+        "send_block_no_observation": "boolean",
+        "send_block_observation_control_stale": "boolean",
+        "send_block_observation_fire_stale": "boolean",
+        "send_mode2_time_s": "number",
+        "send_total_time_s": "number",
+    }
+    for field, expected_type in expected_types.items():
+        assert field in properties, f"{label}: {field} is not advertised for Plot discovery"
+        assert properties[field]["type"] == expected_type, (
+            f"{label}: {field} has schema type {properties[field]['type']!r}, "
+            f"expected {expected_type!r}"
+        )
+        assert properties[field].get("description"), f"{label}: {field} has no description"
+    assert properties["send_mode"]["enum"] == [0, 1, 2]
+
+
 def assert_scheduling_status(status: dict, label: str) -> None:
     # 发布线程的调度降级：测试程序用默认的 --foxglove-sched=auto。
     # data_sched 的 nice 是确定性断言——提高 nice 值不需要任何特权，必定生效；
@@ -292,6 +337,7 @@ def run_single_port(binary: str) -> None:
         )
         assert "json" in client.supported_encodings
         assert "services" not in client.capabilities, "vision stream must not expose services"
+        assert_send_telemetry_schema(client, "single port")
 
         client.subscribe([IMAGE_TOPIC, TELEMETRY_TOPIC, STATUS_TOPIC])
         client.collect(COLLECT_SECONDS)
@@ -347,6 +393,7 @@ def run_split_ports(binary: str) -> None:
         assert IMAGE_TOPIC not in data_client.channels, (
             "data port must not advertise the image topic"
         )
+        assert_send_telemetry_schema(data_client, "split ports")
 
         image_client.subscribe([IMAGE_TOPIC])
         data_client.subscribe([TELEMETRY_TOPIC, STATUS_TOPIC])
