@@ -12,7 +12,7 @@ runtime:
   feedback_timeout_ms: 100 # 云台姿态反馈超时后停止目标控制
   plan_timeout_ms: 20     # 计划生成超时后停止目标控制
   planner_diagnostics:
-    trace_enabled: false  # 下一次运行记录完整规划；达到上限后自动停止记录
+    trace_enabled: true  # 下一次运行记录完整规划；达到上限后自动停止记录
     trace_mode: all
     trace_directory: logs/planner_trace
     trace_max_mb: 512
@@ -129,7 +129,7 @@ mpc_cost_yaw:
   scales: [0.1, 1.0, 10.0] # rad, rad/s, rad/s²
   weights: [1.0, 0.09, 0.09]
 
-max_pitch_acc: 10
+max_pitch_acc: 20
 mpc_cost_pitch:
   scales: [0.1, 1.0, 10.0] # rad, rad/s, rad/s²
-  weights: [3, 0.09, 0.2]
+  weights: [3.0, 0.09, 0.2]
