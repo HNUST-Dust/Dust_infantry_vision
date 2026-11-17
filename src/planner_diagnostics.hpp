@@ -13,6 +13,11 @@
 #include "tools/concurrency/thread_safe_queue.hpp"
 #include "tools/diagnostics/latency_stats.hpp"
 
+namespace tools
+{
+class YamlConfig;
+}
+
 namespace auto_aim::runtime
 {
 struct PlannerDiagnosticsConfig
@@ -21,6 +26,7 @@ struct PlannerDiagnosticsConfig
   bool trace_all = false;
   std::string directory = "logs/planner_trace";
   uint64_t max_bytes = 32 * 1024 * 1024;
+  static PlannerDiagnosticsConfig parse(const tools::YamlConfig & yaml);
   static PlannerDiagnosticsConfig load(const std::string & path);
 };
 

@@ -1,0 +1,11 @@
+name: Tools tests
+on: [push, pull_request]
+jobs:
+  tools-tests:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y libeigen3-dev ninja-build
+      - run: cmake --preset tools-tests
+      - run: cmake --build --preset tools-tests
+      - run: ctest --preset tools-tests

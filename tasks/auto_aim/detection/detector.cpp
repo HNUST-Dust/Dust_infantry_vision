@@ -1,30 +1,52 @@
 #include "detector.hpp"
 
 #include <fmt/chrono.h>
-#include <yaml-cpp/yaml.h>
+#include "tools/runtime/yaml_config.hpp"
 
 #include <filesystem>
+#include <numeric>
 
 #include "tools/image/img_tools.hpp"
 #include "tools/diagnostics/logger.hpp"
 
 namespace auto_aim
 {
-Detector::Detector(const std::string & config_path, bool debug)
-    : classifier_(config_path), debug_(debug)
+DetectorConfig DetectorConfig::parse(const tools::YamlConfig & yaml)
 {
-  auto yaml = YAML::LoadFile(config_path);
+  DetectorConfig config;
+  config.classifier = ClassifierConfig::parse(yaml);
+  config.threshold = yaml.get<double>("threshold");
+  config.max_angle_error = yaml.get<double>("max_angle_error") / 57.3;
+  config.min_lightbar_ratio = yaml.get<double>("min_lightbar_ratio");
+  config.max_lightbar_ratio = yaml.get<double>("max_lightbar_ratio");
+  config.min_lightbar_length = yaml.get<double>("min_lightbar_length");
+  config.min_armor_ratio = yaml.get<double>("min_armor_ratio");
+  config.max_armor_ratio = yaml.get<double>("max_armor_ratio");
+  config.max_side_ratio = yaml.get<double>("max_side_ratio");
+  config.min_confidence = yaml.get<double>("min_confidence");
+  config.max_rectangular_error = yaml.get<double>("max_rectangular_error") / 57.3;
 
-  threshold_ = yaml["threshold"].as<double>();
-  max_angle_error_ = yaml["max_angle_error"].as<double>() / 57.3;  // degree to rad
-  min_lightbar_ratio_ = yaml["min_lightbar_ratio"].as<double>();
-  max_lightbar_ratio_ = yaml["max_lightbar_ratio"].as<double>();
-  min_lightbar_length_ = yaml["min_lightbar_length"].as<double>();
-  min_armor_ratio_ = yaml["min_armor_ratio"].as<double>();
-  max_armor_ratio_ = yaml["max_armor_ratio"].as<double>();
-  max_side_ratio_ = yaml["max_side_ratio"].as<double>();
-  min_confidence_ = yaml["min_confidence"].as<double>();
-  max_rectangular_error_ = yaml["max_rectangular_error"].as<double>() / 57.3;  // degree to rad
+  return config;
+}
+
+Detector::Detector(const std::string & config_path, bool debug)
+    : Detector(DetectorConfig::parse(tools::YamlConfig(config_path)), debug)
+{
+}
+
+Detector::Detector(const DetectorConfig & config, bool debug)
+    : classifier_(config.classifier), debug_(debug)
+{
+  threshold_ = config.threshold;
+  max_angle_error_ = config.max_angle_error;
+  min_lightbar_ratio_ = config.min_lightbar_ratio;
+  max_lightbar_ratio_ = config.max_lightbar_ratio;
+  min_lightbar_length_ = config.min_lightbar_length;
+  min_armor_ratio_ = config.min_armor_ratio;
+  max_armor_ratio_ = config.max_armor_ratio;
+  max_side_ratio_ = config.max_side_ratio;
+  min_confidence_ = config.min_confidence;
+  max_rectangular_error_ = config.max_rectangular_error;
 
   save_path_ = "patterns";
   std::filesystem::create_directory(save_path_);

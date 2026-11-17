@@ -5,7 +5,7 @@
 #include <limits>
 #include <numeric>
 
-#include <yaml-cpp/yaml.h>
+#include "tools/runtime/yaml_config.hpp"
 
 #include <tuple>
 
@@ -15,59 +15,54 @@
 
 namespace auto_aim
 {
-Tracker::Tracker(const std::string & config_path, Solver & solver)
-    : solver_{solver}, detect_count_(0),
-      temp_lost_count_(0), state_{TrackerState::lost}, pre_state_{TrackerState::lost},
-      last_timestamp_(std::chrono::steady_clock::now()),
-      last_observed_timestamp_(std::chrono::steady_clock::time_point{}), omni_target_priority_{
-                                                                           ArmorPriority::fifth}
+TrackerConfig TrackerConfig::parse(const tools::YamlConfig & yaml)
 {
-  auto yaml = YAML::LoadFile(config_path);
-  enemy_color_ = (yaml["enemy_color"].as<std::string>() == "red") ? Color::red : Color::blue;
-  min_detect_count_ = yaml["min_detect_count"].as<int>();
-  max_temp_lost_count_ = yaml["max_temp_lost_count"].as<int>();
-  outpost_max_temp_lost_count_ = yaml["outpost_max_temp_lost_count"].as<int>();
-  normal_temp_lost_count_ = max_temp_lost_count_;
-  if (const auto association = yaml["armor_association"]; association) {
-    if (association["enabled"])
-      armor_association_config_.enabled = association["enabled"].as<bool>();
-    if (association["center_gate_px"])
-      armor_association_config_.center_gate_px = association["center_gate_px"].as<double>();
-    if (association["corner_gate_px"])
-      armor_association_config_.corner_gate_px = association["corner_gate_px"].as<double>();
-    if (association["angle_gate_rad"])
-      armor_association_config_.angle_gate_rad = association["angle_gate_rad"].as<double>();
-    if (association["perimeter_ratio_gate"])
-      armor_association_config_.perimeter_ratio_gate =
-        association["perimeter_ratio_gate"].as<double>();
-    if (const auto image_observation = association["image_observation"]; image_observation) {
-      if (image_observation["enabled"])
-        armor_association_config_.image_observation_enabled =
-          image_observation["enabled"].as<bool>();
-      if (image_observation["point_sigma_px"])
-        armor_association_config_.image_point_sigma_px =
-          image_observation["point_sigma_px"].as<double>();
-    }
-    if (const auto pnp_observation = association["pnp_observation"]; pnp_observation) {
-      if (pnp_observation["point_sigma_px"])
-        armor_association_config_.pnp_point_sigma_px =
-          pnp_observation["point_sigma_px"].as<double>();
-      if (pnp_observation["angle_prior_rad"])
-        armor_association_config_.pnp_angle_prior_rad =
-          pnp_observation["angle_prior_rad"].as<double>();
-    }
+  TrackerConfig config;
+  config.enemy_color = yaml.get<std::string>("enemy_color") == "red" ? Color::red : Color::blue;
+  config.min_detect_count = yaml.get<int>("min_detect_count");
+  config.max_temp_lost_count = yaml.get<int>("max_temp_lost_count");
+  config.outpost_max_temp_lost_count = yaml.get<int>("outpost_max_temp_lost_count");
+
+  const auto association = yaml.section("armor_association");
+  auto & a = config.armor_association;
+  a.enabled = association.get("enabled", a.enabled);
+  a.center_gate_px = association.get("center_gate_px", a.center_gate_px);
+  a.corner_gate_px = association.get("corner_gate_px", a.corner_gate_px);
+  a.angle_gate_rad = association.get("angle_gate_rad", a.angle_gate_rad);
+  a.perimeter_ratio_gate = association.get("perimeter_ratio_gate", a.perimeter_ratio_gate);
+  const auto image = association.section("image_observation");
+  a.image_observation_enabled = image.get("enabled", a.image_observation_enabled);
+  a.image_point_sigma_px = image.get("point_sigma_px", a.image_point_sigma_px);
+  const auto pnp = association.section("pnp_observation");
+  a.pnp_point_sigma_px = pnp.get("point_sigma_px", a.pnp_point_sigma_px);
+  a.pnp_angle_prior_rad = pnp.get("angle_prior_rad", a.pnp_angle_prior_rad);
+
+  if (yaml.has("dynamic_roi")) {
+    const auto roi = yaml.section("dynamic_roi");
+    config.dynamic_roi_enabled = roi.get<bool>("enabled");
+    config.dynamic_roi.expand_ratio = roi.get<double>("expand_ratio");
+    config.dynamic_roi.base_expand_ratio = roi.get<double>("base_expand_ratio");
+    config.dynamic_roi.lost_time = roi.get<double>("lost_time");
+    config.dynamic_roi.net_ratio = roi.get("net_ratio", 1.0);
   }
-  if (const auto roi_config = yaml["dynamic_roi"]; roi_config) {
-    dynamic_roi_enabled_ = roi_config["enabled"].as<bool>();
-    dynamic_roi_config_.expand_ratio = roi_config["expand_ratio"].as<double>();
-    dynamic_roi_config_.base_expand_ratio = roi_config["base_expand_ratio"].as<double>();
-    dynamic_roi_config_.lost_time = roi_config["lost_time"].as<double>();
-    if (roi_config["net_ratio"]) {
-      dynamic_roi_config_.net_ratio = roi_config["net_ratio"].as<double>();
-    } else {
-      dynamic_roi_config_.net_ratio = 1.0;
-    }
-  }
+  return config;
+}
+
+Tracker::Tracker(const std::string & config_path, Solver & solver)
+    : Tracker(TrackerConfig::parse(tools::YamlConfig(config_path)), solver)
+{
+}
+
+Tracker::Tracker(const TrackerConfig & config, Solver & solver)
+    : solver_(solver), enemy_color_(config.enemy_color), min_detect_count_(config.min_detect_count),
+      max_temp_lost_count_(config.max_temp_lost_count), detect_count_(0), temp_lost_count_(0),
+      outpost_max_temp_lost_count_(config.outpost_max_temp_lost_count),
+      normal_temp_lost_count_(config.max_temp_lost_count), state_(TrackerState::lost),
+      pre_state_(TrackerState::lost), last_timestamp_(std::chrono::steady_clock::now()),
+      last_observed_timestamp_(), omni_target_priority_(ArmorPriority::fifth),
+      dynamic_roi_enabled_(config.dynamic_roi_enabled), dynamic_roi_config_(config.dynamic_roi),
+      armor_association_config_(config.armor_association)
+{
 }
 
 const char * to_string(TrackerState state)

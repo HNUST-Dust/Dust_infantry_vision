@@ -3,14 +3,29 @@
 #include "tools/protocol/crc.hpp"
 #include "tools/diagnostics/logger.hpp"
 #include "tools/math/math_tools.hpp"
-#include "tools/runtime/yaml.hpp"
+#include "tools/runtime/yaml_config.hpp"
 
 #include <cmath>
 #include <stdexcept>
 
 namespace io
 {
-Gimbal::Gimbal(const std::string & config_path, bool simulate) : simulate_(simulate)
+GimbalConfig GimbalConfig::parse(const tools::YamlConfig & yaml)
+{
+  GimbalConfig config;
+  config.com_port = yaml.get<std::string>("com_port");
+  config.baudrate = yaml.get("baudrate", config.baudrate);
+  config.skip_crc = yaml.get("skip_gimbal_crc", config.skip_crc);
+  return config;
+}
+
+Gimbal::Gimbal(const std::string & config_path, bool simulate)
+    : Gimbal(simulate ? GimbalConfig{"", 460800, false, true}
+                      : GimbalConfig::parse(tools::YamlConfig(config_path)))
+{
+}
+
+Gimbal::Gimbal(const GimbalConfig & config) : simulate_(config.simulate)
 {
   if (simulate_) {
     state_.bullet_speed = 23.0F;
@@ -20,17 +35,12 @@ Gimbal::Gimbal(const std::string & config_path, bool simulate) : simulate_(simul
     return;
   }
 
-  auto yaml = tools::load(config_path);
-  auto com_port = tools::read<std::string>(yaml, "com_port");
-  const uint32_t baudrate = yaml["baudrate"] ? yaml["baudrate"].as<uint32_t>() : 460800;
-  skip_crc_ = false;  // 默认
-  if (yaml["skip_gimbal_crc"])
-    skip_crc_ = tools::read<bool>(yaml, "skip_gimbal_crc");
+  skip_crc_ = config.skip_crc;
 
   try {
-    serial_.setPort(com_port);
-    serial_.setBaudrate(baudrate);
-    tools::logger()->info("[Gimbal] Serial {} at {} baud", com_port, baudrate);
+    serial_.setPort(config.com_port);
+    serial_.setBaudrate(config.baudrate);
+    tools::logger()->info("[Gimbal] Serial {} at {} baud", config.com_port, config.baudrate);
     auto timeout = serial::Timeout::simpleTimeout(20);
     serial_.setTimeout(timeout);
     serial_.open();

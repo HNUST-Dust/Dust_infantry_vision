@@ -1,15 +1,24 @@
 #include "classifier.hpp"
 
 #include <opencv2/dnn.hpp>
-#include <yaml-cpp/yaml.h>
+#include <opencv2/imgproc.hpp>
+#include "tools/runtime/yaml_config.hpp"
 
 namespace auto_aim
 {
-Classifier::Classifier(const std::string & config_path)
+ClassifierConfig ClassifierConfig::parse(const tools::YamlConfig & yaml)
 {
-  auto yaml = YAML::LoadFile(config_path);
-  auto model = yaml["classify_model"].as<std::string>();
-  net_ = cv::dnn::readNetFromONNX(model);
+  return {yaml.input_path("classify_model")};
+}
+
+Classifier::Classifier(const std::string & config_path)
+    : Classifier(ClassifierConfig::parse(tools::YamlConfig(config_path)))
+{
+}
+
+Classifier::Classifier(const ClassifierConfig & config)
+    : net_(cv::dnn::readNetFromONNX(config.model_path))
+{
 }
 
 Classifier::~Classifier() = default;

@@ -1,25 +1,35 @@
 #ifndef IO__CAMERA_HPP
 #define IO__CAMERA_HPP
 
-#include <chrono>
 #include <memory>
-#include <opencv2/opencv.hpp>
 #include <string>
+
+#include "io/camera_base.hpp"
+
+namespace tools
+{
+class YamlConfig;
+}
 
 namespace io
 {
-class CameraBase
+struct CameraConfig
 {
-public:
-  virtual ~CameraBase() = default;
-  virtual void read(cv::Mat & img, std::chrono::steady_clock::time_point & timestamp) = 0;
-  virtual void stop() = 0;
+  std::string name;
+  std::string vid_pid;
+  double exposure_ms = 0.0;
+  double gamma = 0.0;
+  double gain = 0.0;
+  double frame_rate = 165.0;
+
+  static CameraConfig parse(const tools::YamlConfig & yaml);
 };
 
 class Camera
 {
 public:
   Camera(const std::string & config_path);
+  explicit Camera(const CameraConfig & config);
   void read(cv::Mat & img, std::chrono::steady_clock::time_point & timestamp);
   void stop();
 

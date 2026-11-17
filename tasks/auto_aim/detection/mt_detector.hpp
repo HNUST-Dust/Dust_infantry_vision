@@ -71,6 +71,7 @@ class MultiThreadDetector
 {
 public:
   explicit MultiThreadDetector(const std::string & config_path, bool keep_source = false);
+  explicit MultiThreadDetector(const YoloConfig & config, bool keep_source = false);
   ~MultiThreadDetector();
 
   MultiThreadDetector(const MultiThreadDetector &) = delete;

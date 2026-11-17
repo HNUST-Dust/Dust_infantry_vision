@@ -11,12 +11,35 @@
 #include "detector.hpp"
 #include "yolo.hpp"
 
+namespace tools
+{
+class YamlConfig;
+}
+
 namespace auto_aim
 {
+struct YoloV5Config
+{
+  DetectorConfig detector;
+  bool use_traditional = false;
+  std::array<Color, 4> color_map{{Color::blue, Color::red, Color::extinguish, Color::purple}};
+
+  static YoloV5Config parse(const tools::YamlConfig & yaml);
+};
+
+struct YoloConfig
+{
+  NetDetector::Config net;
+  YoloV5Config postprocess;
+
+  static YoloConfig parse(const tools::YamlConfig & yaml);
+};
+
 class YOLOV5 : public YOLOBase
 {
 public:
   YOLOV5(const std::string & config_path, bool debug);
+  YOLOV5(const YoloV5Config & config, bool debug);
 
   std::list<Armor> postprocess(NetDetector::Result & result, int frame_count,
                                std::optional<cv::Rect> light_roi = std::nullopt) override;

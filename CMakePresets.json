@@ -1,0 +1,48 @@
+{
+  "version": 3,
+  "cmakeMinimumRequired": { "major": 3, "minor": 21, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "tools-tests",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build-tools-tests",
+      "cacheVariables": {
+        "BUILD_APPLICATIONS": "OFF",
+        "BUILD_CALIBRATION_TOOLS": "OFF",
+        "BUILD_TESTING": "ON",
+        "BUILD_OFFLINE_TESTS": "OFF",
+        "BUILD_HARDWARE_TOOLS": "OFF",
+        "BUILD_PERFORMANCE_TOOLS": "OFF"
+      }
+    },
+    {
+      "name": "offline-tests",
+      "inherits": "tools-tests",
+      "binaryDir": "${sourceDir}/build-offline-tests",
+      "cacheVariables": { "BUILD_OFFLINE_TESTS": "ON" }
+    },
+    {
+      "name": "robot",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build-ninja",
+      "cacheVariables": {
+        "BUILD_APPLICATIONS": "ON",
+        "BUILD_CALIBRATION_TOOLS": "ON",
+        "BUILD_TESTING": "ON",
+        "BUILD_OFFLINE_TESTS": "ON",
+        "BUILD_HARDWARE_TOOLS": "ON",
+        "BUILD_PERFORMANCE_TOOLS": "OFF"
+      }
+    }
+  ],
+  "buildPresets": [
+    { "name": "tools-tests", "configurePreset": "tools-tests" },
+    { "name": "offline-tests", "configurePreset": "offline-tests" },
+    { "name": "robot", "configurePreset": "robot" }
+  ],
+  "testPresets": [
+    { "name": "tools-tests", "configurePreset": "tools-tests", "output": { "outputOnFailure": true } },
+    { "name": "offline-tests", "configurePreset": "offline-tests", "output": { "outputOnFailure": true } },
+    { "name": "robot", "configurePreset": "robot", "output": { "outputOnFailure": true } }
+  ]
+}

@@ -49,35 +49,53 @@ option(
 
 message(STATUS "--------------------CMAKE_BUILD_TYPE: ${CMAKE_BUILD_TYPE}--------------------")
 
-find_package(
-  OpenCV REQUIRED
-  COMPONENTS core imgproc imgcodecs videoio highgui calib3d dnn features2d flann
-)
-find_package(fmt REQUIRED)
-find_package(Eigen3 REQUIRED)
-find_package(spdlog REQUIRED)
-find_package(yaml-cpp REQUIRED)
-find_package(nlohmann_json REQUIRED)
-find_package(Threads REQUIRED)
-set(OpenVINO_DIR "/opt/intel/openvino_2024.6.0/runtime/cmake/" CACHE PATH "OpenVINO CMake package directory")
-find_package(OpenVINO REQUIRED COMPONENTS Runtime)
-
+option(BUILD_APPLICATIONS "Build the infantry application" ON)
+option(BUILD_CALIBRATION_TOOLS "Build the calibration programs" ON)
+option(BUILD_HARDWARE_TOOLS "Build manual hardware diagnostics" OFF)
+option(BUILD_PERFORMANCE_TOOLS "Build inference benchmarks" OFF)
+include(CTest)
+option(BUILD_OFFLINE_TESTS "Build offline algorithm regression tests" ${BUILD_APPLICATIONS})
+option(ENABLE_HIKROBOT "Build the HikRobot driver" ON)
+option(ENABLE_MINDVISION "Build the MindVision driver" ON)
 option(ENABLE_TENSORRT "Build the TensorRT 10 inference backend" OFF)
-if(ENABLE_TENSORRT)
-  find_package(CUDAToolkit 12 REQUIRED)
-  set(TensorRT_ROOT "$ENV{TRT_ROOT}" CACHE PATH "TensorRT installation root")
-  find_path(TensorRT_INCLUDE_DIR NvInfer.h HINTS "${TensorRT_ROOT}/include")
-  find_library(TensorRT_LIBRARY nvinfer HINTS "${TensorRT_ROOT}/lib" "${TensorRT_ROOT}/lib64")
-  if(NOT TensorRT_INCLUDE_DIR OR NOT TensorRT_LIBRARY)
-    message(FATAL_ERROR "TensorRT headers/library missing; set TensorRT_ROOT to a TensorRT 10 installation")
-  endif()
-  add_library(dust_tensorrt INTERFACE)
-  target_include_directories(dust_tensorrt SYSTEM INTERFACE "${TensorRT_INCLUDE_DIR}")
-  target_link_libraries(dust_tensorrt INTERFACE "${TensorRT_LIBRARY}" CUDA::cudart)
+option(ENABLE_SIMULATOR "Build the Talos simulator IO backend" OFF)
+
+set(build_offline OFF)
+if(BUILD_TESTING AND BUILD_OFFLINE_TESTS)
+  set(build_offline ON)
+endif()
+set(build_inference OFF)
+if(BUILD_APPLICATIONS OR BUILD_HARDWARE_TOOLS OR BUILD_PERFORMANCE_TOOLS)
+  set(build_inference ON)
+endif()
+set(build_pipeline OFF)
+if(BUILD_APPLICATIONS OR BUILD_HARDWARE_TOOLS OR build_offline)
+  set(build_pipeline ON)
+endif()
+set(build_camera OFF)
+if(BUILD_APPLICATIONS OR BUILD_CALIBRATION_TOOLS OR BUILD_HARDWARE_TOOLS)
+  set(build_camera ON)
+endif()
+set(build_foxglove_calibration OFF)
+if(BUILD_CALIBRATION_TOOLS AND ENABLE_FOXGLOVE_CALIBRATION)
+  set(build_foxglove_calibration ON)
+endif()
+set(build_foxglove_vision OFF)
+if(BUILD_APPLICATIONS AND ENABLE_FOXGLOVE_VISION)
+  set(build_foxglove_vision ON)
 endif()
 
-option(ENABLE_SIMULATOR "Build the Talos simulator IO backend" OFF)
-if(ENABLE_SIMULATOR)
+find_package(Threads REQUIRED)
+find_package(Eigen3 REQUIRED)
+if(build_camera OR build_pipeline OR build_inference)
+  find_package(OpenCV REQUIRED COMPONENTS core imgproc imgcodecs videoio highgui calib3d dnn)
+  find_package(fmt REQUIRED)
+  find_package(spdlog REQUIRED)
+  find_package(yaml-cpp REQUIRED)
+  find_package(nlohmann_json REQUIRED)
+endif()
+
+if(ENABLE_SIMULATOR AND BUILD_APPLICATIONS)
   set(TALOS_IPC_ROOT "${PROJECT_SOURCE_DIR}/../bevy_robomaster_simulator" CACHE PATH "Bevy Talos IPC crate root")
   foreach(TALOS_IPC_REQUIRED_FILE
       Cargo.toml Cargo.lock crates/talos-ipc/Cargo.toml crates/talos-ipc/include/talos_ipc.h)
@@ -110,48 +128,61 @@ if(ENABLE_SIMULATOR)
     INTERFACE_INCLUDE_DIRECTORIES "${TALOS_IPC_ROOT}/crates/talos-ipc/include"
   )
 endif()
-message(STATUS "Talos simulator backend: ${ENABLE_SIMULATOR}")
-
-# 仓库根即 include 根：全仓 198 处 #include "tools/diagnostics/logger.hpp" 这类形式依赖它
-# （tools 121 / tasks 46 / io 23 / visualization 6 / calibration 2）。
-# 用 INTERFACE 目标表达，由各 target 显式链接，取代原来的全局
-# include_directories(${PROJECT_SOURCE_DIR}) / (${EIGEN3_INCLUDE_DIR}) / (${OpenCV_INCLUDE_DIRS})。
 add_library(dust_include INTERFACE)
 target_include_directories(dust_include INTERFACE ${PROJECT_SOURCE_DIR})
 add_library(dust::include ALIAS dust_include)
 
 add_subdirectory(tools)
-add_subdirectory(io)
-add_subdirectory(tasks/auto_aim)
+if(build_camera OR build_pipeline)
+  add_subdirectory(io)
+endif()
+if(build_pipeline OR build_inference)
+  add_subdirectory(tasks/auto_aim)
+endif()
 
-###################src###################
-add_executable(infantry src/infantry.cpp src/auto_aim_runtime.cpp src/planner_diagnostics.cpp visualization/vision_overlay.cpp)
+if(BUILD_APPLICATIONS OR build_offline)
+  add_library(planner_diagnostics STATIC src/planner_diagnostics.cpp)
+  target_link_libraries(planner_diagnostics PUBLIC aim_planner nlohmann_json::nlohmann_json
+    PRIVATE tools)
+endif()
 
-# 只声明直接使用的库：OpenCV / Eigen / yaml-cpp / nlohmann / spdlog / OpenVINO /
-# Threads 与仓库根 include 由 tools / io / auto_aim 的 PUBLIC（及 PRIVATE 的 LINK_ONLY）
-# 需求传播而来，不再逐个手抄。
-target_link_libraries(infantry PRIVATE fmt::fmt nlohmann_json::nlohmann_json ${OpenCV_LIBS} Threads::Threads auto_aim tools io)
+if(BUILD_APPLICATIONS)
+  add_library(infantry_runtime STATIC
+    src/app_config.cpp src/auto_aim_runtime.cpp src/diagnostics/telemetry.cpp
+    src/visualization/runtime_visualizer.cpp visualization/vision_overlay.cpp)
+  target_link_libraries(infantry_runtime
+    PUBLIC dust::include
+    PRIVATE aim_detection aim_tracking planner_diagnostics camera_io gimbal_io tools
+            opencv_highgui opencv_imgproc)
+  if(ENABLE_SIMULATOR)
+    target_link_libraries(infantry_runtime PRIVATE talos_io)
+  endif()
 
-#################calibration################
-add_executable(capture calibration/capture.cpp)
-add_executable(calibrate_camera calibration/calibrate_camera.cpp)
-add_executable(calibrate_handeye calibration/calibrate_handeye.cpp)
-add_executable(calibrate_robotworld_handeye calibration/calibrate_robotworld_handeye.cpp)
-add_executable(split_video calibration/split_video.cpp)
+  add_executable(infantry src/infantry.cpp)
+  target_link_libraries(infantry PRIVATE infantry_runtime tools opencv_core)
+endif()
 
-target_link_libraries(
-  capture PRIVATE fmt::fmt nlohmann_json::nlohmann_json Eigen3::Eigen ${OpenCV_LIBS} tools io
-)
-target_link_libraries(calibrate_camera PRIVATE fmt::fmt yaml-cpp ${OpenCV_LIBS} tools)
-target_link_libraries(
-  calibrate_handeye PRIVATE fmt::fmt yaml-cpp Eigen3::Eigen ${OpenCV_LIBS} tools
-)
-target_link_libraries(
-  calibrate_robotworld_handeye PRIVATE fmt::fmt yaml-cpp Eigen3::Eigen ${OpenCV_LIBS} tools
-)
-target_link_libraries(split_video PRIVATE fmt::fmt ${OpenCV_LIBS} tools)
+if(BUILD_CALIBRATION_TOOLS)
+  add_executable(capture calibration/capture.cpp)
+  add_executable(calibrate_camera calibration/calibrate_camera.cpp)
+  add_executable(calibrate_handeye calibration/calibrate_handeye.cpp)
+  add_executable(calibrate_robotworld_handeye calibration/calibrate_robotworld_handeye.cpp)
+  add_executable(split_video calibration/split_video.cpp)
 
-if(ENABLE_FOXGLOVE_CALIBRATION OR ENABLE_FOXGLOVE_VISION)
+  target_link_libraries(
+    capture PRIVATE fmt::fmt nlohmann_json::nlohmann_json Eigen3::Eigen ${OpenCV_LIBS} tools camera_io gimbal_io
+  )
+  target_link_libraries(calibrate_camera PRIVATE fmt::fmt yaml-cpp ${OpenCV_LIBS} tools)
+  target_link_libraries(
+    calibrate_handeye PRIVATE fmt::fmt yaml-cpp Eigen3::Eigen ${OpenCV_LIBS} tools
+  )
+  target_link_libraries(
+    calibrate_robotworld_handeye PRIVATE fmt::fmt yaml-cpp Eigen3::Eigen ${OpenCV_LIBS} tools
+  )
+  target_link_libraries(split_video PRIVATE fmt::fmt ${OpenCV_LIBS} tools)
+endif()
+
+if(build_foxglove_calibration OR build_foxglove_vision)
   # 两个功能共用同一份 SDK：只下载、只 find_package、只定义 dust_foxglove_cpp 一次。
   # 离线环境可用 -DFETCHCONTENT_SOURCE_DIR_FOXGLOVE_SDK_DIST=<已解压目录> 跳过下载。
   include(FetchContent)
@@ -172,7 +203,7 @@ if(ENABLE_FOXGLOVE_CALIBRATION OR ENABLE_FOXGLOVE_VISION)
   foxglove_sdk_add_cpp_library(dust_foxglove_cpp TYPE STATIC REMOTE_ACCESS OFF)
 endif()
 
-if(ENABLE_FOXGLOVE_CALIBRATION)
+if(build_foxglove_calibration)
   # 本库的 cpp 用相对 include 包含自己的头，故不需要 dust::include。
   add_library(calibration_foxglove STATIC calibration/foxglove_calibration.cpp)
   target_link_libraries(
@@ -184,23 +215,16 @@ if(ENABLE_FOXGLOVE_CALIBRATION)
   target_link_libraries(capture PRIVATE calibration_foxglove)
 endif()
 
-if(ENABLE_FOXGLOVE_VISION)
-  # 传输库只依赖 OpenCV / nlohmann_json / Foxglove：auto_aim 与 tools 都是 OBJECT 库，
-  # 把它们链进静态库会复制一份目标文件，与可执行程序自身链接的那份冲突。
+if(build_foxglove_vision)
   add_library(visualization_foxglove STATIC visualization/foxglove_vision.cpp)
-  target_link_libraries(
-    visualization_foxglove
-    PUBLIC ${OpenCV_LIBS} nlohmann_json::nlohmann_json dust_foxglove_cpp
+  target_link_libraries(visualization_foxglove
+    PUBLIC dust::include opencv_core nlohmann_json::nlohmann_json
+    PRIVATE opencv_imgcodecs opencv_imgproc dust_foxglove_cpp Threads::Threads
   )
-  # 本库的 cpp 用根相对路径包含自己的头（#include "visualization/foxglove_vision.hpp"）。
-  target_link_libraries(visualization_foxglove PRIVATE dust::include)
-
-  # 叠加层已在上面直接编进可执行程序（不依赖 Foxglove），这里只补上编译定义与传输库。
-  target_compile_definitions(infantry PRIVATE DUST_ENABLE_FOXGLOVE)
-  target_link_libraries(infantry PRIVATE visualization_foxglove)
+  target_compile_definitions(infantry_runtime PUBLIC DUST_ENABLE_FOXGLOVE)
+  target_link_libraries(infantry_runtime PRIVATE visualization_foxglove)
 endif()
 
-#################tests##################
-# 测试目标全部在 tests/CMakeLists.txt，便于本文件只描述"产品"目标。
-enable_testing()
-add_subdirectory(tests)
+if(BUILD_TESTING OR BUILD_HARDWARE_TOOLS OR BUILD_PERFORMANCE_TOOLS)
+  add_subdirectory(tests)
+endif()

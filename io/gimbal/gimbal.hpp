@@ -13,6 +13,11 @@
 #include "tools/estimation/angle_rate_estimator.hpp"
 #include "tools/estimation/quaternion_buffer.hpp"
 
+namespace tools
+{
+class YamlConfig;
+}
+
 namespace io
 {
 struct __attribute__((packed)) GimbalToVision
@@ -79,10 +84,21 @@ struct GimbalFeedback
   }
 };
 
+struct GimbalConfig
+{
+  std::string com_port;
+  uint32_t baudrate = 460800;
+  bool skip_crc = false;
+  bool simulate = false;
+
+  static GimbalConfig parse(const tools::YamlConfig & yaml);
+};
+
 class Gimbal
 {
 public:
   Gimbal(const std::string & config_path, bool simulate = false);
+  explicit Gimbal(const GimbalConfig & config);
 
   ~Gimbal();
 

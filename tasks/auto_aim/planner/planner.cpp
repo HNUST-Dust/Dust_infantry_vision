@@ -8,7 +8,7 @@
 #include "tools/diagnostics/logger.hpp"
 #include "tools/math/math_tools.hpp"
 #include "tools/math/trajectory.hpp"
-#include "tools/runtime/yaml.hpp"
+#include "tools/runtime/yaml_config.hpp"
 
 using namespace std::chrono_literals;
 
@@ -72,20 +72,33 @@ const char * to_string(PlanStatus status)
   return "unknown";
 }
 
-Planner::Planner(const std::string & config_path)
-    : yaw_solver_(MpcConfig::load(config_path, "yaw")),
-      pitch_solver_(MpcConfig::load(config_path, "pitch"))
+PlannerConfig PlannerConfig::parse(const tools::YamlConfig & yaml)
 {
-  auto yaml = tools::load(config_path);
-  if (yaml["gap_preaim_enabled"])
-    gap_preaim_enabled_ = yaml["gap_preaim_enabled"].as<bool>();
-  yaw_offset_ = tools::read<double>(yaml, "yaw_offset") / 57.3;
-  pitch_offset_ = tools::read<double>(yaml, "pitch_offset") / 57.3;
-  fire_thresh_high_speed_ = tools::read<double>(yaml, "fire_thresh_high_speed");
-  fire_thresh_low_speed_ = tools::read<double>(yaml, "fire_thresh_low_speed");
-  decision_speed_ = tools::read<double>(yaml, "decision_speed");
-  high_speed_delay_time_ = tools::read<double>(yaml, "high_speed_delay_time");
-  low_speed_delay_time_ = tools::read<double>(yaml, "low_speed_delay_time");
+  PlannerConfig config;
+  config.yaw = MpcConfig::parse(yaml, "yaw");
+  config.pitch = MpcConfig::parse(yaml, "pitch");
+  config.yaw_offset = yaml.get<double>("yaw_offset") / 57.3;
+  config.pitch_offset = yaml.get<double>("pitch_offset") / 57.3;
+  config.fire_thresh_high_speed = yaml.get<double>("fire_thresh_high_speed");
+  config.fire_thresh_low_speed = yaml.get<double>("fire_thresh_low_speed");
+  config.decision_speed = yaml.get<double>("decision_speed");
+  config.high_speed_delay_time = yaml.get<double>("high_speed_delay_time");
+  config.low_speed_delay_time = yaml.get<double>("low_speed_delay_time");
+  config.comming_angle = yaml.get<double>("comming_angle") / 57.3;
+  config.leaving_angle = yaml.get<double>("leaving_angle") / 57.3;
+  config.first_tolerance = yaml.get<double>("first_tolerance") / 57.3;
+  config.second_tolerance = yaml.get<double>("second_tolerance") / 57.3;
+  config.judge_distance = yaml.get<double>("judge_distance");
+  config.auto_fire = yaml.get<bool>("auto_fire");
+
+  config.gap_preaim_enabled = yaml.get("gap_preaim_enabled", config.gap_preaim_enabled);
+  config.max_state_age = yaml.get("mpc_max_state_age_ms", 20.0) * 1e-3;
+  if (!std::isfinite(config.max_state_age) || config.max_state_age <= 0)
+    yaml.fail("mpc_max_state_age_ms", "must be finite and positive");
+  if (!std::isfinite(config.low_speed_delay_time) || config.low_speed_delay_time < 0)
+    yaml.fail("low_speed_delay_time", "must be finite and nonnegative");
+  if (!std::isfinite(config.high_speed_delay_time) || config.high_speed_delay_time < 0)
+    yaml.fail("high_speed_delay_time", "must be finite and nonnegative");
   YAML::Node replay_config;
   for (const auto * key : {"yaw_offset",
                            "pitch_offset",
@@ -114,24 +127,36 @@ Planner::Planner(const std::string & config_path)
                            "mpc_max_iter",
                            "mpc_primal_tolerance",
                            "mpc_dual_tolerance"})
-    if (yaml[key])
-      replay_config[key] = YAML::Clone(yaml[key]);
-  planner_config_yaml_ = YAML::Dump(replay_config);
-  // 装甲板选择策略（原 Aimer）
-  comming_angle_ = tools::read<double>(yaml, "comming_angle") / 57.3;
-  leaving_angle_ = tools::read<double>(yaml, "leaving_angle") / 57.3;
-  // 开火判定（原 Shooter）
-  first_tolerance_ = tools::read<double>(yaml, "first_tolerance") / 57.3;
-  second_tolerance_ = tools::read<double>(yaml, "second_tolerance") / 57.3;
-  judge_distance_ = tools::read<double>(yaml, "judge_distance");
-  auto_fire_ = tools::read<bool>(yaml, "auto_fire");
-  if (yaml["mpc_max_state_age_ms"])
-    max_state_age_ = yaml["mpc_max_state_age_ms"].as<double>() * 1e-3;
-  if (!std::isfinite(max_state_age_) || max_state_age_ <= 0.0)
-    throw std::invalid_argument("mpc_max_state_age_ms must be positive");
-  if (!std::isfinite(low_speed_delay_time_) || low_speed_delay_time_ < 0.0 ||
-      !std::isfinite(high_speed_delay_time_) || high_speed_delay_time_ < 0.0)
-    throw std::invalid_argument("Planner delay times must be finite and nonnegative");
+    if (yaml.has(key))
+      replay_config[key] = YAML::Clone(yaml.node()[key]);
+  config.replay_yaml = YAML::Dump(replay_config);
+
+  return config;
+}
+
+Planner::Planner(const std::string & config_path)
+    : Planner(PlannerConfig::parse(tools::YamlConfig(config_path)))
+{
+}
+
+Planner::Planner(const PlannerConfig & config)
+    : planner_config_yaml_(config.replay_yaml), yaw_solver_(config.yaw), pitch_solver_(config.pitch)
+{
+  yaw_offset_ = config.yaw_offset;
+  pitch_offset_ = config.pitch_offset;
+  fire_thresh_high_speed_ = config.fire_thresh_high_speed;
+  fire_thresh_low_speed_ = config.fire_thresh_low_speed;
+  decision_speed_ = config.decision_speed;
+  high_speed_delay_time_ = config.high_speed_delay_time;
+  low_speed_delay_time_ = config.low_speed_delay_time;
+  comming_angle_ = config.comming_angle;
+  leaving_angle_ = config.leaving_angle;
+  first_tolerance_ = config.first_tolerance;
+  second_tolerance_ = config.second_tolerance;
+  judge_distance_ = config.judge_distance;
+  auto_fire_ = config.auto_fire;
+  gap_preaim_enabled_ = config.gap_preaim_enabled;
+  max_state_age_ = config.max_state_age;
 }
 
 int Planner::nearest_armor_id(const Target & target) const

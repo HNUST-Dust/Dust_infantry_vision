@@ -8,7 +8,7 @@
 #include <thread>
 
 #include "MvCameraControl.h"
-#include "io/camera.hpp"
+#include "io/camera_base.hpp"
 #include "tools/concurrency/thread_safe_queue.hpp"
 
 namespace io

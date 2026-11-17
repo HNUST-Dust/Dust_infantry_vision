@@ -1,29 +1,46 @@
 #include "yolo.hpp"
 
-#include <yaml-cpp/yaml.h>
+#include "tools/runtime/yaml_config.hpp"
 
 #include "yolov5.hpp"
 
 namespace auto_aim
 {
-YOLO::YOLO(const std::string & config_path, bool debug)
-    : net_detector_([&config_path] {
-        auto yaml = YAML::LoadFile(config_path);
-        NetDetector::Config config;
-        config.backend = yaml["inference_backend"].as<std::string>("openvino");
-        config.device = yaml["device"].as<std::string>("CPU");
-        config.cuda_device = yaml["cuda_device"].as<int>(0);
-        config.infer_request_buffer_num =
-          yaml["infer_request_buffer_num"] ? yaml["infer_request_buffer_num"].as<int>() : 2;
-        config.performance_mode =
-          yaml["performance_mode"] ? yaml["performance_mode"].as<std::string>() : "LATENCY";
-        config.model_path = yaml["yolov5_model_path"].as<std::string>();
-        config.input_width = 640;
-        config.input_height = 640;
-        return config;
-      }())
+YoloConfig YoloConfig::parse(const tools::YamlConfig & yaml)
 {
-  yolo_ = std::make_unique<YOLOV5>(config_path, debug);
+  YoloConfig config;
+  auto & net = config.net;
+  net.backend = yaml.get<std::string>("inference_backend", "openvino");
+  net.device = yaml.get<std::string>("device", "CPU");
+  net.cuda_device = yaml.get<int>("cuda_device", 0);
+  net.infer_request_buffer_num = yaml.get<int>("infer_request_buffer_num", 2);
+  net.performance_mode = yaml.get<std::string>("performance_mode", "LATENCY");
+  net.model_path = yaml.input_path("yolov5_model_path");
+  net.input_width = 640;
+  net.input_height = 640;
+  if (net.infer_request_buffer_num <= 0)
+    yaml.fail("infer_request_buffer_num", "must be positive");
+  if (net.backend != "openvino" && net.backend != "tensorrt")
+    yaml.fail("inference_backend", "must be openvino or tensorrt");
+#ifndef DUST_ENABLE_TENSORRT
+  if (net.backend == "tensorrt")
+    yaml.fail("inference_backend", "tensorrt requires -DENABLE_TENSORRT=ON");
+#endif
+  if (net.backend == "openvino" && net.performance_mode != "LATENCY" &&
+      net.performance_mode != "THROUGHPUT")
+    yaml.fail("performance_mode", "must be LATENCY or THROUGHPUT");
+  config.postprocess = YoloV5Config::parse(yaml);
+  return config;
+}
+
+YOLO::YOLO(const std::string & config_path, bool debug)
+    : YOLO(YoloConfig::parse(tools::YamlConfig(config_path)), debug)
+{
+}
+
+YOLO::YOLO(const YoloConfig & config, bool debug)
+    : net_detector_(config.net), yolo_(std::make_unique<YOLOV5>(config.postprocess, debug))
+{
 }
 
 std::list<Armor> YOLO::detect(const cv::Mat & img, int frame_count,

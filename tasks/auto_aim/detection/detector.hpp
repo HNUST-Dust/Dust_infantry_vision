@@ -10,13 +10,36 @@
 #include "tasks/auto_aim/model/armor.hpp"
 #include "classifier.hpp"
 
+namespace tools
+{
+class YamlConfig;
+}
+
 namespace auto_aim
 {
+
+struct DetectorConfig
+{
+  ClassifierConfig classifier;
+  double threshold = 0.0;
+  double max_angle_error = 0.0;
+  double min_lightbar_ratio = 0.0;
+  double max_lightbar_ratio = 0.0;
+  double min_lightbar_length = 0.0;
+  double min_armor_ratio = 0.0;
+  double max_armor_ratio = 0.0;
+  double max_side_ratio = 0.0;
+  double min_confidence = 0.0;
+  double max_rectangular_error = 0.0;
+
+  static DetectorConfig parse(const tools::YamlConfig & yaml);
+};
 
 class Detector
 {
 public:
   Detector(const std::string & config_path, bool debug = true);
+  Detector(const DetectorConfig & config, bool debug = true);
 
   std::list<Armor> detect(const cv::Mat & bgr_img, int frame_count = -1);
 

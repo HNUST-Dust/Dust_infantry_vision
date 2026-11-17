@@ -1,140 +1,141 @@
-# 测试目标集中在此。链接只声明各自"直接"使用的库：
-# OpenCV / Eigen / yaml-cpp / nlohmann / spdlog / OpenVINO / Threads 与仓库根 include
-# 由 tools / io / auto_aim 的 PUBLIC（及 PRIVATE 的 LINK_ONLY）需求传播而来，不再逐个手抄。
-# 少数不链接这三个库的测试（ordered_delivery / quaternion_buffer / 两个 foxglove 协议测试）
-# 需要自己显式声明 dust::include。
-
-# 测试二进制仍输出到构建目录根，而不是随本文件所在子目录变成 build-ninja/tests/<name>：
-# readme.md 与 .codex/skills/ 都按 build-ninja/<name> 这种路径调用它们。
+# Keep the documented binary paths under the build directory root.
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 
-#################tests##################
-add_executable(auto_aim_test integration/auto_aim_test.cpp)
-add_executable(planner_feedback_test planner/planner_feedback_test.cpp)
-target_link_libraries(planner_feedback_test PRIVATE auto_aim tools io)
-add_test(NAME planner_feedback COMMAND planner_feedback_test)
-add_executable(planner_reference_test planner/planner_reference_test.cpp)
-target_link_libraries(planner_reference_test PRIVATE dust::include Eigen3::Eigen)
-add_test(NAME planner_reference COMMAND planner_reference_test)
-add_executable(planner_replay_test planner/planner_replay_test.cpp ../src/planner_diagnostics.cpp)
-target_link_libraries(planner_replay_test PRIVATE auto_aim tools io nlohmann_json::nlohmann_json)
-add_test(NAME planner_replay COMMAND planner_replay_test --self-test)
-add_executable(mpc_cost_test planner/mpc_cost_test.cpp ../src/planner_diagnostics.cpp)
-target_link_libraries(mpc_cost_test PRIVATE auto_aim tools io nlohmann_json::nlohmann_json)
-add_test(NAME mpc_cost COMMAND mpc_cost_test)
-add_executable(planner_diagnostics_test planner/planner_diagnostics_test.cpp ../src/planner_diagnostics.cpp)
-target_link_libraries(planner_diagnostics_test PRIVATE auto_aim tools io nlohmann_json::nlohmann_json)
-add_test(NAME planner_diagnostics COMMAND planner_diagnostics_test)
-add_executable(camera_test camera/camera_test.cpp)
-add_executable(camera_thread_test camera/camera_thread_test.cpp)
-add_executable(fire_test gimbal/fire_test.cpp)
-add_executable(detector_video_test detection/detector_video_test.cpp)
-add_executable(gimbal_response_test gimbal/gimbal_response_test.cpp)
-add_executable(handeye_test calibration/handeye_test.cpp)
-add_executable(minimum_vision_system integration/minimum_vision_system.cpp)
-add_executable(gimbal_test gimbal/gimbal_test.cpp)
-add_executable(async_detector_test detection/async_detector_test.cpp)
-add_executable(dynamic_roi_test detection/dynamic_roi_test.cpp)
-add_executable(detector_roi_test detection/detector_roi_test.cpp)
-add_executable(openvino_benchmark_test performance/openvino_benchmark_test.cpp)
+function(add_regression test_name target source category)
+  add_executable(${target} ${source})
+  # Some regressions perform operations inside assert(). Keep them enabled in Release.
+  target_compile_options(${target} PRIVATE -UNDEBUG)
+  add_test(NAME ${test_name} COMMAND ${target} ${ARGN})
+  set_tests_properties(${test_name} PROPERTIES LABELS ${category} TIMEOUT 30)
+endfunction()
 
-target_link_libraries(
-  auto_aim_test PRIVATE fmt::fmt nlohmann_json::nlohmann_json Eigen3::Eigen ${OpenCV_LIBS}
-  tools io auto_aim
-)
-target_link_libraries(camera_test PRIVATE ${OpenCV_LIBS} tools io)
-target_link_libraries(
-  camera_thread_test PRIVATE fmt::fmt nlohmann_json::nlohmann_json Eigen3::Eigen ${OpenCV_LIBS}
-  Threads::Threads auto_aim tools io
-)
-target_link_libraries(
-  fire_test PRIVATE fmt::fmt nlohmann_json::nlohmann_json ${OpenCV_LIBS} tools io
-)
-target_link_libraries(detector_video_test PRIVATE fmt::fmt ${OpenCV_LIBS} tools auto_aim)
-target_link_libraries(
-  gimbal_response_test PRIVATE nlohmann_json::nlohmann_json ${OpenCV_LIBS} Eigen3::Eigen
-  tools io
-)
-target_link_libraries(
-  handeye_test PRIVATE fmt::fmt yaml-cpp nlohmann_json::nlohmann_json Eigen3::Eigen ${OpenCV_LIBS}
-  tools io auto_aim
-)
-target_link_libraries(
-  minimum_vision_system PRIVATE fmt::fmt nlohmann_json::nlohmann_json Eigen3::Eigen ${OpenCV_LIBS}
-  Threads::Threads tools io auto_aim
-)
-target_link_libraries(
-  gimbal_test PRIVATE nlohmann_json::nlohmann_json ${OpenCV_LIBS} Threads::Threads auto_aim tools io
-)
-target_link_libraries(
-  async_detector_test PRIVATE Eigen3::Eigen ${OpenCV_LIBS} Threads::Threads auto_aim tools io
-)
-target_link_libraries(dynamic_roi_test PRIVATE ${OpenCV_LIBS} auto_aim tools io)
-target_link_libraries(detector_roi_test PRIVATE ${OpenCV_LIBS} auto_aim tools io)
-target_link_libraries(openvino_benchmark_test PRIVATE ${OpenCV_LIBS} auto_aim tools io)
+if(BUILD_TESTING)
+  add_regression(ordered_delivery ordered_delivery_test tools/ordered_delivery_test.cpp unit)
+  target_link_libraries(ordered_delivery_test PRIVATE tools_core)
+  add_regression(quaternion_buffer quaternion_buffer_test tools/quaternion_buffer_test.cpp unit)
+  target_link_libraries(quaternion_buffer_test PRIVATE tools_core)
 
-if(ENABLE_TENSORRT)
-  add_executable(tensorrt_detector_test detection/tensorrt_detector_test.cpp)
-  target_link_libraries(tensorrt_detector_test
-    PRIVATE auto_aim tools io yaml-cpp nlohmann_json::nlohmann_json Threads::Threads
-  )
-endif()
+  if(build_offline)
+    add_regression(planner_reference planner_reference_test planner/planner_reference_test.cpp offline)
+    target_link_libraries(planner_reference_test PRIVATE tools_core)
 
-# ordered_delivery.hpp 是纯头（只用 std），但它用 #include "tools/concurrency/ordered_delivery.hpp"
-# 根相对路径，故仍需 dust::include；其源码用 std::async/std::future/std::mutex，补上 Threads。
-add_executable(ordered_delivery_test tools/ordered_delivery_test.cpp)
-target_link_libraries(ordered_delivery_test PRIVATE dust::include Threads::Threads)
+    add_regression(planner_feedback planner_feedback_test planner/planner_feedback_test.cpp offline)
+    target_link_libraries(planner_feedback_test PRIVATE aim_planner gimbal_io tools)
 
-add_executable(quaternion_buffer_test tools/quaternion_buffer_test.cpp)
-target_link_libraries(quaternion_buffer_test PRIVATE dust::include Eigen3::Eigen Threads::Threads)
-add_test(NAME quaternion_buffer COMMAND quaternion_buffer_test)
+    add_regression(dynamic_roi dynamic_roi_test detection/dynamic_roi_test.cpp offline)
+    target_link_libraries(dynamic_roi_test PRIVATE aim_roi)
 
-if(NOT ENABLE_SIMULATOR)
-  add_test(
-    NAME simulator_disabled
-    COMMAND ${CMAKE_COMMAND}
+    foreach(test planner_replay mpc_cost planner_diagnostics planner_preaim)
+      set(arguments)
+      if(test STREQUAL "planner_replay")
+        set(arguments --self-test)
+      elseif(test STREQUAL "planner_preaim")
+        set(arguments ${PROJECT_SOURCE_DIR}/configs/standard3.yaml)
+      endif()
+      add_regression(${test} ${test}_test planner/${test}_test.cpp offline ${arguments})
+      target_link_libraries(${test}_test PRIVATE planner_diagnostics tools)
+    endforeach()
+  endif()
+
+  if(BUILD_APPLICATIONS)
+    add_regression(runtime_data runtime_data_test integration/runtime_data_test.cpp offline
+      ${PROJECT_SOURCE_DIR}/configs/standard3.yaml ${CMAKE_CURRENT_BINARY_DIR}/invalid-runtime.yaml)
+    target_link_libraries(runtime_data_test PRIVATE infantry_runtime aim_detection
+      planner_diagnostics gimbal_io tools)
+    set_tests_properties(runtime_data PROPERTIES WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}")
+  endif()
+
+  if(BUILD_APPLICATIONS AND NOT ENABLE_SIMULATOR)
+    add_test(NAME simulator_disabled COMMAND ${CMAKE_COMMAND}
       -DINFANTRY=$<TARGET_FILE:infantry>
-      -P ${CMAKE_CURRENT_SOURCE_DIR}/integration/simulator_disabled_test.cmake
-  )
-  set_tests_properties(simulator_disabled PROPERTIES TIMEOUT 10)
+      -P ${CMAKE_CURRENT_SOURCE_DIR}/integration/simulator_disabled_test.cmake)
+    set_tests_properties(simulator_disabled PROPERTIES LABELS offline TIMEOUT 10)
+  endif()
+
+  if(build_foxglove_calibration OR build_foxglove_vision)
+    find_package(Python3 REQUIRED COMPONENTS Interpreter)
+  endif()
+
+  if(build_foxglove_calibration)
+    add_executable(foxglove_calibration_test calibration/foxglove_calibration_test.cpp)
+    target_link_libraries(
+      foxglove_calibration_test PRIVATE dust::include Eigen3::Eigen ${OpenCV_LIBS} calibration_foxglove
+    )
+
+    add_test(
+      NAME foxglove_calibration_protocol
+      COMMAND
+        ${Python3_EXECUTABLE}
+        ${PROJECT_SOURCE_DIR}/tests/calibration/foxglove_calibration_protocol_test.py
+        $<TARGET_FILE:foxglove_calibration_test>
+    )
+    set_tests_properties(foxglove_calibration_protocol PROPERTIES LABELS offline TIMEOUT 20)
+  endif()
+
+  if(build_foxglove_vision)
+    add_executable(foxglove_vision_test visualization/foxglove_vision_test.cpp)
+    target_link_libraries(
+      foxglove_vision_test PRIVATE dust::include ${OpenCV_LIBS} visualization_foxglove
+    )
+
+    add_test(
+      NAME foxglove_vision_protocol
+      COMMAND
+        ${Python3_EXECUTABLE}
+        ${PROJECT_SOURCE_DIR}/tests/visualization/foxglove_vision_protocol_test.py
+        $<TARGET_FILE:foxglove_vision_test>
+    )
+    set_tests_properties(foxglove_vision_protocol PROPERTIES LABELS offline TIMEOUT 60)
+  endif()
+
 endif()
 
-if(ENABLE_FOXGLOVE_CALIBRATION OR ENABLE_FOXGLOVE_VISION)
-  find_package(Python3 REQUIRED COMPONENTS Interpreter)
+# Offline programs with user-supplied media or interactive windows.
+if(BUILD_TESTING AND build_inference AND build_pipeline)
+  add_executable(auto_aim_test integration/auto_aim_test.cpp)
+  target_link_libraries(auto_aim_test PRIVATE aim_detection aim_tracking aim_planner tools
+    fmt::fmt opencv_calib3d opencv_highgui)
+  add_executable(detector_video_test detection/detector_video_test.cpp)
+  target_link_libraries(detector_video_test PRIVATE aim_detection tools fmt::fmt opencv_highgui)
+  add_executable(async_detector_test detection/async_detector_test.cpp)
+  target_compile_options(async_detector_test PRIVATE -UNDEBUG)
+  target_link_libraries(async_detector_test PRIVATE aim_detection tools)
+  if(ENABLE_TENSORRT)
+    add_executable(tensorrt_detector_test detection/tensorrt_detector_test.cpp)
+    target_link_libraries(tensorrt_detector_test PRIVATE aim_detection aim_geometry tools)
+  endif()
 endif()
 
-if(ENABLE_FOXGLOVE_CALIBRATION)
-  add_executable(foxglove_calibration_test calibration/foxglove_calibration_test.cpp)
-  target_link_libraries(
-    foxglove_calibration_test PRIVATE dust::include Eigen3::Eigen ${OpenCV_LIBS} calibration_foxglove
-  )
-
-  add_test(
-    NAME foxglove_calibration_protocol
-    COMMAND
-      ${Python3_EXECUTABLE}
-      ${PROJECT_SOURCE_DIR}/tests/calibration/foxglove_calibration_protocol_test.py
-      $<TARGET_FILE:foxglove_calibration_test>
-  )
-  set_tests_properties(foxglove_calibration_protocol PROPERTIES TIMEOUT 20)
+if(build_offline)
+  # Requires the classifier model from the YAML, relative to the repo working directory.
+  add_regression(detector_roi detector_roi_test detection/detector_roi_test.cpp offline
+    ${PROJECT_SOURCE_DIR}/configs/standard3.yaml)
+  target_link_libraries(detector_roi_test PRIVATE aim_traditional_detector tools opencv_imgproc)
+  set_tests_properties(detector_roi PROPERTIES WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}")
 endif()
 
-if(ENABLE_FOXGLOVE_VISION)
-  add_executable(foxglove_vision_test visualization/foxglove_vision_test.cpp)
-  target_link_libraries(
-    foxglove_vision_test PRIVATE dust::include ${OpenCV_LIBS} visualization_foxglove
-  )
-
-  add_test(
-    NAME foxglove_vision_protocol
-    COMMAND
-      ${Python3_EXECUTABLE}
-      ${PROJECT_SOURCE_DIR}/tests/visualization/foxglove_vision_protocol_test.py
-      $<TARGET_FILE:foxglove_vision_test>
-  )
-  set_tests_properties(foxglove_vision_protocol PROPERTIES TIMEOUT 60)
+# Manual hardware diagnostics. These must be started explicitly.
+if(BUILD_HARDWARE_TOOLS)
+  add_executable(camera_test camera/camera_test.cpp)
+  target_link_libraries(camera_test PRIVATE camera_io tools opencv_highgui)
+  add_executable(camera_thread_test camera/camera_thread_test.cpp)
+  target_link_libraries(camera_thread_test PRIVATE camera_io aim_tracking aim_detection tools
+    opencv_highgui)
+  add_executable(fire_test gimbal/fire_test.cpp)
+  target_link_libraries(fire_test PRIVATE gimbal_io tools fmt::fmt opencv_highgui)
+  add_executable(gimbal_response_test gimbal/gimbal_response_test.cpp)
+  target_link_libraries(gimbal_response_test PRIVATE gimbal_io tools opencv_highgui)
+  add_executable(handeye_test calibration/handeye_test.cpp)
+  target_link_libraries(handeye_test PRIVATE camera_io gimbal_io aim_geometry tools
+    opencv_calib3d opencv_highgui)
+  add_executable(minimum_vision_system integration/minimum_vision_system.cpp)
+  target_link_libraries(minimum_vision_system PRIVATE camera_io dm_imu_io aim_detection aim_tracking
+    aim_planner tools fmt::fmt opencv_highgui)
+  add_executable(gimbal_test gimbal/gimbal_test.cpp)
+  target_link_libraries(gimbal_test PRIVATE gimbal_io tools opencv_highgui)
 endif()
 
-add_executable(planner_preaim_test planner/planner_preaim_test.cpp ../src/planner_diagnostics.cpp)
-target_link_libraries(planner_preaim_test PRIVATE auto_aim tools io nlohmann_json::nlohmann_json)
-add_test(NAME planner_preaim COMMAND planner_preaim_test ${PROJECT_SOURCE_DIR}/configs/standard3.yaml)
+if(BUILD_PERFORMANCE_TOOLS)
+  add_executable(openvino_benchmark_test performance/openvino_benchmark_test.cpp)
+  target_link_libraries(openvino_benchmark_test PRIVATE aim_detection tools)
+endif()

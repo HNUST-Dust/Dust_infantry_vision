@@ -10,12 +10,29 @@
 
 #include "tasks/auto_aim/model/armor.hpp"
 
+namespace tools
+{
+class YamlConfig;
+}
+
 namespace auto_aim
 {
+struct SolverConfig
+{
+  Eigen::Matrix3d gimbal_to_imu = Eigen::Matrix3d::Identity();
+  Eigen::Matrix3d camera_to_gimbal = Eigen::Matrix3d::Identity();
+  Eigen::Vector3d camera_translation = Eigen::Vector3d::Zero();
+  Eigen::Matrix3d camera_matrix = Eigen::Matrix3d::Identity();
+  Eigen::Matrix<double, 1, 5> distortion = Eigen::Matrix<double, 1, 5>::Zero();
+
+  static SolverConfig parse(const tools::YamlConfig & yaml);
+};
+
 class Solver
 {
 public:
   explicit Solver(const std::string & config_path);
+  explicit Solver(const SolverConfig & config);
 
   Eigen::Matrix3d R_gimbal2world() const;
 

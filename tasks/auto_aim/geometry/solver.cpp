@@ -1,8 +1,10 @@
 #include "solver.hpp"
 
-#include <yaml-cpp/yaml.h>
+#include "tools/runtime/yaml_config.hpp"
 
+#include <algorithm>
 #include <cmath>
+#include <opencv2/calib3d.hpp>
 #include <optional>
 #include <vector>
 
@@ -24,23 +26,37 @@ const std::vector<cv::Point3f> SMALL_ARMOR_POINTS{{0, SMALL_ARMOR_WIDTH / 2, LIG
                                                   {0, -SMALL_ARMOR_WIDTH / 2, -LIGHTBAR_LENGTH / 2},
                                                   {0, SMALL_ARMOR_WIDTH / 2, -LIGHTBAR_LENGTH / 2}};
 
-Solver::Solver(const std::string & config_path) : R_gimbal2world_(Eigen::Matrix3d::Identity())
+SolverConfig SolverConfig::parse(const tools::YamlConfig & yaml)
 {
-  auto yaml = YAML::LoadFile(config_path);
+  const auto values = [&](const char * field, std::size_t count) {
+    const auto data = yaml.get<std::vector<double>>(field);
+    if (data.size() < count ||
+        !std::all_of(data.begin(), data.begin() + count, [](double v) { return std::isfinite(v); }))
+      yaml.fail(field, "expected at least " + std::to_string(count) + " finite values");
+    return data;
+  };
+  using RowMajorMatrix3 = Eigen::Matrix<double, 3, 3, Eigen::RowMajor>;
+  SolverConfig config;
+  config.gimbal_to_imu = RowMajorMatrix3(values("R_gimbal2imubody", 9).data());
+  config.camera_to_gimbal = RowMajorMatrix3(values("R_camera2gimbal", 9).data());
+  config.camera_translation = Eigen::Vector3d(values("t_camera2gimbal", 3).data());
+  config.camera_matrix = RowMajorMatrix3(values("camera_matrix", 9).data());
+  config.distortion = Eigen::Matrix<double, 1, 5>(values("distort_coeffs", 5).data());
+  return config;
+}
 
-  auto R_gimbal2imubody_data = yaml["R_gimbal2imubody"].as<std::vector<double>>();
-  auto R_camera2gimbal_data = yaml["R_camera2gimbal"].as<std::vector<double>>();
-  auto t_camera2gimbal_data = yaml["t_camera2gimbal"].as<std::vector<double>>();
-  R_gimbal2imubody_ = Eigen::Matrix<double, 3, 3, Eigen::RowMajor>(R_gimbal2imubody_data.data());
-  R_camera2gimbal_ = Eigen::Matrix<double, 3, 3, Eigen::RowMajor>(R_camera2gimbal_data.data());
-  t_camera2gimbal_ = Eigen::Matrix<double, 3, 1>(t_camera2gimbal_data.data());
+Solver::Solver(const std::string & config_path)
+    : Solver(SolverConfig::parse(tools::YamlConfig(config_path)))
+{
+}
 
-  auto camera_matrix_data = yaml["camera_matrix"].as<std::vector<double>>();
-  auto distort_coeffs_data = yaml["distort_coeffs"].as<std::vector<double>>();
-  Eigen::Matrix<double, 3, 3, Eigen::RowMajor> camera_matrix(camera_matrix_data.data());
-  Eigen::Matrix<double, 1, 5> distort_coeffs(distort_coeffs_data.data());
-  cv::eigen2cv(camera_matrix, camera_matrix_);
-  cv::eigen2cv(distort_coeffs, distort_coeffs_);
+Solver::Solver(const SolverConfig & config) : R_gimbal2world_(Eigen::Matrix3d::Identity())
+{
+  R_gimbal2imubody_ = config.gimbal_to_imu;
+  R_camera2gimbal_ = config.camera_to_gimbal;
+  t_camera2gimbal_ = config.camera_translation;
+  cv::eigen2cv(config.camera_matrix, camera_matrix_);
+  cv::eigen2cv(config.distortion, distort_coeffs_);
 }
 
 Eigen::Matrix3d Solver::R_gimbal2world() const

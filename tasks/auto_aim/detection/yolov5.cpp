@@ -2,7 +2,7 @@
 
 #include <chrono>
 #include <fmt/chrono.h>
-#include <yaml-cpp/yaml.h>
+#include "tools/runtime/yaml_config.hpp"
 
 #include <filesystem>
 #include <algorithm>
@@ -13,33 +13,45 @@
 
 namespace auto_aim
 {
-YOLOV5::YOLOV5(const std::string & config_path, bool debug)
-    : debug_(debug), detector_(config_path, false)
+YoloV5Config YoloV5Config::parse(const tools::YamlConfig & yaml)
 {
-  auto yaml = YAML::LoadFile(config_path);
-
-  binary_threshold_ = yaml["threshold"].as<double>();
-  min_confidence_ = yaml["min_confidence"].as<double>();
-  use_traditional_ = yaml["use_traditional"].as<bool>();
-  if (yaml["yolov5_color_order"]) {
-    const auto colors = yaml["yolov5_color_order"].as<std::vector<std::string>>();
-    if (colors.size() != color_map_.size()) {
-      throw std::invalid_argument("yolov5_color_order requires four colors");
+  YoloV5Config config;
+  config.detector = DetectorConfig::parse(yaml);
+  config.use_traditional = yaml.get<bool>("use_traditional");
+  if (yaml.has("yolov5_color_order")) {
+    const auto colors = yaml.get<std::vector<std::string>>("yolov5_color_order");
+    if (colors.size() != config.color_map.size()) {
+      yaml.fail("yolov5_color_order", "yolov5_color_order requires four colors");
     }
     std::array<bool, 4> seen{};
     for (std::size_t i = 0; i < colors.size(); ++i) {
       const auto name = colors[i] == "gray" ? "extinguish" : colors[i];
       const auto found = std::find(COLORS.begin(), COLORS.end(), name);
       if (found == COLORS.end())
-        throw std::invalid_argument("Unknown YOLOV5 color: " + colors[i]);
+        yaml.fail("yolov5_color_order", "Unknown YOLOV5 color: " + colors[i]);
       const auto index = static_cast<std::size_t>(found - COLORS.begin());
       if (seen[index])
-        throw std::invalid_argument("yolov5_color_order contains duplicate colors");
+        yaml.fail("yolov5_color_order", "yolov5_color_order contains duplicate colors");
       seen[index] = true;
-      color_map_[i] = static_cast<Color>(index);
+      config.color_map[i] = static_cast<Color>(index);
     }
   }
 
+  return config;
+}
+
+YOLOV5::YOLOV5(const std::string & config_path, bool debug)
+    : YOLOV5(YoloV5Config::parse(tools::YamlConfig(config_path)), debug)
+{
+}
+
+YOLOV5::YOLOV5(const YoloV5Config & config, bool debug)
+    : debug_(debug), detector_(config.detector, false)
+{
+  binary_threshold_ = config.detector.threshold;
+  min_confidence_ = config.detector.min_confidence;
+  use_traditional_ = config.use_traditional;
+  color_map_ = config.color_map;
   save_path_ = "imgs";
   std::filesystem::create_directory(save_path_);
 }

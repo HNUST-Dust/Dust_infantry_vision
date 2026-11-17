@@ -11,6 +11,11 @@
 #include "tasks/auto_aim/model/armor.hpp"
 #include "net_detector.hpp"
 
+namespace tools
+{
+class YamlConfig;
+}
+
 namespace auto_aim
 {
 class YOLOBase
@@ -21,10 +26,13 @@ public:
                                        std::optional<cv::Rect> light_roi = std::nullopt) = 0;
 };
 
+struct YoloConfig;
+
 class YOLO
 {
 public:
   YOLO(const std::string & config_path, bool debug = true);
+  YOLO(const YoloConfig & config, bool debug = true);
 
   // Offline/test-only synchronous convenience interface: submits to NetDetector and
   // immediately waits for the result. Production pipelines must use

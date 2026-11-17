@@ -6,7 +6,7 @@
 #include <stdexcept>
 #include <vector>
 
-#include "tools/runtime/yaml.hpp"
+#include "tools/runtime/yaml_config.hpp"
 
 namespace auto_aim
 {
@@ -37,35 +37,57 @@ const char * to_string(MpcStatus status)
 
 MpcConfig MpcConfig::load(const std::string & path, const std::string & axis)
 {
-  const auto yaml = tools::load(path);
+  return parse(tools::YamlConfig(path), axis);
+}
+
+MpcConfig MpcConfig::parse(const tools::YamlConfig & yaml, const std::string & axis)
+{
   MpcConfig config;
-  config.max_acc = tools::read<double>(yaml, "max_" + axis + "_acc");
-  if (const auto cost = yaml["mpc_cost_" + axis]) {
-    if (yaml["Q_" + axis] || yaml["R_" + axis])
-      throw std::invalid_argument("Use either normalized or legacy MPC costs for " + axis);
-    const auto scales = tools::read<std::vector<double>>(cost, "scales");
-    const auto weights = tools::read<std::vector<double>>(cost, "weights");
-    if (scales.size() != 3 || weights.size() != 3)
-      throw std::invalid_argument("MPC cost scales/weights need position, velocity, acceleration");
-    for (int i = 0; i < 3; ++i)
-      if (!std::isfinite(scales[i]) || scales[i] <= 0 || !std::isfinite(weights[i]) ||
-          weights[i] < 0 || (i != 1 && weights[i] == 0))
-        throw std::invalid_argument("Invalid normalized MPC cost for " + axis);
+  config.max_acc = yaml.get<double>("max_" + axis + "_acc");
+  if (yaml.has("mpc_cost_" + axis)) {
+    const auto cost = yaml.section("mpc_cost_" + axis);
+    if (yaml.has("Q_" + axis) || yaml.has("R_" + axis))
+      yaml.fail("mpc_cost_" + axis, "cannot be combined with Q_" + axis + " or R_" + axis);
+    const auto scales = cost.get<std::vector<double>>("scales");
+    const auto weights = cost.get<std::vector<double>>("weights");
+    if (scales.size() != 3)
+      cost.fail("scales", "expected position, velocity and acceleration");
+    if (weights.size() != 3)
+      cost.fail("weights", "expected position, velocity and acceleration");
+    for (int i = 0; i < 3; ++i) {
+      if (!std::isfinite(scales[i]) || scales[i] <= 0)
+        cost.fail("scales", "all scales must be finite and positive");
+      if (!std::isfinite(weights[i]) || weights[i] < 0 || (i != 1 && weights[i] == 0))
+        cost.fail("weights",
+                  "position and acceleration weights must be positive and velocity nonnegative");
+    }
     config.state_scale = {scales[0], scales[1]};
     config.q = {weights[0] / (scales[0] * scales[0]), weights[1] / (scales[1] * scales[1])};
     config.r = weights[2] / (scales[2] * scales[2]);
   } else {
-    const auto q = tools::read<std::vector<double>>(yaml, "Q_" + axis);
-    const auto r = tools::read<std::vector<double>>(yaml, "R_" + axis);
-    if (q.size() != 2 || r.size() != 1)
-      throw std::invalid_argument("Invalid MPC weight dimensions for " + axis);
+    const auto q = yaml.get<std::vector<double>>("Q_" + axis);
+    const auto r = yaml.get<std::vector<double>>("R_" + axis);
+    if (q.size() != 2 || !std::isfinite(q[0]) || q[0] <= 0 || !std::isfinite(q[1]) || q[1] < 0)
+      yaml.fail("Q_" + axis, "expected positive position and nonnegative velocity weights");
+    if (r.size() != 1 || !std::isfinite(r[0]) || r[0] <= 0)
+      yaml.fail("R_" + axis, "expected one positive acceleration weight");
     config.q = {q[0], q[1]};
     config.r = r[0];
   }
-  if (yaml["mpc_rho"])
-    config.rho = yaml["mpc_rho"].as<double>();
-  if (yaml["mpc_max_iter"])
-    config.max_iterations = yaml["mpc_max_iter"].as<int>();
+  config.rho = yaml.get("mpc_rho", config.rho);
+  config.max_iterations = yaml.get("mpc_max_iter", config.max_iterations);
+  if (!std::isfinite(config.max_acc) || config.max_acc <= 0)
+    yaml.fail("max_" + axis + "_acc", "must be finite and positive");
+  if (!std::isfinite(config.rho) || config.rho <= 0)
+    yaml.fail("mpc_rho", "must be finite and positive");
+  if (config.max_iterations <= 0)
+    yaml.fail("mpc_max_iter", "must be positive");
+  try {
+    mpc_model(config);
+  } catch (const std::invalid_argument & error) {
+    yaml.fail(yaml.has("mpc_cost_" + axis) ? "mpc_cost_" + axis : "Q_" + axis + "/R_" + axis,
+              error.what());
+  }
   return config;
 }
 

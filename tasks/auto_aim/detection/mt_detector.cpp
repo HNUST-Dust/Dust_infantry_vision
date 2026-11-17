@@ -1,5 +1,8 @@
 #include "mt_detector.hpp"
 
+#include "tools/runtime/yaml_config.hpp"
+#include "yolov5.hpp"
+
 #include <exception>
 #include <utility>
 
@@ -11,8 +14,13 @@ namespace multithread
 {
 
 MultiThreadDetector::MultiThreadDetector(const std::string & config_path, bool keep_source)
-    : yolo_(config_path, false), keep_source_(keep_source),
-      delivery_(2 * yolo_.request_capacity(), 1), worker_(&MultiThreadDetector::worker_loop, this),
+    : MultiThreadDetector(YoloConfig::parse(tools::YamlConfig(config_path)), keep_source)
+{
+}
+
+MultiThreadDetector::MultiThreadDetector(const YoloConfig & config, bool keep_source)
+    : yolo_(config, false), keep_source_(keep_source), delivery_(2 * yolo_.request_capacity(), 1),
+      worker_(&MultiThreadDetector::worker_loop, this),
       dispatcher_(&MultiThreadDetector::dispatch_loop, this)
 {
   tools::logger()->info(

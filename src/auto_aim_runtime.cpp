@@ -1,5 +1,6 @@
 #include "src/auto_aim_runtime.hpp"
-#include "src/planner_diagnostics.hpp"
+#include "src/app_config.hpp"
+#include "src/diagnostics/telemetry.hpp"
 
 #include <atomic>
 #include <chrono>
@@ -26,12 +27,6 @@
 #include "tools/math/math_tools.hpp"
 #include "tools/diagnostics/plotter.hpp"
 #include "tools/concurrency/thread_safe_queue.hpp"
-#include "tools/runtime/yaml.hpp"
-#include "visualization/vision_overlay.hpp"
-
-#ifdef DUST_ENABLE_FOXGLOVE
-#include "visualization/foxglove_vision.hpp"
-#endif
 
 using namespace std::chrono_literals;
 
@@ -62,179 +57,28 @@ struct PlanUpdate
   float distance_m = -1.0F;
 };
 
-void add_latency_metrics(nlohmann::json & data,
-                         const std::optional<tools::LatencySummary> & latency_summary)
-{
-  if (!latency_summary)
-    return;
-
-  const auto & summary = *latency_summary;
-  data["vision_latency_ms"] = summary.latest_ms;
-  data["vision_latency_p50_ms"] = summary.p50_ms;
-  data["vision_latency_p95_ms"] = summary.p95_ms;
-  data["vision_latency_p99_ms"] = summary.p99_ms;
-}
-
-// 运行模式开关来自 config_path 的 runtime 段；缺段或缺键都退回下面的默认值。
-// 这四个开关原先在命令行上（--simulate-gimbal/--headless/--verbose-ekf/--foxglove），已移除。
-struct RuntimeConfig
-{
-  std::string io_backend = "hardware";
-  bool simulate_gimbal = false;
-  bool headless = false;
-  bool verbose_ekf = false;
-  bool foxglove_enabled = false;
-  std::chrono::milliseconds fire_timeout{30};
-  std::chrono::milliseconds control_timeout{80};
-  std::chrono::milliseconds feedback_timeout{100};
-  std::chrono::milliseconds plan_timeout{20};
-};
-
-RuntimeConfig load_runtime_config(const std::string & config_path)
-{
-  RuntimeConfig config;
-  const auto node = tools::load(config_path)["runtime"];  // 加载失败时抛 runtime_error
-  if (!node)
-    return config;
-
-  if (node["io_backend"])
-    config.io_backend = node["io_backend"].as<std::string>();
-  if (node["simulate_gimbal"])
-    config.simulate_gimbal = node["simulate_gimbal"].as<bool>();
-  if (node["headless"])
-    config.headless = node["headless"].as<bool>();
-  if (node["verbose_ekf"])
-    config.verbose_ekf = node["verbose_ekf"].as<bool>();
-  if (node["foxglove"])
-    config.foxglove_enabled = node["foxglove"].as<bool>();
-  if (node["fire_timeout_ms"])
-    config.fire_timeout = std::chrono::milliseconds(node["fire_timeout_ms"].as<int>());
-  if (node["control_timeout_ms"])
-    config.control_timeout = std::chrono::milliseconds(node["control_timeout_ms"].as<int>());
-  if (node["feedback_timeout_ms"])
-    config.feedback_timeout = std::chrono::milliseconds(node["feedback_timeout_ms"].as<int>());
-  if (node["plan_timeout_ms"])
-    config.plan_timeout = std::chrono::milliseconds(node["plan_timeout_ms"].as<int>());
-  if (config.io_backend != "hardware" && config.io_backend != "talos")
-    throw std::runtime_error("runtime.io_backend must be hardware or talos");
-#ifndef DUST_ENABLE_SIMULATOR
-  if (config.io_backend == "talos")
-    throw std::runtime_error(
-      "Talos simulator backend is not compiled in; configure with -DENABLE_SIMULATOR=ON");
-#endif
-  if (config.fire_timeout <= 0ms || config.control_timeout <= 0ms ||
-      config.feedback_timeout <= 0ms || config.plan_timeout <= 0ms)
-    throw std::runtime_error("runtime safety timeout values must be positive");
-  return config;
-}
-
-#ifdef DUST_ENABLE_FOXGLOVE
-// Foxglove 的运行参数来自 config_path 的 foxglove 段；缺段或缺键都退回下面的默认值，
-// 与 visualization::FoxgloveVisionOptions 的默认值一致。启用开关在 runtime 段，不在这里。
-struct FoxgloveConfig
-{
-  std::string host = "127.0.0.1";
-  int image_port = 8766;
-  int data_port = 0;
-  double image_fps = 30.0;
-  double image_scale = 0.5;
-  int jpeg_quality = 80;
-  bool yield_cpu = true;
-};
-
-FoxgloveConfig load_foxglove_config(const std::string & config_path)
-{
-  FoxgloveConfig config;
-  const auto node = tools::load(config_path)["foxglove"];  // 加载失败时抛 runtime_error
-  if (!node)
-    return config;
-
-  if (node["host"])
-    config.host = node["host"].as<std::string>();
-  if (node["port"])
-    config.image_port = node["port"].as<int>();
-  if (node["data_port"])
-    config.data_port = node["data_port"].as<int>();
-  if (node["fps"])
-    config.image_fps = node["fps"].as<double>();
-  if (node["scale"])
-    config.image_scale = node["scale"].as<double>();
-  if (node["jpeg_quality"])
-    config.jpeg_quality = node["jpeg_quality"].as<int>();
-  if (node["sched"]) {
-    const auto sched = node["sched"].as<std::string>();
-    if (sched != "auto" && sched != "off")
-      throw std::runtime_error("foxglove.sched must be auto or off, but is: " + sched);
-    config.yield_cpu = sched == "auto";
-  }
-  return config;
-}
-#endif
-
 }  // namespace
 
 int run(const RuntimeOptions & options)
 {
   tools::Exiter exiter;
 
-  // 运行模式开关先于任何硬件对象读取：配置文件缺失、runtime 段类型不合法都在这里退出
-  RuntimeConfig runtime_config;
-  PlannerDiagnosticsConfig diagnostics_config;
+  ApplicationConfig config;
   try {
-    runtime_config = load_runtime_config(options.config_path);
-    diagnostics_config = PlannerDiagnosticsConfig::load(options.config_path);
+    config = load_application_config(options.config_path);
   } catch (const std::exception & e) {
     tools::logger()->error("[Runtime] {}", e.what());
     return 2;
   }
 
-  const bool headless = runtime_config.headless;
-
-#ifdef DUST_ENABLE_FOXGLOVE
-  std::unique_ptr<visualization::FoxgloveVision> foxglove;
-  if (runtime_config.foxglove_enabled) {
-    FoxgloveConfig foxglove_config;
-    try {
-      foxglove_config = load_foxglove_config(options.config_path);
-    } catch (const std::exception & e) {
-      tools::logger()->error("[Foxglove] {}", e.what());
-      return 2;
-    }
-    if (foxglove_config.image_port < 1 || foxglove_config.image_port > 65535 ||
-        foxglove_config.data_port < 0 || foxglove_config.data_port > 65535 ||
-        foxglove_config.image_fps <= 0 || foxglove_config.image_scale <= 0 ||
-        foxglove_config.image_scale > 1.0 || foxglove_config.jpeg_quality < 1 ||
-        foxglove_config.jpeg_quality > 100) {
-      tools::logger()->error(
-        "[Foxglove] Invalid port, fps, scale, or JPEG quality in the foxglove section");
-      return 2;
-    }
-    visualization::FoxgloveVisionOptions foxglove_options;
-    foxglove_options.host = foxglove_config.host;
-    foxglove_options.image_port = static_cast<uint16_t>(foxglove_config.image_port);
-    foxglove_options.data_port = static_cast<uint16_t>(foxglove_config.data_port);
-    foxglove_options.image_fps = foxglove_config.image_fps;
-    foxglove_options.image_scale = foxglove_config.image_scale;
-    foxglove_options.jpeg_quality = foxglove_config.jpeg_quality;
-    foxglove_options.yield_cpu = foxglove_config.yield_cpu;
-    try {
-      foxglove = std::make_unique<visualization::FoxgloveVision>(foxglove_options);
-      tools::logger()->info("[Foxglove] image ws://{}:{}, telemetry ws://{}:{}",
-                            foxglove_options.host, foxglove->image_port(), foxglove_options.host,
-                            foxglove->data_port());
-    } catch (const std::exception & e) {
-      // 构造失败只记日志，视觉主链路继续运行
-      tools::logger()->error("[Foxglove] disabled: {}", e.what());
-    }
-  }
-#else
-  if (runtime_config.foxglove_enabled)
-    tools::logger()->error(
-      "this binary was built without Foxglove; configure with -DENABLE_FOXGLOVE_VISION=ON");
+  const auto & runtime_config = config.runtime;
+  const bool headless = config.visualization.headless;
+  config.visualization.window_name = options.window_name;
+  visualization::RuntimeVisualizer visualizer(config.visualization);
+#ifdef DUST_ENABLE_SIMULATOR
+  const bool talos_backend = runtime_config.talos_backend;
 #endif
-
-  const bool talos_backend = runtime_config.io_backend == "talos";
-  io::Gimbal gimbal(options.config_path, runtime_config.simulate_gimbal || talos_backend);
+  io::Gimbal gimbal(config.gimbal);
   std::unique_ptr<io::Camera> camera;
 #ifdef DUST_ENABLE_SIMULATOR
   std::unique_ptr<io::Talos> talos;
@@ -245,16 +89,16 @@ int run(const RuntimeOptions & options)
       talos = std::make_unique<io::Talos>();
     else
 #endif
-      camera = std::make_unique<io::Camera>(options.config_path);
+      camera = std::make_unique<io::Camera>(*config.camera);
   } catch (const std::exception & e) {
     tools::logger()->error("[Runtime] {}", e.what());
     return 2;
   }
 
-  multithread::MultiThreadDetector detector(options.config_path, !headless);
-  Solver solver(options.config_path);
-  Tracker tracker(options.config_path, solver);
-  Planner planner(options.config_path);
+  multithread::MultiThreadDetector detector(config.detector, !headless);
+  Solver solver(config.solver);
+  Tracker tracker(config.tracker, solver);
+  Planner planner(config.planner);
 
   // Both queues are capacity-one snapshots: a producer always replaces the old value.
   // The initial entries keep consumers non-blocking from the first cycle onward.
@@ -274,7 +118,7 @@ int run(const RuntimeOptions & options)
   std::atomic<double> latest_postprocess_ms{0.0};
   std::atomic<double> latest_delivery_ms{0.0};
   std::atomic<int> latest_send_status{1};
-  PlannerDiagnostics planner_diagnostics(diagnostics_config);
+  PlannerDiagnostics planner_diagnostics(config.diagnostics);
 
   auto plan_thread = std::thread([&]() {
     constexpr auto period = 2ms;
@@ -443,101 +287,36 @@ int run(const RuntimeOptions & options)
         latency_summary = latency_stats.summary();
       }
 
-      nlohmann::json data;
-      data["t"] = tools::delta_time(sampled_at, t0);
-      data["tracker_state"] = tracker_state_code.load();
-      data["has_target"] = target_update.target.has_value() ? 1 : 0;
-      data["gimbal_yaw"] = gs.yaw;
-      data["gimbal_yaw_vel"] = gs.yaw_vel;
-      data["gimbal_pitch"] = gs.pitch;
-      data["gimbal_pitch_vel"] = gs.pitch_vel;
-      data["target_yaw"] = plan_update.plan.target_yaw;
-      data["target_pitch"] = plan_update.plan.target_pitch;
-      data["plan_control"] = plan_update.plan.control;
-      data["plan_yaw"] = plan_update.plan.yaw;
-      data["plan_yaw_vel"] = plan_update.plan.yaw_vel;
-      data["plan_yaw_acc"] = plan_update.plan.yaw_acc;
-      data["plan_pitch"] = plan_update.plan.pitch;
-      data["plan_pitch_vel"] = plan_update.plan.pitch_vel;
-      data["plan_pitch_acc"] = plan_update.plan.pitch_acc;
-      data["plan_time_ms"] = plan_update.planning_ms;
-      data["plan_status"] = to_string(plan_update.plan.status);
-      data["plan_status_code"] = static_cast<int>(plan_update.plan.status);
-      data["aim_mode"] = to_string(plan_update.plan.aim_debug.mode);
-      data["aim_preaim"] = plan_update.plan.aim_debug.mode == AimMode::preaim;
-      data["aim_selection_valid"] = plan_update.plan.aim_debug.selection_valid;
-      data["aim_ballistic_converged"] = plan_update.plan.aim_debug.ballistic_converged;
-      data["aim_display_valid"] = plan_update.plan.aim_visible_at(sampled_at);
-      data["aim_plan_sequence"] = plan_update.sequence;
-      data["aim_age_ms"] = 1e3 * tools::delta_time(sampled_at, plan_update.plan.planned_at);
-      data["mpc_yaw"] = mpc_diagnostics_json(plan_update.plan.yaw_mpc);
-      data["mpc_pitch"] = mpc_diagnostics_json(plan_update.plan.pitch_mpc);
-      const int send_status = latest_send_status.load();
-      data["send_status_code"] = send_status;
-      static constexpr const char * send_names[] = {
-        "ready",          "no_control",     "no_plan",          "plan_expired",
-        "feedback_stale", "no_observation", "observation_stale"};
-      data["send_status"] = send_names[send_status];
-      data["planner_diagnostic_dropped"] = planner_diagnostics.dropped();
-      data["planner_trace_written"] = planner_diagnostics.written();
-      data["planner_trace_enabled"] = planner_diagnostics.trace_enabled();
-      data["feedback_sequence"] = feedback.sequence;
-      data["feedback_valid"] = feedback.valid;
-      data["feedback_rates_measured"] = feedback.rates_measured;
-      data["mpc_feedback_age_ms"] = plan_update.plan.feedback_age_ms;
-      data["mpc_state_valid"] = plan_update.plan.initial_state.valid;
-      data["mpc_initial_yaw"] = plan_update.plan.initial_state.yaw;
-      data["mpc_initial_yaw_vel"] = plan_update.plan.initial_state.yaw_vel;
-      data["mpc_initial_pitch"] = plan_update.plan.initial_state.pitch;
-      data["mpc_initial_pitch_vel"] = plan_update.plan.initial_state.pitch_vel;
-      data["plan_absolute_yaw"] = plan_update.plan.absolute_yaw;
-      data["plan_absolute_pitch"] = plan_update.plan.absolute_pitch;
-      data["mpc_yaw_solved"] = plan_update.plan.yaw_mpc.solved;
-      data["mpc_pitch_solved"] = plan_update.plan.pitch_mpc.solved;
-      data["mpc_yaw_iterations"] = plan_update.plan.yaw_mpc.iterations;
-      data["mpc_pitch_iterations"] = plan_update.plan.pitch_mpc.iterations;
-      data["mpc_yaw_primal_residual"] = plan_update.plan.yaw_mpc.primal_residual;
-      data["mpc_pitch_primal_residual"] = plan_update.plan.pitch_mpc.primal_residual;
-      data["mpc_yaw_dual_residual"] = plan_update.plan.yaw_mpc.dual_residual;
-      data["mpc_pitch_dual_residual"] = plan_update.plan.pitch_mpc.dual_residual;
-      data["mpc_yaw_input_violation"] = plan_update.plan.yaw_mpc.input_violation;
-      data["mpc_pitch_input_violation"] = plan_update.plan.pitch_mpc.input_violation;
-      data["capture_time_ms"] = latest_capture_ms.load();
-      data["detection_submit_ms"] = latest_submit_ms.load();
-      data["inference_time_ms"] = latest_inference_ms.load();
-      data["inference_wait_ms"] = latest_inference_wait_ms.load();
-      data["postprocess_time_ms"] = latest_postprocess_ms.load();
-      data["result_delivery_ms"] = latest_delivery_ms.load();
-      const auto detector_drops = detector.drop_counts();
-      data["dropped_overwritten_frames"] = detector_drops.overwritten;
-      data["dropped_result_capacity_frames"] = detector_drops.result_capacity;
-      data["skipped_empty_frames"] = detector_drops.skipped_empty;
-      data["skipped_busy_frames"] = detector_drops.skipped_busy;
-      data["skipped_error_frames"] = detector_drops.skipped_error;
-      data["fire"] = plan_update.plan.fire ? 1 : 0;
-      data["fired"] = gs.bullet_count > last_bullet_count ? 1 : 0;
+      const bool fired = gs.bullet_count > last_bullet_count;
       last_bullet_count = gs.bullet_count;
-      if (target_update.target.has_value()) {
+      std::optional<TelemetryTarget> target;
+      if (target_update.target) {
         const auto x = target_update.target->ekf_x();
-        data["target_z"] = x[4];
-        data["target_vz"] = x[5];
-        data["w"] = x[7];
-        data["angle"] = x[6];
-      } else {
-        data["w"] = 0.0;
+        target = TelemetryTarget{x[4], x[5], x[7], x[6]};
       }
-      data["mode"] = plan_update.plan.mode();
-      add_latency_metrics(data, latency_summary);
+      const auto detector_drops = detector.drop_counts();
+      const TelemetrySnapshot snapshot{
+        sampled_at,
+        t0,
+        tracker_state_code.load(),
+        target,
+        plan_update.plan,
+        plan_update.planning_ms,
+        plan_update.sequence,
+        latest_send_status.load(),
+        feedback,
+        fired,
+        {planner_diagnostics.dropped(), planner_diagnostics.written(),
+         planner_diagnostics.trace_enabled()},
+        {latest_capture_ms.load(), latest_submit_ms.load(), latest_inference_ms.load(),
+         latest_inference_wait_ms.load(), latest_postprocess_ms.load(), latest_delivery_ms.load()},
+        detector_drops,
+        latency_summary};
+      auto data = telemetry_json(snapshot);
       plotter.plot(data);
-#ifdef DUST_ENABLE_FOXGLOVE
-      if (foxglove) {
-        foxglove->publish_telemetry(std::move(data), sampled_at);
-        foxglove->publish_status(
-          {{"tracker_state_name", to_string(static_cast<TrackerState>(tracker_state_code.load()))},
-           {"has_target", target_update.target.has_value()}},
-          sampled_at);
-      }
-#endif
+      visualizer.publish_telemetry(std::move(data),
+                                   to_string(static_cast<TrackerState>(tracker_state_code.load())),
+                                   target.has_value(), sampled_at);
       if (latency_summary && tools::delta_time(sampled_at, last_latency_log) >= 1.0) {
         const auto & summary = *latency_summary;
         tools::logger()->info(
@@ -624,13 +403,8 @@ int run(const RuntimeOptions & options)
     if (exiter.exit())
       quit = true;
 
-#ifdef DUST_ENABLE_FOXGLOVE
-    // 必须放在 wait_pop_for 之前：跳帧时的 continue 会跳过这里。
-    // 本地窗口需要源图；仅远程观看时只在真有客户端订阅图像时才让检测器保留源图。
-    detector.set_keep_source(!headless || (foxglove && foxglove->image_requested()));
-#else
-    detector.set_keep_source(!headless);
-#endif
+    // Refresh subscriptions before waiting, including on cycles that skip a frame.
+    detector.set_keep_source(visualizer.needs_source());
 
     auto detection = detector.wait_pop_for(50ms);
     if (!detection || !detection->q)
@@ -682,15 +456,8 @@ int run(const RuntimeOptions & options)
         ekf_x[9], ekf_x[10]);
     }
 
-#ifdef DUST_ENABLE_FOXGLOVE
-    const bool publish_frame =
-      foxglove && foxglove->image_requested() && detection->inferred && !img_det.empty();
-#else
-    const bool publish_frame = false;
-#endif
-
-    // 本地窗口与 Foxglove 图像通道共用同一份叠加绘制
-    if ((!headless || publish_frame) && detection->inferred && !img_det.empty()) {
+    const auto output = visualizer.frame_output(detection->inferred, img_det);
+    if (output) {
       visualization::VisionOverlayInput overlay{armors, detection->net_roi, detection->light_roi,
                                                 to_string(current_state)};
       if (!targets.empty()) {
@@ -699,21 +466,8 @@ int run(const RuntimeOptions & options)
         overlay.aim_xyza = completed_plan.plan.aim_debug.xyza;
         overlay.aim_valid = completed_plan.plan.aim_visible_at(std::chrono::steady_clock::now());
       }
-      visualization::draw_vision_overlay(img_det, overlay, solver);
-
-#ifdef DUST_ENABLE_FOXGLOVE
-      // 在缩放之前发布，通道内部再按 image_scale 缩放
-      if (publish_frame)
-        foxglove->publish_image(img_det, t);
-#endif
-
-      if (!headless) {
-        cv::resize(img_det, img_det, {}, 0.5, 0.5);  // 显示时缩小图片尺寸
-        cv::imshow(options.window_name, img_det);
-        // 与 SIGINT 走同一条退出路径：置位后由循环条件收尾
-        if (cv::waitKey(1) == 'q')
-          quit = true;
-      }
+      if (visualizer.draw_frame(img_det, overlay, solver, output, t))
+        quit = true;
     }
   }
 

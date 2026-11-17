@@ -10,6 +10,11 @@
 #include "mpc_axis.hpp"
 #include "reference.hpp"
 
+namespace tools
+{
+class YamlConfig;
+}
+
 namespace auto_aim
 {
 enum class PlanStatus
@@ -126,10 +131,34 @@ struct AimPoint
   Eigen::Vector4d xyza = Eigen::Vector4d::Zero();
 };
 
+struct PlannerConfig
+{
+  MpcConfig yaw, pitch;
+  std::string replay_yaml;
+  double yaw_offset = 0.0;
+  double pitch_offset = 0.0;
+  double fire_thresh_high_speed = 0.0;
+  double fire_thresh_low_speed = 0.0;
+  double decision_speed = 0.0;
+  double high_speed_delay_time = 0.0;
+  double low_speed_delay_time = 0.0;
+  double comming_angle = 0.0;
+  double leaving_angle = 0.0;
+  double first_tolerance = 0.0;
+  double second_tolerance = 0.0;
+  double judge_distance = 0.0;
+  bool auto_fire = false;
+  bool gap_preaim_enabled = false;
+  double max_state_age = 0.02;
+
+  static PlannerConfig parse(const tools::YamlConfig & yaml);
+};
+
 class Planner
 {
 public:
   explicit Planner(const std::string & config_path);
+  explicit Planner(const PlannerConfig & config);
   ~Planner() = default;
   Planner(const Planner &) = delete;
   Planner & operator=(const Planner &) = delete;

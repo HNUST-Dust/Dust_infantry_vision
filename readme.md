@@ -150,19 +150,28 @@ source /opt/intel/openvino_2024.6.0/setupvars.sh
 
 `runtime` 段整体缺失或缺少某个键时用上表的默认值；值不是布尔（例如 `headless: 3`）会在启动时报错并以退出码 2 结束。原来的命令行开关 `--simulate-gimbal`、`--headless`、`--foxglove`、`--verbose-ekf` 已移除，旧写法会被 `infantry` 拦截并报错退出（见下文「自瞄图像与数据」）。
 
-单独测试相机：
+单独测试相机时先用 `cmake --preset robot` 配置，或设置 `-DBUILD_HARDWARE_TOOLS=ON`，然后显式构建并运行：
 
 ```bash
+cmake --build build-ninja --target camera_test
 ./build-ninja/camera_test configs/standard3.yaml
 ```
 
 ## 测试与调试程序
 
-`tests/` 按被测功能分目录，目标统一在 `tests/CMakeLists.txt` 注册；程序均作为独立可执行文件构建，主要用于算法回放、性能测量和硬件联调。除 CTest 注册的用例外，其余不会被 `ctest` 自动执行。
+`tests/` 按被测功能分目录，目标统一在 `tests/CMakeLists.txt` 注册；程序均作为独立可执行文件构建，主要用于算法回放、性能测量和硬件联调。CTest 只执行注册的自动回归。预设和依赖见 [构建与运行架构](docs/architecture.md)。手动硬件程序由 `BUILD_HARDWARE_TOOLS` 启用，性能工具由 `BUILD_PERFORMANCE_TOOLS` 启用。
 
 多数程序的位置参数默认值非空（默认 `configs/standard3.yaml`，`handeye_test` 默认 `configs/calibration.yaml`），因此**不带参数直接运行会按默认配置启动，而不是打印帮助**；要查看帮助请显式传 `-h`。
 
 ### 自动回归（CTest）
+
+```bash
+cmake --preset tools-tests
+cmake --build --preset tools-tests
+ctest --preset tools-tests
+```
+
+- `ordered_delivery_test`：验证预留、跳过、递交顺序、背压和关闭唤醒。
 
 - `quaternion_buffer_test`：无硬件回归，覆盖姿态插值、历史重复查询、缓存淘汰、无效四元数、通信间断和退出唤醒。链接仅需 Eigen 与 Threads。
 - `simulator_disabled`：仅在关闭仿真支持时注册，使用仅含 Talos 后端选择的临时配置验证启动返回 2，并提示重新启用编译开关。
@@ -338,7 +347,7 @@ sudo ln -sfn \
 source /opt/intel/openvino_2024.6.0/setupvars.sh
 ```
 
-也可以把这一行加入 `~/.bashrc`。如果 OpenVINO 安装在其他目录且无法软链接到 `/opt/intel/openvino_2024.6.0`，修改根 `CMakeLists.txt` 中的 `OpenVINO_DIR` 即可（`tasks/auto_aim/CMakeLists.txt` 与 `tasks/omniperception/CMakeLists.txt` 只是链接 `openvino::runtime`，不含该变量）。
+也可以把这一行加入 `~/.bashrc`。如果 OpenVINO 安装在其他目录且无法软链接到 `/opt/intel/openvino_2024.6.0`，配置时通过 `-DOpenVINO_DIR=...` 指定包目录。默认路径由 `tasks/auto_aim/CMakeLists.txt` 中的检测目标配置。
 
 注意该变量是**不带 `FORCE` 的缓存变量**：如果构建目录里已经存在旧的缓存值，仅修改文件不会生效。此时用命令行覆盖或删除缓存条目后重新配置：
 
@@ -827,7 +836,7 @@ Foxglove 的启用开关同样在配置文件的 `runtime` 段（`runtime.foxglo
 ls /opt/intel/openvino_2024.6.0/runtime/cmake/OpenVINOConfig.cmake
 ```
 
-不存在时，按上方 OpenVINO 安装步骤解压并建立软链接，或者修改根 `CMakeLists.txt` 中的 `OpenVINO_DIR`。该变量是缓存变量且未加 `FORCE`，已有构建目录时请改用 `-DOpenVINO_DIR=...` 或删除构建目录后重新配置。
+不存在时，按上方 OpenVINO 安装步骤解压并建立软链接，或者在配置时传入 `-DOpenVINO_DIR=...`。
 
 ### 运行时报 GPU 或 OpenCL 错误
 

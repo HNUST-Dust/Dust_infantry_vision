@@ -6,6 +6,11 @@
 
 #include "tinympc/tiny_api.hpp"
 
+namespace tools
+{
+class YamlConfig;
+}
+
 namespace auto_aim
 {
 constexpr double DT = 0.01;
@@ -40,6 +45,7 @@ struct MpcConfig
   int max_iterations = 300;
   double primal_tolerance = 1e-3;
   double dual_tolerance = 1e-3;
+  static MpcConfig parse(const tools::YamlConfig & yaml, const std::string & axis);
   static MpcConfig load(const std::string & path, const std::string & axis);
 };
 

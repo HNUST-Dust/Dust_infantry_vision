@@ -10,7 +10,7 @@
 #include <unistd.h>
 
 #include "tools/diagnostics/logger.hpp"
-#include "tools/runtime/yaml.hpp"
+#include "tools/runtime/yaml_config.hpp"
 
 #ifndef DUST_PLANNER_BUILD_ID
 #define DUST_PLANNER_BUILD_ID "unknown"
@@ -58,25 +58,24 @@ Json state_json(const PlanningState & state, std::chrono::steady_clock::time_poi
 
 PlannerDiagnosticsConfig PlannerDiagnosticsConfig::load(const std::string & path)
 {
+  return parse(tools::YamlConfig(path));
+}
+
+PlannerDiagnosticsConfig PlannerDiagnosticsConfig::parse(const tools::YamlConfig & yaml)
+{
   PlannerDiagnosticsConfig config;
-  const auto yaml = tools::load(path);
-  const auto runtime = yaml["runtime"];
-  if (!runtime)
-    return config;
-  const auto node = runtime["planner_diagnostics"];
-  if (!node)
-    return config;
-  if (node["trace_enabled"])
-    config.trace_enabled = node["trace_enabled"].as<bool>();
-  const auto mode = node["trace_mode"] ? node["trace_mode"].as<std::string>() : "failures";
+  const auto node = yaml.section("runtime").section("planner_diagnostics");
+  config.trace_enabled = node.get("trace_enabled", config.trace_enabled);
+  const auto mode = node.get<std::string>("trace_mode", "failures");
   if (mode != "all" && mode != "failures")
-    throw std::invalid_argument("planner_diagnostics.trace_mode must be all or failures");
+    node.fail("trace_mode", "must be all or failures");
   config.trace_all = mode == "all";
-  if (node["trace_directory"])
-    config.directory = node["trace_directory"].as<std::string>();
-  const int limit = node["trace_max_mb"] ? node["trace_max_mb"].as<int>() : 32;
-  if (limit <= 0 || limit > 1024 || config.directory.empty())
-    throw std::invalid_argument("Invalid planner trace directory or size limit");
+  config.directory = node.get("trace_directory", config.directory);
+  const int limit = node.get("trace_max_mb", 32);
+  if (limit <= 0 || limit > 1024)
+    node.fail("trace_max_mb", "must be between 1 and 1024 MiB");
+  if (config.directory.empty())
+    node.fail("trace_directory", "must not be empty");
   config.max_bytes = uint64_t(limit) * 1024 * 1024;
   return config;
 }

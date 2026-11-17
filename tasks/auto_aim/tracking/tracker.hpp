@@ -20,6 +20,11 @@ namespace omniperception
 struct DetectionResult;
 }
 
+namespace tools
+{
+class YamlConfig;
+}
+
 namespace auto_aim
 {
 // Tracker 的状态机取值。唯一真相：tracker.cpp 内部只用这个枚举，
@@ -39,10 +44,37 @@ const char * to_string(TrackerState state);
 // default 分支一致）。
 TrackerState tracker_state_from(const std::string & name);
 
+struct ArmorAssociationConfig
+{
+  bool enabled = true;
+  double center_gate_px = 100.0;
+  double corner_gate_px = 140.0;
+  double angle_gate_rad = 0.8;
+  double perimeter_ratio_gate = 0.6;
+  bool image_observation_enabled = true;
+  double image_point_sigma_px = 8.0;
+  // PnP 观测路径的测量噪声：像素噪声 + 装甲板法向角先验（弧度）
+  double pnp_point_sigma_px = 8.0;
+  double pnp_angle_prior_rad = 0.15;
+};
+
+struct TrackerConfig
+{
+  Color enemy_color = Color::blue;
+  int min_detect_count = 0;
+  int max_temp_lost_count = 0;
+  int outpost_max_temp_lost_count = 0;
+  bool dynamic_roi_enabled = false;
+  DynamicRoiConfig dynamic_roi;
+  ArmorAssociationConfig armor_association;
+  static TrackerConfig parse(const tools::YamlConfig & yaml);
+};
+
 class Tracker
 {
 public:
   Tracker(const std::string & config_path, Solver & solver);
+  Tracker(const TrackerConfig & config, Solver & solver);
 
   std::string state() const;
   TrackerState state_enum() const;
@@ -63,20 +95,6 @@ public:
         bool use_enemy_color = true);
 
 private:
-  struct ArmorAssociationConfig
-  {
-    bool enabled = true;
-    double center_gate_px = 100.0;
-    double corner_gate_px = 140.0;
-    double angle_gate_rad = 0.8;
-    double perimeter_ratio_gate = 0.6;
-    bool image_observation_enabled = true;
-    double image_point_sigma_px = 8.0;
-    // PnP 观测路径的测量噪声：像素噪声 + 装甲板法向角先验（弧度）
-    double pnp_point_sigma_px = 8.0;
-    double pnp_angle_prior_rad = 0.15;
-  };
-
   Solver & solver_;
   Color enemy_color_;
   int min_detect_count_;
