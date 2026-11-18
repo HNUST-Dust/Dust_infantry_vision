@@ -221,7 +221,8 @@ int run(const RuntimeOptions & options)
                               now - update.generated_at <= runtime_config.plan_timeout &&
                               now <= update.plan.valid_at;
       const bool feedback_fresh = feedback.fresh_at(now, runtime_config.feedback_timeout);
-      const bool observation_known = update.last_observed_timestamp != epoch;
+      const bool observation_known =
+        update.last_observed_timestamp != epoch && update.last_observed_timestamp <= now;
       const auto observation_age =
         observation_known ? now - update.last_observed_timestamp : now - epoch;
       // 0=ready, 1=no_control, 2=no_plan, 3=plan_expired, 4=feedback_stale,
@@ -242,14 +243,22 @@ int run(const RuntimeOptions & options)
       send_sample.target_yaw = plan.target_yaw;
       send_sample.target_pitch = plan.target_pitch;
       send_sample.fire_tolerance = update.plan.fire_tolerance;
+      const auto & control = update.plan.control_reference;
+      send_sample.yaw_mode = control.yaw_mode;
+      send_sample.pitch_mode = control.pitch_mode;
+      send_sample.height_group = control.height_group;
+      send_sample.yaw_transitioning = control.yaw_transitioning;
+      send_sample.pitch_transitioning = control.pitch_transitioning;
       auto & blocked = send_sample.fire_block_mask;
       if (!plan.control)
         blocked |= send_no_control;
-      if (update.plan.control && !update.plan.fire)
-        blocked |= send_planner_no_fire;
-      if (send_sample.target_valid &&
-          !(std::hypot(plan.target_yaw, plan.target_pitch) < update.plan.fire_tolerance))
-        blocked |= send_angle_outside;
+      if (!update.plan.fire_context) {
+        if (update.plan.control && !update.plan.fire)
+          blocked |= send_planner_no_fire;
+        if (send_sample.target_valid && !plan.legacy_fire_aligned())
+          blocked |= send_angle_outside;
+        plan.fire = plan.fire && plan.legacy_fire_aligned();
+      }
       if (update.generated_at == epoch)
         blocked |= send_no_plan;
       else if (!plan_fresh)
@@ -270,10 +279,34 @@ int run(const RuntimeOptions & options)
         plan = Plan{};  // startup, no target, stale plan/pose, or stale real observation
       } else if (observation_age > runtime_config.fire_timeout) {
         plan.fire = false;
+      } else if (plan.control && plan.fire_context) {
+        const auto checked_at = std::chrono::steady_clock::now();
+        const auto hold_until = checked_at + period;
+        const auto rotation = solver.R_gimbal2world(feedback.q);
+        const bool rate_frame_supported = (rotation - feedback.q.toRotationMatrix()).norm() < 1e-6;
+        PlanningState latest;
+        latest.yaw = feedback.state.yaw;
+        latest.pitch = feedback.state.pitch;
+        latest.yaw_vel = feedback.state.yaw_vel;
+        latest.pitch_vel = feedback.state.pitch_vel;
+        latest.timestamp = feedback.received_at;
+        latest.R_gimbal2world = rotation;
+        latest.valid =
+          rate_frame_supported && feedback.fresh_at(hold_until, runtime_config.feedback_timeout);
+        latest.rates_measured = feedback.rates_measured;
+        auto evaluation = FireEvaluator::evaluate(*plan.fire_context, latest,
+                                                  feedback.state.bullet_speed, checked_at, period);
+        if (evaluation.allowed() &&
+            (hold_until - update.generated_at > runtime_config.plan_timeout ||
+             hold_until - update.last_observed_timestamp > runtime_config.fire_timeout))
+          evaluation.block = FireBlock::expired;
+        plan.fire = evaluation.allowed();
+        send_sample.fire_result = evaluation;
+        if (!plan.fire)
+          blocked |= send_real_plate_rejected;
       }
 
-      // The gimbal must interpret a continuous mode=2 stream as a fire permission,
-      // not as one trigger event per received frame.
+      // mode=2 carries host permission. MCU trigger timing depends on the firmware.
       const auto sent_at = std::chrono::steady_clock::now();
 #ifdef DUST_ENABLE_SIMULATOR
       if (talos_backend) {

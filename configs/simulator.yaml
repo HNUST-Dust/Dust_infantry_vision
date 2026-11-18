@@ -75,8 +75,10 @@ high_speed_delay_time: 0.01 # s 规划，下发，云台到达，发弹延迟
 low_speed_delay_time: 0.01 # s
 
 #####-----planner 开火参数（原 shooter，2026-10-03 并入）-----#####
-first_tolerance: 3 # 近距离射击容差，degree
-second_tolerance: 2 # 远距离射击容差，degree
+first_tolerance: 3 # 近距离低速射击容差，degree
+first_tolerance_high_speed: 4 # 近距离高速射击容差，degree
+second_tolerance: 2 # 远距离低速射击容差，degree
+second_tolerance_high_speed: 3 # 远距离高速射击容差，degree
 judge_distance: 2 # 距离判断阈值
 auto_fire: false # 是否由自瞄控制射击
 
@@ -89,8 +91,7 @@ R_camera2gimbal: [0, 0, 1, -1, 0, 0, 0, -1, 0]
 t_camera2gimbal: [0, 0, 0]
 
 #####-----planner TinyMPC-----#####
-fire_thresh_high_speed: 1e-3 # 高速旋转时使用较宽松的阈值
-fire_thresh_low_speed: 1e-4 # 低速/静止时使用较严格的阈值
+fire_thresh: 1e-3 # rad，固定 MPC 跟踪误差阈值，不随转速切换
 
 max_yaw_acc: 50
 Q_yaw: [9e9, 0]

@@ -343,11 +343,12 @@ int main(int argc, char ** argv)
     if (argc < 2 || argc > 3) {
       std::cerr << "Usage: planner_replay_test trace.jsonl "
                    "[--mode=reproduce|--mode=sweep|--mode=precision|--mode=target-reproduce|--mode="
-                   "target-ab]\n";
+                   "target-ab|--mode=pitch-window-ab]\n";
       return 2;
     }
     const std::string mode = argc == 3 ? argv[2] : "--mode=reproduce";
-    if (mode == "--mode=target-reproduce" || mode == "--mode=target-ab") {
+    if (mode == "--mode=target-reproduce" || mode == "--mode=target-ab" ||
+        mode == "--mode=pitch-window-ab") {
       std::ifstream input(argv[1]);
       require(bool(input), "Cannot open trace");
       std::string line;
@@ -359,10 +360,15 @@ int main(int argc, char ** argv)
         if (mode == "--mode=target-reproduce") {
           target_replay::reproduce(record);
         } else {
+          const auto run = [&](bool enabled) {
+            return mode == "--mode=pitch-window-ab"
+                     ? target_replay::run(record, std::nullopt, enabled)
+                     : target_replay::run(record, enabled);
+          };
           std::cout << json({{"session", record.at("session")},
                              {"plan_id", record.at("plan_id")},
-                             {"off", target_replay::serialize(target_replay::run(record, false))},
-                             {"on", target_replay::serialize(target_replay::run(record, true))}})
+                             {"off", target_replay::serialize(run(false))},
+                             {"on", target_replay::serialize(run(true))}})
                          .dump()
                     << '\n';
         }

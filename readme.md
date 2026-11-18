@@ -489,7 +489,7 @@ tests/                    调试和测试程序（CMakeLists.txt 集中注册目
 - 两轴保留前向 Euler 模型：角度下一步为当前角度加 DT*角速度，角速度下一步加 DT*加速度。输出改为第 1 列位置/速度和第 0 列加速度，目标有效时刻为规划后 10ms；不再直接发送第 30 列。此模型的第一步位置只含实测速度积分，下位机必须实际消费速度/加速度前馈。规划和发送仍各按 2ms 周期调度，错过周期不补发积压任务。
 - TinyMPC 将加速度归一化到 [-1,1]、整体等比例缩放 YAML 的 Q/R；默认 rho=0.05、最多 300 次迭代、原始/对偶残差容差 1e-3。修正了内部 ADMM 惩罚项重复计入和冷启动首次参考未生效的问题。仅采用收敛、有限且通过初值/动力学/输入约束检查的解；使用有界投影输入重新 rollout 配套状态，求解失败返回不控制结果。可选顶层参数 `mpc_rho`、`mpc_max_iter`、`mpc_max_state_age_ms`（默认 20ms）无需添加到已有配置即可生效。
 - `Plan` 保存独立的绝对预测目标、绝对参考和规划/有效时刻；原 `yaw/pitch/target_yaw/target_pitch` 字段仍表示相对关节增量。硬件发送线程每次调用 `relative_to(latest_yaw, latest_pitch)` 重新计算增量，同一计划重发时绝对目标保持不变；速度/加速度保留物理前馈含义。Talos 直接消费绝对目标。计划超过自身 10ms 有效时刻、计划生成超时、反馈或真实观测超时都会停止控制。
-- 开火要求 auto_fire、前一有效计划、近期选板有效且飞行时间收敛、绝对参考稳定、近期预测可达，以及当前实测 yaw/pitch 的二维角误差小于按距离选择的 first/second_tolerance。发送时再次检查到位；不再使用旧的 yaw 增量锚点判据。姿态估计得到的速度只用于模拟/回放控制，不能授权开火。缺反馈、未来时间戳、状态过期、非有限值或求解失败均不能产生开火结果。
+- 开火要求 auto_fire、前一有效计划、近期选板有效且飞行时间收敛、绝对参考稳定、近期预测可达，以及当前实测 yaw/pitch 的二维角误差小于按距离和转速选择的射击容差。发送时再次检查到位；不再使用旧的 yaw 增量锚点判据。姿态估计得到的速度只用于模拟/回放控制，不能授权开火。缺反馈、未来时间戳、状态过期、非有限值或求解失败均不能产生开火结果。
 - `Planner::plan_at(target, now, bullet_speed, state)` 提供确定性回放入口；`plan(target, bullet_speed, state)` 取当前 steady_clock。图像 PnP/Tracker 仍使用随图像传递的采集时刻姿态，规划使用当前反馈姿态，不覆盖图像解算的共享 R。Gimbal 新增 `feedback()`，一次锁取得同包角度、速度、q、接收时间、序号与有效性；接收时间不是 MCU 采样时间。Talos/旧视频仅有姿态时用相邻样本估速，首帧、重复/倒退时间及大于 100ms 的间隔无有效速度。
 - 当前硬件速度映射限定为已对齐的 IMU/关节坐标；若 `R_gimbal2imubody` 改变实际旋转坐标，运行时会报错并禁止控制，需实现对应速度映射后再启用。上行速度是否为关节角导数、pitch 是否按相对增量解释，以及前馈是否被下位机使用，须通过协议与无开火实机测试确认。现有反馈停止阈值 100ms 不会放宽 MPC 默认 20ms 外推上限。
 - 离线回归：`./build-ninja/planner_feedback_test` 或 `ctest --test-dir build-ninja -R planner_feedback --output-on-failure`，无需相机、串口、模型或显示。覆盖真实初值、速度/制动、坐标和时间、角度环绕、重复发送、估算反馈、原子快照、ADMM 解析对照及求解失败。
@@ -559,9 +559,10 @@ tests/                    调试和测试程序（CMakeLists.txt 集中注册目
 | 瞄准 | `decision_speed` | 高/低速判定阈值（rad/s） |
 | 瞄准 | `high_speed_delay_time` / `low_speed_delay_time` | 高/低速下的额外预测时延（秒） |
 | 射击 | `auto_fire` | 是否由视觉控制射击（`Planner` 使用） |
-| 射击 | `first_tolerance` / `second_tolerance` | 近距离/远距离射击角度容差（度） |
+| 射击 | `first_tolerance` / `second_tolerance` | 近距离/远距离低速射击角度容差（度） |
+| 射击 | `first_tolerance_high_speed` / `second_tolerance_high_speed` | 近距离/远距离高速射击角度容差（度）；缺省沿用对应低速值 |
 | 射击 | `judge_distance` | 近/远距离判定阈值（米） |
-| 规划 | `fire_thresh_high_speed` / `fire_thresh_low_speed` | 高/低速下的射击阈值 |
+| 规划 | `fire_thresh` | 固定 MPC 跟踪误差阈值（rad），不随转速切换 |
 | 规划 | `max_yaw_acc` / `max_pitch_acc` | 云台物理角加速度约束（rad/s²），独立于固定归一化尺度 |
 | 规划 | `Q_yaw` / `R_yaw` / `Q_pitch` / `R_pitch` | TinyMPC 权重 |
 | 运行模式 | `runtime.simulate_gimbal` | 虚拟云台姿态与串口输出，不依赖真机，默认 `false` |

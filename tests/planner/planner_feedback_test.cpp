@@ -8,6 +8,7 @@
 #include <stdexcept>
 #include <thread>
 #include <unistd.h>
+#include <yaml-cpp/yaml.h>
 
 #include "io/gimbal/gimbal.hpp"
 #include "tasks/auto_aim/planner/planner.hpp"
@@ -38,7 +39,7 @@ struct Config
     path = (directory / "test.yaml").string();
     std::ofstream out(path);
     out << "yaw_offset: 0\npitch_offset: 0\n"
-        << "fire_thresh_high_speed: 0.01\nfire_thresh_low_speed: 0.01\n"
+        << "fire_thresh: 0.01\n"
         << "decision_speed: 8\nhigh_speed_delay_time: 0.01\nlow_speed_delay_time: 0.01\n"
         << "comming_angle: 55\nleaving_angle: 20\nfirst_tolerance: 1\n"
         << "second_tolerance: 0.5\njudge_distance: 5\nauto_fire: " << (auto_fire ? "true" : "false")
@@ -179,6 +180,37 @@ void check_acceleration_scaling()
   }
 }
 
+void check_fire_tolerances()
+{
+  const auto t = std::chrono::steady_clock::now();
+  for (bool far : {false, true}) {
+    for (double omega : {0.0, 8.0, 9.0, -9.0}) {
+      Config config;
+      {
+        auto yaml = YAML::LoadFile(config.path);
+        yaml["first_tolerance"] = 3;
+        yaml["second_tolerance"] = 2;
+        yaml["first_tolerance_high_speed"] = 4;
+        yaml["second_tolerance_high_speed"] = 3;
+        yaml["judge_distance"] = far ? 2 : 4;
+        std::ofstream out(config.path);
+        out << yaml;
+      }
+      auto_aim::Planner planner(config.path);
+      auto target = target_at(t, 0.12);
+      target.set_initial_omega(omega);
+      const auto plan = planner.plan_at(target, t, 23, state_at(t));
+      check_solver(plan, "distance/speed tolerance");
+      const double expected = std::abs(omega) > 8 ? (far ? 3 : 4) : (far ? 2 : 3);
+      require(std::abs(plan.fire_tolerance - expected / 57.3) < 1e-12,
+              "Fire tolerance must select the distance/speed combination");
+      if (plan.fire_context)
+        require(plan.fire_context->tolerance == plan.fire_tolerance,
+                "Sender recheck must retain the selected tolerance");
+    }
+  }
+}
+
 void check_pitch_reference_switches()
 {
   Config config;
@@ -276,6 +308,7 @@ int main(int argc, char ** argv)
     check_acceleration_scaling();
     check_pitch_reference_switches();
     check_feedback();
+    check_fire_tolerances();
     Config config(argc > 1 ? std::stoi(argv[1]) : 0, true, argc > 2 ? std::stod(argv[2]) : 0.0);
     auto_aim::Planner planner(config.path);
     const auto t = std::chrono::steady_clock::now();
@@ -312,7 +345,7 @@ int main(int argc, char ** argv)
       require(std::abs(plan.absolute_pitch - plan.initial_state.pitch - 0.15 * 0.01) < 1e-9,
               "pitch starts from measured angle and rate");
       require(plan.valid_at == plan.planned_at + 10ms, "command time");
-      require(std::abs(tools::limit_rad(plan.absolute_target_yaw - 0.12)) < 1e-6,
+      require(std::abs(tools::limit_rad(plan.control_reference.absolute_yaw - 0.12)) < 1e-6,
               "absolute reference with nonzero pitch and roll");
       const auto a = plan.relative_to(0.08, -0.01);
       const auto b = plan.relative_to(0.09, -0.02);
@@ -388,7 +421,8 @@ int main(int argc, char ** argv)
     next.rates_measured = false;
     require(!planner.plan_at(target, t + 4ms, 23, next).fire,
             "estimated rates cannot authorize fire");
-    require(!fire.relative_to(0.5, aligned.pitch).fire, "send-time actual position gate");
+    require(!fire.relative_to(0.5, aligned.pitch).legacy_fire_aligned(),
+            "send-time actual position gate");
     Config disabled(200, false);
     auto_aim::Planner disabled_planner(disabled.path);
     disabled_planner.plan_at(target, t, 23, aligned);

@@ -105,6 +105,7 @@ private:
   int normal_temp_lost_count_;
   TrackerState state_, pre_state_;
   Target target_;
+  uint64_t target_generation_ = 0;
   std::chrono::steady_clock::time_point last_timestamp_;
   std::chrono::steady_clock::time_point last_observed_timestamp_;
   bool last_update_real_observation_ = false;

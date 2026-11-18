@@ -477,6 +477,8 @@ TargetPredictionState Target::prediction_state() const
   state.armor_type = armor_type;
   state.armor_num = armor_num_;
   state.jumped = jumped;
+  state.generation = generation_;
+  state.observed_at = observed_at_;
   return state;
 }
 
@@ -493,6 +495,8 @@ Target Target::from_prediction_state(const TargetPredictionState & state)
   target.armor_type = state.armor_type;
   target.armor_num_ = state.armor_num;
   target.jumped = state.jumped;
+  target.generation_ = state.generation;
+  target.observed_at_ = state.observed_at;
   return target;
 }
 
@@ -538,29 +542,34 @@ bool Target::convergened()
   return is_converged_;
 }
 
-// 计算出装甲板中心的坐标（考虑长短轴）
+namespace
+{
+template <typename State>
+Eigen::Vector4d armor_pose(const State & x, int id, int count, ArmorName name, double dt)
+{
+  const double angle = tools::limit_rad(x[6] + dt * x[7] + id * 2 * CV_PI / count);
+  const bool alternate = count == 4 && (id == 1 || id == 3);
+  const double radius = x[8] + (alternate ? x[9] : 0.0);
+  double z = x[4] + dt * x[5];
+  if (count == 3 && name == ArmorName::outpost) {
+    constexpr double height_difference = 0.102;
+    z += id == 0 ? -height_difference : (id == 1 ? height_difference : 0.0);
+  } else if (alternate) {
+    z += x[10];
+  }
+  return {x[0] + dt * x[1] - radius * std::cos(angle), x[2] + dt * x[3] - radius * std::sin(angle),
+          z, angle};
+}
+}  // namespace
+
+Eigen::Vector4d TargetPredictionState::armor_at(int id, double dt) const
+{
+  return armor_pose(x, id, armor_num, name, dt);
+}
+
 Eigen::Vector3d Target::h_armor_xyz(const Eigen::VectorXd & x, int id) const
 {
-  auto angle = tools::limit_rad(x[6] + id * 2 * CV_PI / armor_num_);
-  auto use_l_h = (armor_num_ == 4) && (id == 1 || id == 3);
-
-  auto r = (use_l_h) ? x[8] + x[9] : x[8];
-  auto armor_x = x[0] - r * std::cos(angle);
-  auto armor_y = x[2] - r * std::sin(angle);
-
-  double armor_z;
-  if (armor_num_ == 3 && this->name == ArmorName::outpost) {
-    // 前哨站三装甲板：固定高度差102mm，排列 id0=最低 id1=最高 id2=中间
-    constexpr double SENTRY_HEIGHT_DIFF = 0.102;  // 102mm
-    double h_off = (id == 0) ? -SENTRY_HEIGHT_DIFF : (id == 1) ? SENTRY_HEIGHT_DIFF : 0.0;
-    armor_z = x[4] + h_off;
-  } else if (use_l_h) {
-    armor_z = x[4] + x[10];
-  } else {
-    armor_z = x[4];
-  }
-
-  return {armor_x, armor_y, armor_z};
+  return armor_pose(x, id, armor_num_, name, 0.0).head<3>();
 }
 
 Eigen::MatrixXd Target::h_jacobian(const Eigen::VectorXd & x, int id) const

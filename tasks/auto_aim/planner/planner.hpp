@@ -8,7 +8,8 @@
 
 #include "tasks/auto_aim/tracking/target.hpp"
 #include "mpc_axis.hpp"
-#include "reference.hpp"
+#include "pitch_yaw_window.hpp"
+#include "fire_evaluator.hpp"
 
 namespace tools
 {
@@ -61,6 +62,15 @@ struct AimDebugSnapshot
   bool display_valid = false;
 };
 
+struct ControlReference
+{
+  double absolute_yaw = 0.0, absolute_pitch = 0.0;
+  YawMode yaw_mode = YawMode::plate;
+  PitchMode pitch_mode = PitchMode::plate;
+  int height_group = -1;
+  bool yaw_transitioning = false, pitch_transitioning = false;
+};
+
 struct Plan
 {
   PlanStatus status = PlanStatus::not_run;
@@ -79,8 +89,9 @@ struct Plan
   float pitch_acc = 0;
   double absolute_yaw = 0.0;
   double absolute_pitch = 0.0;
-  double absolute_target_yaw = 0.0;
-  double absolute_target_pitch = 0.0;
+  ControlReference control_reference;
+  std::optional<FireContext> fire_context;
+  FireResult fire_result;
   double fire_tolerance = 0.0;
   double feedback_age_ms = 0.0;
   PlanningState initial_state;
@@ -94,6 +105,7 @@ struct Plan
     return control ? (fire ? 2 : 1) : 0;
   }
   Plan relative_to(double measured_yaw, double measured_pitch) const;
+  bool legacy_fire_aligned() const;
   bool aim_visible_at(std::chrono::steady_clock::time_point now) const;
 };
 
@@ -103,6 +115,8 @@ struct PlannerHistory
   bool have_last_command = false;
   double last_target_yaw = 0.0;
   std::chrono::steady_clock::time_point last_plan_at{};
+  AxisStrategyHistory axis_strategy{};
+  std::optional<PitchWindowBridge> pitch_window_bridge{};
 };
 
 struct PlanningTrace
@@ -110,6 +124,7 @@ struct PlanningTrace
   bool reference_available = false;
   Trajectory reference = Trajectory::Zero();
   ReferenceTags reference_tags{};
+  std::optional<PitchWindowTrace> pitch_yaw_window;
   PlanningState received_state;
   MpcConfig yaw_config;
   MpcConfig pitch_config;
@@ -137,8 +152,7 @@ struct PlannerConfig
   std::string replay_yaml;
   double yaw_offset = 0.0;
   double pitch_offset = 0.0;
-  double fire_thresh_high_speed = 0.0;
-  double fire_thresh_low_speed = 0.0;
+  double fire_thresh = 0.0;
   double decision_speed = 0.0;
   double high_speed_delay_time = 0.0;
   double low_speed_delay_time = 0.0;
@@ -146,9 +160,15 @@ struct PlannerConfig
   double leaving_angle = 0.0;
   double first_tolerance = 0.0;
   double second_tolerance = 0.0;
+  double first_tolerance_high_speed = 0.0;
+  double second_tolerance_high_speed = 0.0;
   double judge_distance = 0.0;
   bool auto_fire = false;
   bool gap_preaim_enabled = false;
+  bool axis_strategy_enabled = false;
+  bool pitch_follow_yaw_window = false;
+  AxisStrategyConfig yaw_strategy, pitch_strategy;
+  std::chrono::milliseconds control_timeout{80}, fire_timeout{30};
   double max_state_age = 0.02;
 
   static PlannerConfig parse(const tools::YamlConfig & yaml);
@@ -176,12 +196,19 @@ private:
   double yaw_offset_;
   double pitch_offset_;
   double low_speed_delay_time_, high_speed_delay_time_, decision_speed_;
-  double fire_thresh_high_speed_, fire_thresh_low_speed_;
+  double fire_thresh_;
   double comming_angle_, leaving_angle_;
   double first_tolerance_, second_tolerance_, judge_distance_;
+  double first_tolerance_high_speed_, second_tolerance_high_speed_;
   bool auto_fire_;
   bool gap_preaim_enabled_ = false;
   double max_state_age_ = 0.02;
+  bool axis_strategy_enabled_ = false;
+  bool pitch_follow_yaw_window_ = false;
+  AxisStrategyConfig yaw_strategy_, pitch_strategy_;
+  std::chrono::milliseconds control_timeout_, fire_timeout_;
+  AxisStrategyHistory axis_history_;
+  std::optional<PitchWindowBridge> pitch_window_bridge_;
   MpcAxis yaw_solver_;
   MpcAxis pitch_solver_;
   int lock_id_ = -1;
@@ -194,19 +221,22 @@ private:
     bool valid = false;
     bool converged = false;
     bool command_valid = false;
+    bool reference_is_real = true;
     int id = 0;
     int lock = -1;
     double fly_time = 0.0;
     AimMode mode = AimMode::fallback;
     Eigen::Vector4d reference_xyza = Eigen::Vector4d::Zero();
   };
-  struct AimSolution
-  {
-    double fly_time = 0.0;
-    double yaw = 0.0;
-    double pitch = 0.0;
-  };
 
+  void update_axis_modes(const TargetPredictionState & target, const PlanningState & initial,
+                         double bullet_speed);
+  void apply_transitions(PlannerTime now, const PlanningState & initial, Trajectory & reference,
+                         const ReferenceTags & tags);
+  std::optional<AimSolution> smooth_aim(const TargetPredictionState & target, int group,
+                                        double bullet_speed,
+                                        const Eigen::Matrix3d & rotation) const;
+  bool allowed_armor(int id) const;
   int nearest_armor_id(const Target & target) const;
   AimPoint choose_aim_point(const Target & target, int & lock_id) const;
   AimDecision choose_reference(const Target & target, int & lock, int previous_id) const;

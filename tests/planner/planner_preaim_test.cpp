@@ -252,7 +252,7 @@ int main(int argc, char ** argv)
     yaml["high_speed_delay_time"] = yaml["low_speed_delay_time"] = .01;
     yaml["auto_fire"] = true;
     yaml["first_tolerance"] = yaml["second_tolerance"] = 180;
-    yaml["fire_thresh_high_speed"] = yaml["fire_thresh_low_speed"] = 10;
+    yaml["fire_thresh"] = 10;
     const auto off_path = directory / "off.yaml", on_path = directory / "on.yaml";
     yaml["gap_preaim_enabled"] = false;
     {

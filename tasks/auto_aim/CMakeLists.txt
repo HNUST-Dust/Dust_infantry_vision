@@ -13,7 +13,8 @@ if(build_pipeline)
   target_link_libraries(aim_tracking PUBLIC aim_geometry aim_roi tools PRIVATE yaml-cpp)
 
   add_subdirectory(planner/tinympc)
-  add_library(aim_planner STATIC planner/planner.cpp planner/mpc_axis.cpp)
+  add_library(aim_planner STATIC planner/planner.cpp planner/mpc_axis.cpp
+    planner/axis_strategy.cpp planner/fire_evaluator.cpp planner/pitch_yaw_window.cpp)
   # mpc_axis.hpp includes TinyMPC types. No detection or hardware target is needed here.
   target_link_libraries(aim_planner PUBLIC aim_tracking tinympcstatic PRIVATE tools yaml-cpp)
   file(GLOB mpc_build_sources CONFIGURE_DEPENDS
@@ -32,6 +33,9 @@ if(build_pipeline)
   # Target-reference replay also depends on prediction, selection, ballistics and differentiation.
   file(GLOB planner_build_sources CONFIGURE_DEPENDS
     ${CMAKE_CURRENT_SOURCE_DIR}/planner/planner.*
+    ${CMAKE_CURRENT_SOURCE_DIR}/planner/axis_strategy.*
+    ${CMAKE_CURRENT_SOURCE_DIR}/planner/fire_evaluator.*
+    ${CMAKE_CURRENT_SOURCE_DIR}/planner/pitch_yaw_window.*
     ${CMAKE_CURRENT_SOURCE_DIR}/planner/reference.hpp
     ${CMAKE_CURRENT_SOURCE_DIR}/tracking/target.*
     ${CMAKE_CURRENT_SOURCE_DIR}/model/armor.hpp

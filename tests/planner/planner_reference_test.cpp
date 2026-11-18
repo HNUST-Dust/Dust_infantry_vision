@@ -68,7 +68,7 @@ void isolated_armor_and_invalid_samples()
   require(reference.row(3).norm() == 0,
           "A-B-A must not connect an isolated B sample to either A neighbor");
 
-  for (const ReferenceTag invalid :
+  for (const ReferenceTag & invalid :
        {ReferenceTag{0, false}, ReferenceTag{-1, false}, ReferenceTag{-1, true}}) {
     reference = ramp(0.2);
     tags.fill({0, true});

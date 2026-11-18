@@ -23,6 +23,12 @@
 
 `RuntimeVisualizer` 根据本地窗口开关和远程订阅决定是否保留源图，绘制叠加层并发布图像。绘制时借用检测帧和跟踪数据。Foxglove 队列持有自己的图像引用，本地缩放在发布之后执行。
 
+### 四板目标两轴参考
+
+`planner_axis_strategy` 在 `configs/standard3.yaml` 默认关闭。启用后可单独选择 yaw 跟中心、pitch 保持高度组。两轴用最后一次真实匹配的时间和 EKF 转速独立确认模式。pitch 保持高度组期间，跟板参考和发弹候选都受同一组约束。首次实机对照使用 `auto_fire: false`，依次开 yaw、pitch 和两轴。
+
+启用策略的四板目标在发送前对同一块真实板重算两轴的弹道误差。延迟从当次判定时刻计算，弹道飞行时间单独求解。发送端检查标称 2 ms 发送周期内的起点、中点和终点，并检查许可截止时间。下位机实际保持和发弹时序仍待实测。
+
 ### 最终发送遥测
 
 `/vision/telemetry` 原有的 `mode`、`fire` 仍表示规划结果。`send_mode` 表示发送线程完成相对角更新、角度检查和超时门控后交给 IO 的模式（0 停止控制、1 控制但不允许开火、2 允许开火），不代表下位机已收到或实际发弹。
@@ -43,7 +49,10 @@
 | 32 | `feedback_stale` | 云台反馈有效性或新鲜度检查不通过 |
 | 64 | `no_observation` | 无真实匹配观测时间 |
 | 128 | `observation_control_stale` | 真实观测超过控制时限 |
-| 256 | `observation_fire_stale` | 真实观测超过开火时限；现有 `send_status` 此时仍可能为 ready |
+| 256 | `observation_fire_stale` | 真实观测超过开火时限 |
+| 512 | `real_plate_rejected` | 真实板复核未通过，具体原因见 `send_fire_reason` |
+
+`send_yaw_mode`、`send_pitch_mode` 和两轴的 `send_*_transitioning` 字段来自本次发送所用计划。`send_fire_armor_id` 对应真实装甲板，`send_fire_yaw_error`、`send_fire_pitch_error` 是这同一块板的角度误差，单位为 rad。控制参考误差见 `send_target_yaw`、`send_target_pitch`。
 
 `send_total_time_s` 和 `send_mode2_time_s` 在约 500 Hz 的发送循环累计。上一模式占有到下一次发送调用前的时间间隔；从首次发送开始计时，不含启动等待。50 Hz 遥测之间短暂出现的 mode=2 也会被计入。区间许可占比使用 `Δsend_mode2_time_s / Δsend_total_time_s`；最新模式快照本身不能完整呈现两条遥测之间的每次切换。
 

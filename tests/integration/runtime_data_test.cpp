@@ -135,6 +135,20 @@ void check_telemetry()
   assert(expired.at("send_mode") == 0 && expired.at("send_target_yaw") == 0.2);
   assert(expired.at("send_block_plan_expired") == true);
   assert(expired.at("send_block_feedback_stale") == true);
+
+  snapshot.send.mode = 1;
+  snapshot.send.yaw_mode = YawMode::center;
+  snapshot.send.pitch_mode = PitchMode::height_group;
+  snapshot.send.height_group = 1;
+  snapshot.send.fire_block_mask = send_real_plate_rejected;
+  snapshot.send.fire_result = FireResult{FireBlock::angle_outside, 3, true, 0.08, -0.01};
+  const auto plate = telemetry_json(snapshot);
+  assert(plate.at("send_yaw_mode") == "center" && plate.at("send_pitch_mode") == "height_group");
+  assert(plate.at("send_height_group") == 1 && plate.at("send_fire_armor_id") == 3);
+  assert(plate.at("send_target_yaw") == 0.2 && plate.at("send_fire_yaw_error") == 0.08);
+  assert(plate.at("send_fire_pitch_error") == -0.01);
+  assert(plate.at("send_fire_reason") == "angle_outside");
+  assert(plate.at("send_block_real_plate_rejected") == true);
 }
 
 void check_send_durations()

@@ -3,6 +3,8 @@
 #include <chrono>
 #include <cstdint>
 
+#include "tasks/auto_aim/planner/fire_evaluator.hpp"
+
 namespace auto_aim::runtime
 {
 enum SendFireBlock : uint32_t
@@ -15,7 +17,8 @@ enum SendFireBlock : uint32_t
   send_feedback_stale = 1U << 5,
   send_no_observation = 1U << 6,
   send_observation_control_stale = 1U << 7,
-  send_observation_fire_stale = 1U << 8
+  send_observation_fire_stale = 1U << 8,
+  send_real_plate_rejected = 1U << 9
 };
 
 // Copied as one unit from the send thread; errors remain available even when a gate clears control.
@@ -27,6 +30,11 @@ struct SendTelemetrySnapshot
   uint32_t fire_block_mask = 0;
   bool target_valid = false;
   double target_yaw = 0.0, target_pitch = 0.0, fire_tolerance = 0.0;
+  YawMode yaw_mode = YawMode::plate;
+  PitchMode pitch_mode = PitchMode::plate;
+  int height_group = -1;
+  bool yaw_transitioning = false, pitch_transitioning = false;
+  std::optional<FireResult> fire_result;
   double mode2_time_s = 0.0, total_time_s = 0.0;
 };
 
