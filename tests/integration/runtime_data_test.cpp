@@ -6,6 +6,7 @@
 #include "src/app_config.hpp"
 #include "src/diagnostics/telemetry.hpp"
 #include "tasks/auto_aim/detection/mt_detector.hpp"
+#include "tools/concurrency/thread_safe_queue.hpp"
 #include "tools/runtime/yaml.hpp"
 
 using namespace auto_aim;
@@ -73,7 +74,7 @@ void check_telemetry()
                              feedback,
                              true,
                              {7, 8, true},
-                             {10, 20, 30, 40, 50, 60},
+                             {},
                              drops,
                              latency,
                              {}};
@@ -88,7 +89,30 @@ void check_telemetry()
   snapshot.send.fire_block_mask = send_observation_fire_stale | send_angle_outside;
   snapshot.send.mode2_time_s = 0.012;
   snapshot.send.total_time_s = 0.03;
+  tools::ThreadSafeQueue<DetectionTiming, true> timing(1);
+  timing.push(DetectionTiming{});
+  snapshot.timing = timing.front();
+  const auto startup = telemetry_json(snapshot);
+  assert(startup.at("detection_sequence") == 0 && startup.at("detection_frame_t").is_null());
+  const char * fields[] = {"capture_time_ms",   "detection_submit_ms", "inference_time_ms",
+                           "inference_wait_ms", "postprocess_time_ms", "result_delivery_ms"};
+  for (const auto * field : fields)
+    assert(startup.at(field) == 0);
+
+  timing.push({23, origin + 15ms, 10, 20, 30, 40, 50, 60});
+  snapshot.timing = timing.front();
+  timing.push({24, origin + 25ms, 11, 21, 31, 41, 51, 61});
   const auto data = telemetry_json(snapshot);
+  snapshot.timing = timing.front();
+  const auto next = telemetry_json(snapshot);
+  assert(data.at("detection_sequence") == 23 && next.at("detection_sequence") == 24);
+  assert(std::abs(data.at("detection_frame_t").get<double>() - 0.015) < 1e-12);
+  assert(std::abs(next.at("detection_frame_t").get<double>() - 0.025) < 1e-12);
+  int expected_ms = 10;
+  for (const auto * field : fields) {
+    assert(data.at(field) == expected_ms && next.at(field) == expected_ms + 1);
+    expected_ms += 10;
+  }
   assert(std::abs(data.at("t").get<double>() - 0.04) < 1e-12);
   assert(std::abs(data.at("aim_age_ms").get<double>() - 5.0) < 1e-12);
   assert(data.at("aim_mode") == "preaim");

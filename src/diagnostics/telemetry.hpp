@@ -31,6 +31,8 @@ struct TelemetryTarget
 
 struct DetectionTiming
 {
+  uint64_t sequence;
+  std::chrono::steady_clock::time_point frame_timestamp;
   double capture_ms, submit_ms, inference_ms, inference_wait_ms, postprocess_ms, delivery_ms;
 };
 

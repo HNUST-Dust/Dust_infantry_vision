@@ -23,6 +23,10 @@
 
 `RuntimeVisualizer` 根据本地窗口开关和远程订阅决定是否保留源图，绘制叠加层并发布图像。绘制时借用检测帧和跟踪数据。Foxglove 队列持有自己的图像引用，本地缩放在发布之后执行。
 
+### 检测耗时遥测
+
+每条遥测中的 `capture_time_ms`、`detection_submit_ms`、`inference_time_ms`、`inference_wait_ms`、`postprocess_time_ms` 和 `result_delivery_ms` 来自同一个检测结果。`detection_sequence` 标识该帧，`detection_frame_t` 是以遥测 `t` 为同一起点的帧时间戳，单位为秒。首次结果前，帧号和六项耗时均为 0，帧时间戳为 null。遥测采样读取最近一次结果，连续两行的检测帧号可能重复或跳号。
+
 ### 最终发送遥测
 
 `/vision/telemetry` 原有的 `mode`、`fire` 仍表示规划结果。`send_mode` 表示发送线程完成相对角更新、角度检查和超时门控后交给 IO 的模式（0 停止控制、1 控制但不允许开火、2 允许开火），不代表下位机已收到或实际发弹。

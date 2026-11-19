@@ -113,6 +113,11 @@ nlohmann::json telemetry_json(const TelemetrySnapshot & snapshot)
   data["mpc_pitch_dual_residual"] = plan.pitch_mpc.dual_residual;
   data["mpc_yaw_input_violation"] = plan.yaw_mpc.input_violation;
   data["mpc_pitch_input_violation"] = plan.pitch_mpc.input_violation;
+  data["detection_sequence"] = snapshot.timing.sequence;
+  data["detection_frame_t"] =
+    snapshot.timing.sequence == 0
+      ? nlohmann::json(nullptr)
+      : nlohmann::json(tools::delta_time(snapshot.timing.frame_timestamp, snapshot.origin));
   data["capture_time_ms"] = snapshot.timing.capture_ms;
   data["detection_submit_ms"] = snapshot.timing.submit_ms;
   data["inference_time_ms"] = snapshot.timing.inference_ms;

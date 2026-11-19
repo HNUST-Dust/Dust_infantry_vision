@@ -113,12 +113,8 @@ int run(const RuntimeOptions & options)
   // 计划线程只读这个原子状态码；直接调 Tracker::state() 会和主循环的 track() 抢同一把锁
   std::atomic<int> tracker_state_code{static_cast<int>(TrackerState::lost)};
   std::atomic<bool> quit = false;
-  std::atomic<double> latest_capture_ms{0.0};
-  std::atomic<double> latest_submit_ms{0.0};
-  std::atomic<double> latest_inference_ms{0.0};
-  std::atomic<double> latest_inference_wait_ms{0.0};
-  std::atomic<double> latest_postprocess_ms{0.0};
-  std::atomic<double> latest_delivery_ms{0.0};
+  tools::ThreadSafeQueue<DetectionTiming, true> detection_timing(1);
+  detection_timing.push(DetectionTiming{});
   std::atomic<int> latest_send_status{1};
   PlannerDiagnostics planner_diagnostics(config.diagnostics);
   const auto telemetry_origin = std::chrono::steady_clock::now();
@@ -321,6 +317,7 @@ int run(const RuntimeOptions & options)
       const auto plan_update = plan_queue.front();
       const auto feedback = gimbal.feedback();
       const auto & gs = feedback.state;
+      const auto timing = detection_timing.front();
       const auto sampled_at = std::chrono::steady_clock::now();
       if (target_update.sequence != 0 && target_update.sequence != last_latency_sequence) {
         latency_stats.add(1e3 * tools::delta_time(sampled_at, target_update.frame_timestamp));
@@ -336,24 +333,23 @@ int run(const RuntimeOptions & options)
         target = TelemetryTarget{x[4], x[5], x[7], x[6]};
       }
       const auto detector_drops = detector.drop_counts();
-      const TelemetrySnapshot snapshot{
-        sampled_at,
-        t0,
-        tracker_state_code.load(),
-        target,
-        plan_update.plan,
-        plan_update.planning_ms,
-        plan_update.sequence,
-        latest_send_status.load(),
-        feedback,
-        fired,
-        {planner_diagnostics.dropped(), planner_diagnostics.written(),
-         planner_diagnostics.trace_enabled()},
-        {latest_capture_ms.load(), latest_submit_ms.load(), latest_inference_ms.load(),
-         latest_inference_wait_ms.load(), latest_postprocess_ms.load(), latest_delivery_ms.load()},
-        detector_drops,
-        latency_summary,
-        send_queue.front()};
+      const TelemetrySnapshot snapshot{sampled_at,
+                                       t0,
+                                       tracker_state_code.load(),
+                                       target,
+                                       plan_update.plan,
+                                       plan_update.planning_ms,
+                                       plan_update.sequence,
+                                       latest_send_status.load(),
+                                       feedback,
+                                       fired,
+                                       {planner_diagnostics.dropped(),
+                                        planner_diagnostics.written(),
+                                        planner_diagnostics.trace_enabled()},
+                                       timing,
+                                       detector_drops,
+                                       latency_summary,
+                                       send_queue.front()};
       auto data = telemetry_json(snapshot);
       plotter.plot(data);
       visualizer.publish_telemetry(std::move(data),
@@ -451,12 +447,10 @@ int run(const RuntimeOptions & options)
     auto detection = detector.wait_pop_for(50ms);
     if (!detection || !detection->q)
       continue;
-    latest_capture_ms.store(detection->capture_ms);
-    latest_submit_ms.store(detection->submit_ms);
-    latest_inference_ms.store(detection->inference_ms);
-    latest_inference_wait_ms.store(detection->inference_wait_ms);
-    latest_postprocess_ms.store(detection->postprocess_ms);
-    latest_delivery_ms.store(detection->delivery_ms);
+    detection_timing.push({detection->sequence, detection->timestamp, detection->capture_ms,
+                           detection->submit_ms, detection->inference_ms,
+                           detection->inference_wait_ms, detection->postprocess_ms,
+                           detection->delivery_ms});
     if (tools::delta_time(std::chrono::steady_clock::now(), last_detector_timing_log) >= 1.0) {
       const auto drops = detector.drop_counts();
       tools::logger()->info(
