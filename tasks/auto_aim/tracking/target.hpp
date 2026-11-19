@@ -3,7 +3,6 @@
 
 #include <Eigen/Dense>
 #include <chrono>
-#include <cstdint>
 #include <optional>
 #include <queue>
 #include <string>
@@ -25,10 +24,6 @@ struct TargetPredictionState
   ArmorType armor_type = ArmorType::small;
   int armor_num = 0;
   bool jumped = false;
-  uint64_t generation = 0;
-  std::chrono::steady_clock::time_point observed_at{};
-
-  Eigen::Vector4d armor_at(int id, double dt) const;
 };
 
 class Target
@@ -89,8 +84,6 @@ private:
 
   tools::ExtendedKalmanFilter ekf_;
   std::chrono::steady_clock::time_point t_{};
-  uint64_t generation_ = 0;
-  std::chrono::steady_clock::time_point observed_at_{};
 
   // PnP 观测：[yaw, pitch, distance, armor_yaw]。solver 可用时用像素噪声一阶传播 + 位姿先验
   // 构造 R；否则回退到内置对角噪声。

@@ -1,10 +1,8 @@
 #pragma once
 
 #include <array>
-#include <optional>
 
 #include "mpc_axis.hpp"
-#include "axis_strategy.hpp"
 
 namespace auto_aim
 {
@@ -29,11 +27,6 @@ inline const char * to_string(AimMode mode)
 
 using Trajectory = Eigen::Matrix<double, 4, HORIZON>;
 
-struct PlateAimAngles
-{
-  double yaw, pitch;
-};
-
 struct ReferenceTag
 {
   int armor_id = -1;
@@ -43,50 +36,45 @@ struct ReferenceTag
   double fly_time = 0.0;
   bool selection_valid = false;
   bool converged = false;
-  YawMode yaw_mode = YawMode::plate;
-  PitchMode pitch_mode = PitchMode::plate;
-  int height_group = -1;
-  bool yaw_smooth_valid = false, pitch_smooth_valid = false;
-  // Real plate angles, distinct from virtual preaim/center/height-group references.
-  std::optional<PlateAimAngles> plate_angles{};
 };
 using ReferenceTags = std::array<ReferenceTag, HORIZON>;
 
-inline bool same_reference_segment(const ReferenceTag & a, const ReferenceTag & b, int row,
-                                   bool match_mode)
-{
-  if (row == 0 && (a.yaw_mode == YawMode::center || b.yaw_mode == YawMode::center))
-    return a.yaw_mode == b.yaw_mode && a.yaw_smooth_valid && b.yaw_smooth_valid;
-  if (row == 2 &&
-      (a.pitch_mode == PitchMode::height_group || b.pitch_mode == PitchMode::height_group))
-    return a.pitch_mode == b.pitch_mode && a.pitch_smooth_valid && b.pitch_smooth_valid &&
-           a.height_group == b.height_group;
-  return a.rate_valid && b.rate_valid && a.armor_id >= 0 && a.armor_id == b.armor_id &&
-         (!match_mode || a.mode == b.mode);
-}
-
-// Use one-sided differences at the ends of each valid segment.
-inline void fill_axis_reference_velocity(Trajectory & reference, const ReferenceTags & tags,
-                                         int row, bool match_mode)
-{
-  for (int k = 0; k < HORIZON; ++k) {
-    const int left =
-      k > 0 && same_reference_segment(tags[k - 1], tags[k], row, match_mode) ? k - 1 : k;
-    const int right =
-      k + 1 < HORIZON && same_reference_segment(tags[k], tags[k + 1], row, match_mode) ? k + 1 : k;
-    reference(row + 1, k) =
-      left != right ? (reference(row, right) - reference(row, left)) / ((right - left) * DT) : 0.0;
-  }
-}
-
+// Differentiate only adjacent valid samples of the same armor. A held position or an
+// unselected/unconverged candidate breaks the segment, even if its armor ID is unchanged.
+// Only the pitch velocity row is written; positions and both yaw rows are preserved.
 inline void fill_pitch_reference_velocity(Trajectory & reference, const ReferenceTags & tags)
 {
-  fill_axis_reference_velocity(reference, tags, 2, false);
+  const auto continuous = [&](int left, int right) {
+    return tags[left].rate_valid && tags[right].rate_valid && tags[left].armor_id >= 0 &&
+           tags[left].armor_id == tags[right].armor_id;
+  };
+  for (int k = 0; k < HORIZON; ++k) {
+    reference(3, k) = 0.0;
+    if (!tags[k].rate_valid || tags[k].armor_id < 0)
+      continue;
+    const int left = k > 0 && continuous(k - 1, k) ? k - 1 : k;
+    const int right = k + 1 < HORIZON && continuous(k, k + 1) ? k + 1 : k;
+    if (left != right)
+      reference(3, k) = (reference(2, right) - reference(2, left)) / ((right - left) * DT);
+  }
 }
-
+// With preaim enabled, both axes use only samples from the same converged
+// armor/mode segment. Endpoints use one-sided differences; isolated points are zero.
 inline void fill_segment_reference_velocity(Trajectory & reference, const ReferenceTags & tags)
 {
-  fill_axis_reference_velocity(reference, tags, 0, true);
-  fill_axis_reference_velocity(reference, tags, 2, true);
+  const auto continuous = [&](int left, int right) {
+    return tags[left].rate_valid && tags[right].rate_valid && tags[left].armor_id >= 0 &&
+           tags[left].armor_id == tags[right].armor_id && tags[left].mode == tags[right].mode;
+  };
+  for (int k = 0; k < HORIZON; ++k) {
+    reference(1, k) = reference(3, k) = 0.0;
+    const int left = k > 0 && continuous(k - 1, k) ? k - 1 : k;
+    const int right = k + 1 < HORIZON && continuous(k, k + 1) ? k + 1 : k;
+    if (left == right)
+      continue;
+    for (int row : {0, 2})
+      reference(row + 1, k) =
+        (reference(row, right) - reference(row, left)) / ((right - left) * DT);
+  }
 }
 }  // namespace auto_aim

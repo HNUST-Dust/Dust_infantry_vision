@@ -166,30 +166,19 @@ Json planner_trace_json(const PlannerDiagnosticEvent & event,
   Json reference_selection_valid = nullptr, reference_converged = nullptr;
   Json reference_armor_ids = nullptr;
   Json reference_pitch_rate_valid = nullptr;
-  Json reference_axis_segments = nullptr;
-  Json reference_plate_angles = nullptr;
   if (t.reference_available) {
     reference_modes = reference_xyza = reference_fly_time = Json::array();
     reference_selection_valid = reference_converged = Json::array();
     reference_armor_ids = Json::array();
     reference_pitch_rate_valid = Json::array();
-    reference_axis_segments = reference_plate_angles = Json::array();
     for (const auto & tag : t.reference_tags) {
       reference_modes.push_back(to_string(tag.mode));
-      reference_plate_angles.push_back(
-        tag.plate_angles ? Json::array({tag.plate_angles->yaw, tag.plate_angles->pitch})
-                         : Json(nullptr));
       reference_xyza.push_back(matrix(tag.reference_xyza));
       reference_fly_time.push_back(number(tag.fly_time));
       reference_selection_valid.push_back(tag.selection_valid);
       reference_converged.push_back(tag.converged);
       reference_armor_ids.push_back(tag.armor_id);
       reference_pitch_rate_valid.push_back(tag.rate_valid);
-      reference_axis_segments.push_back({{"yaw_mode", to_string(tag.yaw_mode)},
-                                         {"pitch_mode", to_string(tag.pitch_mode)},
-                                         {"height_group", tag.height_group},
-                                         {"yaw_smooth_valid", tag.yaw_smooth_valid},
-                                         {"pitch_smooth_valid", tag.pitch_smooth_valid}});
     }
   }
   Json j = {{"schema_version", 1},
@@ -218,12 +207,10 @@ Json planner_trace_json(const PlannerDiagnosticEvent & event,
             {"reference", t.reference_available ? matrix(t.reference) : Json(nullptr)},
             {"reference_modes", std::move(reference_modes)},
             {"reference_xyza", std::move(reference_xyza)},
-            {"reference_plate_angles", std::move(reference_plate_angles)},
             {"reference_fly_time", std::move(reference_fly_time)},
             {"reference_selection_valid", std::move(reference_selection_valid)},
             {"reference_converged", std::move(reference_converged)},
             {"reference_armor_ids", std::move(reference_armor_ids)},
-            {"reference_axis_segments", std::move(reference_axis_segments)},
             {"reference_pitch_rate_valid", std::move(reference_pitch_rate_valid)},
             {"yaw_origin", number(p.initial_state.yaw)},
             {"yaw_config", mpc_config_json(t.yaw_config)},
@@ -249,79 +236,19 @@ Json planner_trace_json(const PlannerDiagnosticEvent & event,
   const auto relative_ns = [&](auto timestamp) {
     return std::chrono::duration_cast<std::chrono::nanoseconds>(timestamp - p.planned_at).count();
   };
-  const auto time = [&](PlannerTime value) -> Json {
-    return value == PlannerTime{} ? Json(nullptr) : Json(relative_ns(value));
-  };
-  if (t.pitch_yaw_window) {
-    const auto & pitch = *t.pitch_yaw_window;
-    Json windows = Json::array(), gaps = Json::array();
-    for (const auto & window : pitch.windows)
-      windows.push_back({{"armor_id", window.armor_id},
-                         {"enter_ns", relative_ns(window.enter)},
-                         {"exit_ns", relative_ns(window.exit)}});
-    for (const auto & gap : pitch.gaps)
-      gaps.push_back({{"from_armor_id", gap.from_armor_id},
-                      {"to_armor_id", gap.to_armor_id},
-                      {"start_ns", relative_ns(gap.start)},
-                      {"end_ns", relative_ns(gap.end)},
-                      {"peak_acceleration", number(gap.peak_acceleration)},
-                      {"fallback", to_string(gap.fallback)}});
-    j["pitch_yaw_window"] = {{"windows", std::move(windows)},
-                             {"gaps", std::move(gaps)},
-                             {"fallback", to_string(pitch.fallback)}};
-  }
-  const auto motion_json = [](const ReferenceMotion & m) {
-    return Json::array({number(m.angle), number(m.velocity), number(m.acceleration)});
-  };
-  const auto axis_json = [&](const AxisStrategyState & axis) -> Json {
-    return {{"reduced", axis.reduced},
-            {"condition_since", time(axis.condition_since)},
-            {"last_observation", time(axis.last_observation)},
-            {"needs_bridge", axis.needs_bridge},
-            {"bridge_start", time(axis.bridge.start)},
-            {"bridge_end", time(axis.bridge.end)},
-            {"bridge_coefficients", axis.bridge.coefficients},
-            {"reference_at", time(axis.reference_at)},
-            {"reference", motion_json(axis.reference)}};
-  };
-  const auto & control = p.control_reference;
-  j["control_reference"] = {{"yaw", number(control.absolute_yaw)},
-                            {"pitch", number(control.absolute_pitch)},
-                            {"yaw_mode", to_string(control.yaw_mode)},
-                            {"pitch_mode", to_string(control.pitch_mode)},
-                            {"height_group", control.height_group},
-                            {"yaw_transitioning", control.yaw_transitioning},
-                            {"pitch_transitioning", control.pitch_transitioning}};
-  j["fire_context"] = nullptr;
-  if (p.fire_context) {
-    const auto & context = *p.fire_context;
-    const auto & fire = p.fire_result;
-    j["fire_context"] = {
-      {"armor_id", context.armor_id},
-      {"valid_from", time(context.valid_from)},
-      {"valid_until", time(context.valid_until)},
-      {"height_group", context.height_group},
-      {"enabled", context.enabled},
-      {"launch_delay", number(context.launch_delay)},
-      {"reason", to_string(fire.block)},
-      {"yaw_error", fire.error_valid ? number(fire.yaw_error) : Json(nullptr)},
-      {"pitch_error", fire.error_valid ? number(fire.pitch_error) : Json(nullptr)}};
-  }
   j["target_replay"] = nullptr;
   if (!t.planner_config_yaml.empty()) {
     Json target = nullptr;
     if (t.target_prediction) {
       const auto & s = *t.target_prediction;
       target = {{"state", matrix(s.x)},
-                {"timestamp_ns", time(s.timestamp)},
+                {"timestamp_ns", relative_ns(s.timestamp)},
                 {"name", static_cast<int>(s.name)},
                 {"armor_type", static_cast<int>(s.armor_type)},
                 {"armor_num", s.armor_num},
-                {"jumped", s.jumped},
-                {"generation", s.generation},
-                {"observed_at", time(s.observed_at)}};
+                {"jumped", s.jumped}};
     }
-    j["target_replay"] = {{"version", 2},
+    j["target_replay"] = {{"version", 1},
                           {"planner_build_id", DUST_PLANNER_BUILD_ID},
                           {"dt", DT},
                           {"horizon", HORIZON},
@@ -335,22 +262,7 @@ Json planner_trace_json(const PlannerDiagnosticEvent & event,
                            {{"lock_id", t.history.lock_id},
                             {"have_last_command", t.history.have_last_command},
                             {"last_target_yaw", number(t.history.last_target_yaw)},
-                            {"last_plan_ns", relative_ns(t.history.last_plan_at)},
-                            {"axis_strategy",
-                             {{"has_target", t.history.axis_strategy.has_target},
-                              {"generation", t.history.axis_strategy.generation},
-                              {"height_group", t.history.axis_strategy.height_group},
-                              {"yaw", axis_json(t.history.axis_strategy.yaw)},
-                              {"pitch", axis_json(t.history.axis_strategy.pitch)}}}}}};
-    if (t.history.pitch_window_bridge) {
-      const auto & bridge = *t.history.pitch_window_bridge;
-      j["target_replay"]["history"]["pitch_window_bridge"] = {
-        {"from_armor_id", bridge.from_armor_id},
-        {"to_armor_id", bridge.to_armor_id},
-        {"start_ns", relative_ns(bridge.curve.start)},
-        {"end_ns", relative_ns(bridge.curve.end)},
-        {"coefficients", bridge.curve.coefficients}};
-    }
+                            {"last_plan_ns", relative_ns(t.history.last_plan_at)}}}};
   }
   j["frame_s"] =
     event.source.frame_timestamp == std::chrono::steady_clock::time_point{}

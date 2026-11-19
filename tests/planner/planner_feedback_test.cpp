@@ -204,9 +204,42 @@ void check_fire_tolerances()
       const double expected = std::abs(omega) > 8 ? (far ? 3 : 4) : (far ? 2 : 3);
       require(std::abs(plan.fire_tolerance - expected / 57.3) < 1e-12,
               "Fire tolerance must select the distance/speed combination");
-      if (plan.fire_context)
-        require(plan.fire_context->tolerance == plan.fire_tolerance,
-                "Sender recheck must retain the selected tolerance");
+    }
+  }
+}
+
+void check_tracking_threshold_switches()
+{
+  const auto t = std::chrono::steady_clock::now();
+  for (double omega : {0.0, 8.0, -8.0, 8.01, -8.01}) {
+    for (bool allow_high_speed : {false, true}) {
+      Config config;
+      auto yaml = YAML::LoadFile(config.path);
+      yaml["fire_thresh"] = allow_high_speed ? 0.0 : 10.0;
+      yaml["fire_thresh_high_speed"] = allow_high_speed ? 10.0 : 0.0;
+      yaml["first_tolerance"] = 180.0;
+      yaml["first_tolerance_high_speed"] = 180.0;
+      {
+        std::ofstream out(config.path);
+        out << yaml;
+      }
+      auto_aim::Planner planner(config.path);
+      auto target = target_at(t, 0.12);
+      target.set_initial_omega(omega);
+      const auto initial = state_at(t);
+      const auto first = planner.plan_at(target, t, 23, initial);
+      check_solver(first, "tracking threshold first solve");
+      planner.restore_history({-1, true, first.absolute_target_yaw, t - 2ms});
+      auto_aim::PlanningTrace trace;
+      const auto plan = planner.plan_at(target, t, 23, initial, &trace);
+      check_solver(plan, "tracking threshold switch");
+      const bool high_speed = std::abs(omega) > 8.0;
+      require(plan.fire == (high_speed == allow_high_speed),
+              "MPC tracking threshold must switch by absolute target spin, including boundary");
+      const auto replay_yaml = YAML::Load(trace.planner_config_yaml);
+      require(replay_yaml["fire_thresh_high_speed"].as<double>() ==
+                yaml["fire_thresh_high_speed"].as<double>(),
+              "Replay must retain the high-speed tracking threshold");
     }
   }
 }
@@ -309,6 +342,7 @@ int main(int argc, char ** argv)
     check_pitch_reference_switches();
     check_feedback();
     check_fire_tolerances();
+    check_tracking_threshold_switches();
     Config config(argc > 1 ? std::stoi(argv[1]) : 0, true, argc > 2 ? std::stod(argv[2]) : 0.0);
     auto_aim::Planner planner(config.path);
     const auto t = std::chrono::steady_clock::now();
@@ -345,7 +379,7 @@ int main(int argc, char ** argv)
       require(std::abs(plan.absolute_pitch - plan.initial_state.pitch - 0.15 * 0.01) < 1e-9,
               "pitch starts from measured angle and rate");
       require(plan.valid_at == plan.planned_at + 10ms, "command time");
-      require(std::abs(tools::limit_rad(plan.control_reference.absolute_yaw - 0.12)) < 1e-6,
+      require(std::abs(tools::limit_rad(plan.absolute_target_yaw - 0.12)) < 1e-6,
               "absolute reference with nonzero pitch and roll");
       const auto a = plan.relative_to(0.08, -0.01);
       const auto b = plan.relative_to(0.09, -0.02);
@@ -421,8 +455,7 @@ int main(int argc, char ** argv)
     next.rates_measured = false;
     require(!planner.plan_at(target, t + 4ms, 23, next).fire,
             "estimated rates cannot authorize fire");
-    require(!fire.relative_to(0.5, aligned.pitch).legacy_fire_aligned(),
-            "send-time actual position gate");
+    require(!fire.relative_to(0.5, aligned.pitch).fire, "send-time actual position gate");
     Config disabled(200, false);
     auto_aim::Planner disabled_planner(disabled.path);
     disabled_planner.plan_at(target, t, 23, aligned);

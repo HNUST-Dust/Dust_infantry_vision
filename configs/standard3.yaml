@@ -74,33 +74,15 @@ armor_association:
 yaw_offset: -10.0 # degree -2.5  向右为负
 pitch_offset: -5 # degree 2  向上为正
 gap_preaim_enabled: true # 空窗来板边界预瞄；预瞄仅控制，不发弹
-planner_axis_strategy:
-  enabled: false
-  pitch_follow_yaw_window: true # yaw=center、pitch=plate 时在相邻 yaw 窗口之间过渡
-  # 以下为两轴独立实测的起始值。首次对照请设置 auto_fire: false。
-  yaw:
-    enabled: true
-    enter_speed: 8.0 # rad/s
-    exit_speed: 6.0
-    enter_hold_ms: 60
-    exit_hold_ms: 100
-    transition_ms: 10
-  pitch:
-    enabled: false
-    enter_speed: 8.0 # rad/s
-    exit_speed: 5.0
-    enter_hold_ms: 60
-    exit_hold_ms: 100
-    transition_ms: 10
 comming_angle: 50 # degree
-leaving_angle: 30 # degree
-decision_speed: 6.0 # rad/s
+leaving_angle: 40 # degree
+decision_speed: 7.5 # rad/s
 high_speed_delay_time: 0.01 # s  规划，下发，云台到达，发弹延迟
 low_speed_delay_time: 0.01 # s 
 
 #####-----planner 开火参数（原 shooter，2026-10-03 并入）-----#####
 first_tolerance: 3 # 近距离低速射击容差，degree
-first_tolerance_high_speed: 4 # 近距离高速射击容差，degree
+first_tolerance_high_speed: 6 # 近距离高速射击容差，degree
 second_tolerance: 2 # 远距离低速射击容差，degree
 second_tolerance_high_speed: 3 # 远距离高速射击容差，degree
 judge_distance: 2 #距离判断阈值
@@ -141,7 +123,8 @@ foxglove:
   jpeg_quality: 40    # JPEG 质量 (1-100)
 
 #####-----planner TinyMPC-----#####
-fire_thresh: 1.5 # rad，固定 MPC 跟踪误差阈值，不随转速切换
+fire_thresh: 0.02 # rad，|目标转速| <= decision_speed 时的 MPC 跟踪误差阈值
+fire_thresh_high_speed: 0.04 # rad，|目标转速| > decision_speed 时的 MPC 跟踪误差阈值
 
 max_yaw_acc: 55
 mpc_cost_yaw:

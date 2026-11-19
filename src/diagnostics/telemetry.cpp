@@ -57,15 +57,6 @@ nlohmann::json telemetry_json(const TelemetrySnapshot & snapshot)
   data["aim_age_ms"] = 1e3 * tools::delta_time(snapshot.sampled_at, plan.planned_at);
   data["mpc_yaw"] = mpc_diagnostics_json(plan.yaw_mpc);
   data["mpc_pitch"] = mpc_diagnostics_json(plan.pitch_mpc);
-  const auto & reference = snapshot.plan.control_reference;
-  data["yaw_mode"] = to_string(reference.yaw_mode);
-  data["pitch_mode"] = to_string(reference.pitch_mode);
-  data["pitch_height_group"] = reference.height_group;
-  data["yaw_transitioning"] = reference.yaw_transitioning;
-  data["pitch_transitioning"] = reference.pitch_transitioning;
-  data["fire_reason"] = snapshot.plan.fire_context
-                          ? nlohmann::json(to_string(snapshot.plan.fire_result.block))
-                          : nlohmann::json(nullptr);
   data["send_status_code"] = snapshot.send_status;
   static constexpr const char * send_names[] = {
     "ready",          "no_control",     "no_plan",          "plan_expired",
@@ -96,23 +87,6 @@ nlohmann::json telemetry_json(const TelemetrySnapshot & snapshot)
     (send.fire_block_mask & send_observation_control_stale) != 0;
   data["send_block_observation_fire_stale"] =
     (send.fire_block_mask & send_observation_fire_stale) != 0;
-  data["send_yaw_mode"] = to_string(send.yaw_mode);
-  data["send_pitch_mode"] = to_string(send.pitch_mode);
-  data["send_height_group"] = send.height_group;
-  data["send_yaw_transitioning"] = send.yaw_transitioning;
-  data["send_pitch_transitioning"] = send.pitch_transitioning;
-  data["send_block_real_plate_rejected"] = (send.fire_block_mask & send_real_plate_rejected) != 0;
-  data["send_fire_reason"] =
-    send.fire_result ? nlohmann::json(to_string(send.fire_result->block)) : nlohmann::json(nullptr);
-  data["send_fire_armor_id"] = send.fire_result && send.fire_result->armor_id >= 0
-                                 ? nlohmann::json(send.fire_result->armor_id)
-                                 : nlohmann::json(nullptr);
-  data["send_fire_yaw_error"] = send.fire_result && send.fire_result->error_valid
-                                  ? nlohmann::json(send.fire_result->yaw_error)
-                                  : nlohmann::json(nullptr);
-  data["send_fire_pitch_error"] = send.fire_result && send.fire_result->error_valid
-                                    ? nlohmann::json(send.fire_result->pitch_error)
-                                    : nlohmann::json(nullptr);
   data["send_mode2_time_s"] = send.mode2_time_s;
   data["send_total_time_s"] = send.total_time_s;
   data["planner_diagnostic_dropped"] = snapshot.trace.dropped;

@@ -190,10 +190,8 @@ std::list<Target> Tracker::track(std::list<Armor> & armors, std::chrono::steady_
     found = update_target(armors, t);
   }
 
-  if (last_update_real_observation_) {
+  if (last_update_real_observation_)
     last_observed_timestamp_ = t;
-    target_.observed_at_ = t;
-  }
 
   state_machine(found);
 
@@ -288,10 +286,8 @@ Tracker::track(const std::vector<omniperception::DetectionResult> & detection_qu
     found = update_target(armors, t);
   }
 
-  if (last_update_real_observation_) {
+  if (last_update_real_observation_)
     last_observed_timestamp_ = t;
-    target_.observed_at_ = t;
-  }
 
   pre_state_ = state_;
   // 更新状态机
@@ -401,7 +397,6 @@ bool Tracker::set_target(std::list<Armor> & armors, std::chrono::steady_clock::t
     target_ = Target(armor, t, 0.2, 4, P0_dig);
   }
 
-  target_.generation_ = ++target_generation_;
   last_update_real_observation_ = true;
   return true;
 }
