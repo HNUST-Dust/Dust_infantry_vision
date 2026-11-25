@@ -54,7 +54,8 @@ Tracker::Tracker(const std::string & config_path, Solver & solver)
 }
 
 Tracker::Tracker(const TrackerConfig & config, Solver & solver)
-    : solver_(solver), enemy_color_(config.enemy_color), min_detect_count_(config.min_detect_count),
+    : solver_(solver), enemy_color_(config.enemy_color),
+      configured_enemy_color_(config.enemy_color), min_detect_count_(config.min_detect_count),
       max_temp_lost_count_(config.max_temp_lost_count), detect_count_(0), temp_lost_count_(0),
       outpost_max_temp_lost_count_(config.outpost_max_temp_lost_count),
       normal_temp_lost_count_(config.max_temp_lost_count), state_(TrackerState::lost),
@@ -92,6 +93,22 @@ TrackerState tracker_state_from(const std::string & name)
   if (name == "switching")
     return TrackerState::switching;
   return TrackerState::lost;
+}
+
+void Tracker::set_enemy_color(uint8_t enemy_color)
+{
+  std::lock_guard<std::mutex> lock(mutex_);
+  const auto color = enemy_color == 1   ? Color::red
+                     : enemy_color == 2 ? Color::blue
+                                        : configured_enemy_color_;
+  if (color == enemy_color_)
+    return;
+  enemy_color_ = color;
+  // A target from the previous side must not survive a color change.
+  state_ = pre_state_ = TrackerState::lost;
+  detect_count_ = temp_lost_count_ = 0;
+  last_observed_timestamp_ = {};
+  last_update_real_observation_ = false;
 }
 
 std::string Tracker::state() const

@@ -3,6 +3,8 @@
 #include <chrono>
 #include <cstdint>
 
+#include "tasks/auto_aim/planner/planner.hpp"
+
 namespace auto_aim::runtime
 {
 enum SendFireBlock : uint32_t
@@ -27,6 +29,8 @@ struct SendTelemetrySnapshot
   uint32_t fire_block_mask = 0;
   bool target_valid = false;
   double target_yaw = 0.0, target_pitch = 0.0, fire_tolerance = 0.0;
+  FireWindow fire_window;
+  FireWindowCheck fire_window_check;
   double mode2_time_s = 0.0, total_time_s = 0.0;
 };
 

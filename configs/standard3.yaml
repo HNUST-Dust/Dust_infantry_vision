@@ -85,6 +85,9 @@ first_tolerance: 3 # 近距离低速射击容差，degree
 first_tolerance_high_speed: 6 # 近距离高速射击容差，degree
 second_tolerance: 2 # 远距离低速射击容差，degree
 second_tolerance_high_speed: 3 # 远距离高速射击容差，degree
+fire_directional_tolerance_enabled: true # 同板预测 yaw 方向：后侧收紧、前侧保留基础额度
+fire_lag_tolerance_ratio: 0.5 # 后侧 yaw 容差 / 基础容差；方向未知时两侧均收紧
+fire_direction_min_yaw_rate: 0.03 # rad/s，可信局部运动低于此值按静止对称窗口处理
 judge_distance: 2 #距离判断阈值
 auto_fire: true # 是否由自瞄控制射击
 
@@ -123,15 +126,16 @@ foxglove:
   jpeg_quality: 40    # JPEG 质量 (1-100)
 
 #####-----planner TinyMPC-----#####
+mpc_mode: reference_smoothing # measured_state / reference_smoothing (position-only MCU)
 fire_thresh: 0.02 # rad，|目标转速| <= decision_speed 时的 MPC 跟踪误差阈值
 fire_thresh_high_speed: 0.04 # rad，|目标转速| > decision_speed 时的 MPC 跟踪误差阈值
 
-max_yaw_acc: 55
+max_yaw_acc: 200
 mpc_cost_yaw:
   scales: [0.1, 1.0, 10.0] # rad, rad/s, rad/s²
-  weights: [15.0, 0.05, 0.175]
+  weights: [9e9, 0, 0.175]
 
 max_pitch_acc: 50
 mpc_cost_pitch:
   scales: [0.1, 1.0, 10.0] # rad, rad/s, rad/s²
-  weights: [15.0, 0.05, 0.2]
+  weights: [15.0, 0, 0.2]

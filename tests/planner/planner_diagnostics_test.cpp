@@ -39,11 +39,50 @@ void reference_metadata_trace()
   require(ids.at(0) == 2 && valid.at(0) == true && ids.at(1) == 3 && valid.at(1) == false &&
             ids.at(2) == -1 && valid.at(2) == false,
           "Trace must preserve selected, unusable and unavailable reference identities");
+  trace->mpc_mode = MpcMode::reference_smoothing;
+  trace->state_index = trace->input_index = SMOOTHING_CENTER;
+  trace->yaw_x0 = {0.2, 0.3};
+  trace->pitch_x0 = {-0.1, 0.4};
+  event.plan.command_at = origin;
+  event.plan.mpc_feedforward = {0.5, 1.5, -0.3, -2.0};
+  const auto smoothing = planner_trace_json(event, origin, "smoothing-metadata-test");
+  const auto & sampling = smoothing.at("mpc_sampling");
+  require(sampling.at("mode") == "reference_smoothing" && sampling.at("state_index") == 30 &&
+            sampling.at("input_index") == 30 && sampling.at("yaw_x0").at(0).at(0) == 0.2 &&
+            sampling.at("pitch_x0").at(1).at(0) == 0.4 &&
+            sampling.at("reference_anchor") == "center_hit" &&
+            sampling.at("reference_start_s") == -0.3 && sampling.at("command_offset_s") == 0.0 &&
+            smoothing.at("optimized_feedforward").at("yaw_acc") == 1.5 &&
+            smoothing.at("output").at("yaw_acc") == 0.0,
+          "Trace separates solver initial state, time grid and raw optimization from wire fields");
   trace->reference_available = false;
   const auto absent = planner_trace_json(event, origin, "reference-metadata-test");
   require(absent.at("reference_armor_ids").is_null() &&
             absent.at("reference_pitch_rate_valid").is_null(),
           "Unavailable reference metadata must not look like a valid horizon");
+  require(absent.at("fire_windows").is_null(), "Absent gate context must be null");
+  trace->reference_available = true;
+  event.plan.control = true;
+  event.plan.settled_reference_index = event.plan.fire_reference_index = SMOOTHING_CENTER;
+  event.plan.fire_window = {true, 0.05, 0.5, {FireDirectionState::moving, 1, 0.2}};
+  event.plan.settled_window = event.plan.fire_window;
+  event.plan.fire_window_check = event.plan.fire_window.evaluate(-0.03, 0);
+  event.plan.settled_check = event.plan.fire_window_check;
+  const auto gates = planner_trace_json(event, origin, "directional-gate-test").at("fire_windows");
+  require(gates.at("settled").at("reference_index") == 30 &&
+            gates.at("command").at("direction_state") == "moving" &&
+            gates.at("command").at("reference_yaw_rate") == 0.2 &&
+            gates.at("command").at("aligned_yaw_error") == -0.03 &&
+            gates.at("command").at("applied_yaw_tolerance") == 0.025 &&
+            gates.at("command").at("passed") == false,
+          "Trace preserves the exact window which rejected lagging feedback");
+  event.plan.fire_window.motion = {};
+  event.plan.fire_window_check = event.plan.fire_window.evaluate(0, 0);
+  const auto unknown =
+    planner_trace_json(event, origin, "unknown-direction-test").at("fire_windows").at("command");
+  require(unknown.at("reference_yaw_rate").is_null() && unknown.at("aligned_yaw_error").is_null() &&
+            unknown.at("passed") == true,
+          "Unknown direction is not serialized as a measured zero rate");
 }
 
 void completed_snapshot()

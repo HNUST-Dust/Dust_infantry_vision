@@ -483,15 +483,16 @@ tests/                    调试和测试程序（CMakeLists.txt 集中注册目
 - `Classifier`：使用 `assets/tiny_resnet.onnx` 识别装甲板数字（OpenCV DNN，非 OpenVINO）。
 - `Solver`：唯一负责像素、云台、世界三者坐标转换的组件。持有 `camera_matrix`、`distort_coeffs`、`R_gimbal2imubody` 以及 `R_camera2gimbal` / `t_camera2gimbal`，同时提供 `solve(Armor&)`（像素 → 世界）与 `reproject_armor()` / `world2pixel()`（世界 → 像素）。装甲板俯仰角按固定值建模（普通装甲 +15°，前哨站 −15°），yaw 通过重投影搜索细化。
 - `Tracker`：维护 lost/detecting/tracking/temp_lost/switching 状态机，使用 11 维 EKF（含 2/3/4 装甲板模型与前哨站专用处理）预测旋转目标；`focus_rois()` 根据预测四角生成网络 ROI 与灯条 ROI。
-- `Planner`：生产规划器，负责装甲板选择、弹道飞行时间迭代和两轴 TinyMPC。每轮必须传入完整 `PlanningState`（绝对 ZXY yaw/pitch、对应角速度、同包姿态矩阵、反馈时间、有效性和速度来源）。角度单位 rad、角速度 rad/s；硬件角度来自归一化四元数，下位机上行角速度已为 rad/s，IO 层直接使用，不做度到弧度转换。初值使用实测状态，并按短时常速传播到统一规划时刻；禁止用参考第一列或上一轮预测代替。
-- 预测步长 10ms、60 个状态列，列 k 对应规划时刻后 k*10ms。每列对该时刻加发弹延迟和迭代飞行时间求瞄准参考；参考角在绝对关节坐标中表达，保留原局部 yaw/pitch offset 所代表的射向。yaw 以本轮实测角为数值原点连续展开。当前锁只提交一次，未来各列使用局部锁；远期弹道失败时沿用上一列参考，近期无效/不收敛的决策禁止开火。
+- `Planner`：生产规划器，负责装甲板选择、弹道飞行时间迭代和两轴 TinyMPC。每轮必须传入完整 `PlanningState`（绝对 ZXY yaw/pitch、对应角速度、同包姿态矩阵、反馈时间、有效性和速度来源）。角度单位 rad、角速度 rad/s；硬件角度来自归一化四元数，下位机上行角速度已为 rad/s，IO 层直接使用，不做度到弧度转换。反馈按短时常速传播到统一规划时刻。`mpc_mode` 选择 `measured_state`（缺省，实测初值）或 `reference_smoothing`（参考首列初值，面向仅位置控制的下位机）；standard3 显式启用后者。
+- `measured_state` 预测步长 10ms、60 个状态列，列 k 对应规划时刻后 k*10ms。每列对该时刻加发弹延迟和迭代飞行时间求瞄准参考；参考角在绝对关节坐标中表达，保留原局部 yaw/pitch offset 所代表的射向。yaw 以本轮实测角为数值原点连续展开。当前锁只提交一次，未来各列使用局部锁；远期弹道失败时沿用上一列参考，近期无效/不收敛的决策禁止开火。
 - pitch 速度参考只在相邻、有效且属于同一装甲板 ID 的预测点之间求导。连续段内部用中心差分，段首/段尾用单边差分；孤立点、保持值、选板无效或弹道未收敛点的速度参考为 0。位置参考仍保留切换，yaw 参考沿用原算法；这里的 0 只表示该预测点没有可用的连续速度参考，不会直接将云台命令或整个 Plan 清零。判据使用预测点身份，不使用角度跳变阈值，因此同一目标的快速运动不被裁掉。
-- 两轴保留前向 Euler 模型：角度下一步为当前角度加 DT*角速度，角速度下一步加 DT*加速度。输出改为第 1 列位置/速度和第 0 列加速度，目标有效时刻为规划后 10ms；不再直接发送第 30 列。此模型的第一步位置只含实测速度积分，下位机必须实际消费速度/加速度前馈。规划和发送仍各按 2ms 周期调度，错过周期不补发积压任务。
+- 两轴保留前向 Euler 模型：角度下一步为当前角度加 DT*角速度，角速度下一步加 DT*加速度。`measured_state` 输出第 1 列位置/速度和第 0 列加速度，命令采样时刻为规划后 10ms；第一步位置只含实测速度积分，该模式需要下位机消费速度/加速度前馈。规划和发送仍各按 2ms 周期调度，错过周期不补发积压任务。
+- `reference_smoothing` 先解析当轮选板和飞行时间，以中心命中时刻为第 30 列，向前后展开目标参考，使用参考首列初始化并输出 `x[30]` 的绝对位置。中心板固定为当轮决策，两侧锁独立，过去各列由中心 Target 副本单独预测。速度和加速度仍参与内部优化，四个下发前馈字段固定为 0。中心输出采样时刻为本轮规划时刻，`valid_at` 仍是规划后 10ms 的发送截止。加速度限制约束平滑指令轨迹，真实追赶过程由下位机位置控制器和限幅负责。
 - TinyMPC 将加速度归一化到 [-1,1]、整体等比例缩放 YAML 的 Q/R；默认 rho=0.05、最多 300 次迭代、原始/对偶残差容差 1e-3。修正了内部 ADMM 惩罚项重复计入和冷启动首次参考未生效的问题。仅采用收敛、有限且通过初值/动力学/输入约束检查的解；使用有界投影输入重新 rollout 配套状态，求解失败返回不控制结果。可选顶层参数 `mpc_rho`、`mpc_max_iter`、`mpc_max_state_age_ms`（默认 20ms）无需添加到已有配置即可生效。
-- `Plan` 保存独立的绝对预测目标、绝对参考和规划/有效时刻；原 `yaw/pitch/target_yaw/target_pitch` 字段仍表示相对关节增量。硬件发送线程每次调用 `relative_to(latest_yaw, latest_pitch)` 重新计算增量，同一计划重发时绝对目标保持不变；速度/加速度保留物理前馈含义。Talos 直接消费绝对目标。计划超过自身 10ms 有效时刻、计划生成超时、反馈或真实观测超时都会停止控制。
+- `Plan` 保存独立的绝对预测目标、绝对参考和规划/有效时刻；原 `yaw/pitch/target_yaw/target_pitch` 字段仍表示相对关节增量。硬件发送线程每次调用 `relative_to(latest_yaw, latest_pitch)` 重新计算增量，同一计划重发时绝对目标保持不变；`measured_state` 的速度/加速度保留物理前馈含义，`reference_smoothing` 仅发送位置。Talos 直接消费绝对目标。计划超过自身 10ms 有效时刻、计划生成超时、反馈或真实观测超时都会停止控制。
 - 开火要求 auto_fire、前一有效计划、近期选板有效且飞行时间收敛、绝对参考稳定、近期预测可达，以及当前实测 yaw/pitch 的二维角误差小于按距离和转速选择的射击容差。发送时再次检查到位；不再使用旧的 yaw 增量锚点判据。姿态估计得到的速度只用于模拟/回放控制，不能授权开火。缺反馈、未来时间戳、状态过期、非有限值或求解失败均不能产生开火结果。
 - `Planner::plan_at(target, now, bullet_speed, state)` 提供确定性回放入口；`plan(target, bullet_speed, state)` 取当前 steady_clock。图像 PnP/Tracker 仍使用随图像传递的采集时刻姿态，规划使用当前反馈姿态，不覆盖图像解算的共享 R。Gimbal 新增 `feedback()`，一次锁取得同包角度、速度、q、接收时间、序号与有效性；接收时间不是 MCU 采样时间。Talos/旧视频仅有姿态时用相邻样本估速，首帧、重复/倒退时间及大于 100ms 的间隔无有效速度。
-- 当前硬件速度映射限定为已对齐的 IMU/关节坐标；若 `R_gimbal2imubody` 改变实际旋转坐标，运行时会报错并禁止控制，需实现对应速度映射后再启用。上行速度是否为关节角导数、pitch 是否按相对增量解释，以及前馈是否被下位机使用，须通过协议与无开火实机测试确认。现有反馈停止阈值 100ms 不会放宽 MPC 默认 20ms 外推上限。
+- 当前硬件速度映射限定为已对齐的 IMU/关节坐标；若 `R_gimbal2imubody` 改变实际旋转坐标，运行时会报错并禁止控制，需实现对应速度映射后再启用。上行速度是否为关节角导数、pitch 是否按相对增量解释，须通过协议与无开火实机测试确认。用户已确认当前下位机只使用位置，standard3 因此选择参考平滑模式。现有反馈停止阈值 100ms 不会放宽 MPC 默认 20ms 外推上限。
 - 离线回归：`./build-ninja/planner_feedback_test` 或 `ctest --test-dir build-ninja -R planner_feedback --output-on-failure`，无需相机、串口、模型或显示。覆盖真实初值、速度/制动、坐标和时间、角度环绕、重复发送、估算反馈、原子快照、ADMM 解析对照及求解失败。
 - `planner_reference_test` 覆盖连续快速运动、不同高度切换、A→B→A 孤立段、同 ID 无效/保持点和时域端点；`planner_feedback_test` 同时通过真实 Planner 入口检查旋转目标的切换与参考标签。
 - `Gimbal`：通过串口读取四元数、云台状态和弹速，发送视觉控制帧。
@@ -563,7 +564,8 @@ tests/                    调试和测试程序（CMakeLists.txt 集中注册目
 | 射击 | `first_tolerance_high_speed` / `second_tolerance_high_speed` | 近距离/远距离高速射击角度容差（度）；缺省沿用对应低速值 |
 | 射击 | `judge_distance` | 近/远距离判定阈值（米） |
 | 规划 | `fire_thresh` | 固定 MPC 跟踪误差阈值（rad），不随转速切换 |
-| 规划 | `max_yaw_acc` / `max_pitch_acc` | 云台物理角加速度约束（rad/s²），独立于固定归一化尺度 |
+| 规划 | `mpc_mode` | `measured_state` / `reference_smoothing`；缺省前者，修改后重启生效 |
+| 规划 | `max_yaw_acc` / `max_pitch_acc` | 模型角加速度约束（rad/s²），独立于固定归一化尺度；平滑模式不约束实际追赶加速度 |
 | 规划 | `Q_yaw` / `R_yaw` / `Q_pitch` / `R_pitch` | TinyMPC 权重 |
 | 运行模式 | `runtime.simulate_gimbal` | 虚拟云台姿态与串口输出，不依赖真机，默认 `false` |
 | 运行模式 | `runtime.headless` | 关闭检测可视化与窗口事件，无桌面运行必须为 `true`，默认 `false` |
@@ -916,7 +918,7 @@ runtime:
 
 `failures` 只采集有目标的失败，每秒最多 5 份；`all` 采集全部规划，供短时连续分析。规划线程只复制数值并入队；容量 128，满时丢弃新记录并计数。独立线程序列化和落盘，每条刷新；达到文件限额或写入失败后停止完整记录，原因汇总继续。`trace_written` 是完成写入及流刷新的记录数，不保证掉电持久性。退出时排空队列。trace 缺失可能来自限频、丢样或限额，不能据此认定没有失败。
 
-JSONL 保存实际初值、4x60 参考、姿态/速度来源、目标状态、有效成本/约束/动力学配置、构建标识、两轴诊断和输出。耗时为整次规划及每轴 solve，不包含单独的选板/弹道阶段耗时。原有轴回放使用已记录参考；新增目标回放可从完整预测状态重新生成参考，但不重建检测或 Tracker 更新历史。
+JSONL 保存实测反馈、实际求解初值、4x60 参考、姿态/速度来源、目标状态、有效成本/约束/动力学配置、构建标识、两轴诊断和输出。耗时为整次规划及每轴 solve，不包含单独的选板/弹道阶段耗时。原有轴回放使用已记录参考；新增目标回放可从完整预测状态重新生成参考，但不重建检测或 Tracker 更新历史。
 
 新记录另有 `reference_armor_ids` 和 `reference_pitch_rate_valid` 两个长度为 60 的可选数组，分别记录实际生成各位置参考的装甲板 ID、该点是否允许参与 pitch 速度求导；无参考时两字段为 null。保持上一列位置时 ID 为 -1、有效性为 false；有候选但弹道未收敛时保留候选 ID，有效性为 false。开启空窗预瞄后，收敛的预瞄段也允许段内求导；此字段不代表发弹资格。这些标签只在本次预测时域内比较。旧 trace 缺少这两字段，仍可按已有完整参考回放求解器，但不能用角度阈值补造目标身份来宣称验证了生产连续段算法。
 
@@ -938,7 +940,7 @@ ctest --test-dir build-ninja --output-on-failure -R 'planner_(feedback|reference
 `|ω| > 2 rad/s` 且弹道预测时刻窗口内无板的情况预瞄；前哨站和低速锁板保持原选板逻辑。
 正转预瞄 `−comming_angle`，反转预瞄 `+comming_angle`，按旋转方向的剩余相位选择最先入窗的板。
 边界点使用预测车心及该来板半径、高度，经原弹道解算生成 yaw/pitch；不额外叠加入窗等待时间。
-每列仍是已有延迟 + `k×10 ms` + 弹丸飞行时间，60 列 TinyMPC 成本、两轴加速度限制保持不变。
+`measured_state` 每列仍是已有延迟 + `k×10 ms` + 弹丸飞行时间，60 列 TinyMPC 成本、两轴加速度限制保持不变。
 
 模式为 `track` / `preaim` / `fallback`。开启后收敛要求飞行时间误差小于 1 ms 且模式、板号稳定，
 最多迭代 10 次；未收敛使用 fallback。预瞄可以控制，但选择有效性为 false，0 到 COMMAND_STEP
@@ -1092,3 +1094,57 @@ cmake --build build-ninja --target mpc_cost_test -j2
 - 处理姿态时遵守“姿态随帧传递”的约定，不要在异步结果处理阶段重新消费云台队列。
 - 不要提交机器人私有的设备 ID、绝对路径和大型日志。
 - 项目私有记忆保存在 git 忽略的 `.codex/` 下（`memory.md` 为长期事实，`current.md`/`current.json` 为当前任务状态，`sessions/` 为单次任务回顾），不要强制提交。
+
+### 仅位置控制的 MPC 模式
+
+`configs/standard3.yaml` 配置 `mpc_mode: reference_smoothing`，两轴 `weights` 第二项为 0，保留现有角度权重、加速度惩罚与最大加速度。模式不隐式覆盖代价；切回 `measured_state` 后如需恢复此前代价，须同时将两轴速度权重恢复为 0.05。配置启动读取，不支持在线切换。
+
+trace 的 `mpc_sampling` 记录模式、两轴 `solver_x0`（字段为 yaw_x0/pitch_x0）、状态/输入输出索引、参考起点偏移和时间锚点。`reference_anchor=center_hit` 时，第 k 列目标时刻为 planned_s + launch_delay_s + center_fly_time_s + (k-30)*DT；`launch` 时为 planned_s + launch_delay_s + k*DT + 对应列 reference_fly_time。`command_offset_s` 是命令采样时刻相对 planned_s 的偏移，不能当作发送截止。`optimized_feedforward` 保存内部求解速度/加速度；平滑模式 `output` 中的对应四个下发字段为 0，遥测 plan_yaw_vel/acc 和 plan_pitch_vel/acc 同样为 0。旧轴 trace 缺少 mpc_sampling 时按实测初值及 x[1]/u[0] 回放。
+
+`planner_smoothing_test` 离线覆盖中心命中时刻、参考初值、位置下发、实际到位门控、跨 pi 和完整目标回放。可运行 `build-ninja/planner_smoothing_test /tmp/smoothing.jsonl` 导出合成记录，再用 `planner_replay_test /tmp/smoothing.jsonl --mode=reproduce` 或 `--mode=target-reproduce` 验证。合成测试不代表实机跟踪或命中验证。
+
+### 按预测运动方向区分射击容差
+
+`fire_directional_tolerance_enabled: true` 启用同板预测 yaw 方向门控；缺键为 false。
+`fire_lag_tolerance_ratio: 0.5` 将运动后侧 yaw 额度缩为基础容差的一半，取值必须有限且在 (0,1]。
+`fire_direction_min_yaw_rate: 0.05`（rad/s，有限且正数）区分可信静止和运动，独立于目标自转速度选档阈值。
+四档基础容差与距离/自转速度选档继续使用原参数；前侧 yaw 与 pitch 半轴均为基础 R。
+启用时基础容差必须为有限正数；ratio=1 或关闭开关恢复原对称到位判定。
+配置在启动时读取，修改后需重新加载应用，不支持热更新。
+
+内部误差 ey=wrap(实测yaw−预测弹道目标yaw)，ep=实测pitch−目标pitch。
+以同一有效收敛 track 装甲板的局部预测 yaw 导数确定 s，a=s*ey；a<0 为落后、a>0 为前侧。
+Ry 在后侧为 ratio*R、前侧为 R，到位要求 (ey/Ry)^2+(ep/R)^2<1，严格小于边界。
+可信近零使用原对称圆；无可信相邻点或局部明显反向时，yaw 两侧均为 ratio*R、pitch 仍为 R。
+换板、预瞄、回退及未收敛点不参与方向差分。方向不来自目标自转符号、实测云台速度或 MPC/下发速度。
+新窗口为原窗口子集：它筛除跟随不足时的开火许可，不补偿云台控制滞后，也不增加预测提前量。
+
+规划 settled、Plan::relative_to() 和发送端角度阻断诊断复用同一窗口算法。
+实测模式 settled/发送参考分别为第0/1列，参考平滑模式均为第30列。
+`fire_tolerance` 继续表示基础 R，相邻计划目标跳变的 2*R 检查保持原语义。
+发送线程按最新反馈复核固定绝对目标；不能把规划阶段已拒绝的 fire 重新置为 true。
+
+最终发送遥测新增 `send_fire_directional_enabled`、`send_fire_direction_state`（moving/stationary/unknown）、
+`send_fire_yaw_direction`、`send_fire_reference_yaw_rate`（rad/s）、`send_fire_aligned_yaw_error`（rad，前正后负）、
+`send_fire_yaw_tolerance`、`send_fire_lag_tolerance`（rad）、`send_fire_error_normalized_sq` 和 `send_fire_window_passed`。
+现有 send_target_yaw 为目标减实测，与 ey 符号相反；moving 时 a=-s*send_target_yaw。
+无有效目标时新增数值字段为 null；未知导数与非 moving 状态的 a 为 null。
+原 send_fire_tolerance 仍为基础 R，不能单凭它推断整个窗口。
+这些字段随同一 send_plan_id/send_sequence 快照发布，send_angle_outside 与该快照的窗口判定一致。
+
+Planner trace 新增 `fire_windows`，分别保存 settled/command 的参考索引、绝对目标、方向、参数与判定结果；
+配置快照包含三个新键，完整目标回放比较新增上下文并沿用构建指纹校验。
+旧 trace 仍可在原有兼容范围内做轴回放，缺少新字段不能证明验证了方向门控。
+仅比较窗口时应使用同一批发送反馈；不同实际运行不能把 mode=2 许可时间当命中率。
+
+### 下位机上传协议（PCSendAutoAimData）
+
+上位机 `GimbalToVision` 按 1 字节对齐接收 44 字节：`SP`、mode、q[4]（wxyz）、
+yaw_ang/yaw_vel、pitch_ang/pitch_vel、bullet_speed（最近一次实际弹速，m/s）、
+bullet_count（当前 17 mm 允许发弹量）、enemy_color（0 未知 / 1 红方 / 2 蓝方）、crc16。
+角速度单位仍为 rad/s；姿态角继续由四元数计算。线上的 yaw_ang/pitch_ang 在上位机结构中
+分别命名为 yaw/pitch，字节布局一致。下位机发送端也必须采用 1 字节对齐，
+CRC 覆盖前 42 字节，CRC 字段偏移 42。默认 C++ 对齐不能直接作为此线协议。
+敌方颜色保存在 GimbalState；每帧跟踪前优先使用下位机颜色（1 红方 / 2 蓝方），
+0（未知）时使用 YAML 的 enemy_color。有效识别颜色切换时清除原跟踪状态并重新选目标。
+遥测 fired 表示允许发弹量下降，补给增加不再视作发弹；该信号不是独立的实际出弹反馈。

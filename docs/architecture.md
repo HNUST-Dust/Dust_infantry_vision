@@ -23,6 +23,12 @@
 
 `RuntimeVisualizer` 根据本地窗口开关和远程订阅决定是否保留源图，绘制叠加层并发布图像。绘制时借用检测帧和跟踪数据。Foxglove 队列持有自己的图像引用，本地缩放在发布之后执行。
 
+### MPC 模式
+
+主 YAML 的 `mpc_mode` 在启动时选择规划方式；缺键为 `measured_state`，standard3 显式启用 `reference_smoothing`。前者从实测状态出发输出 x[1]/u[0]；后者以当轮命中决策为第 30 列、使用参考首列初值，输出 x[30] 的位置供下位机位置控制器追赶，四个前馈字段置零。内部速度/加速度继续优化，约束只作用于模型轨迹。两种模式都保存固定绝对目标，并在每次发送时由最新反馈换算相对角及复核实际到位，保留现有所有超时门控。
+
+平滑模式命令采样时刻 `command_at` 为本轮规划时刻；`valid_at` 仍为规划后 10ms 的发送截止。trace 的 mpc_sampling 区分实测反馈与 solver_x0，记录模式及时间轴、输出索引；optimized_feedforward 是内部优化值，output 是下发值。回放读取记录的初值与索引，旧记录缺元数据时沿用实测状态路径。
+
 ### 检测耗时遥测
 
 每条遥测中的 `capture_time_ms`、`detection_submit_ms`、`inference_time_ms`、`inference_wait_ms`、`postprocess_time_ms` 和 `result_delivery_ms` 来自同一个检测结果。`detection_sequence` 标识该帧，`detection_frame_t` 是以遥测 `t` 为同一起点的帧时间戳，单位为秒。首次结果前，帧号和六项耗时均为 0，帧时间戳为 null。遥测采样读取最近一次结果，连续两行的检测帧号可能重复或跳号。
@@ -76,3 +82,37 @@ ctest --preset robot
 ```
 
 `ctest --preset <预设> -N` 列出已注册回归。配置 `robot` 时可另加 `-DBUILD_PERFORMANCE_TOOLS=ON` 编译推理基准。硬件诊断由 `BUILD_HARDWARE_TOOLS` 控制，按设备要求手动运行。输入和设备要求见 [测试与调试程序](../readme.md#测试与调试程序)。
+
+### 按预测运动方向区分射击容差
+
+`fire_directional_tolerance_enabled: true` 启用同板预测 yaw 方向门控；缺键为 false。
+`fire_lag_tolerance_ratio: 0.5` 将运动后侧 yaw 额度缩为基础容差的一半，取值必须有限且在 (0,1]。
+`fire_direction_min_yaw_rate: 0.05`（rad/s，有限且正数）区分可信静止和运动，独立于目标自转速度选档阈值。
+四档基础容差与距离/自转速度选档继续使用原参数；前侧 yaw 与 pitch 半轴均为基础 R。
+启用时基础容差必须为有限正数；ratio=1 或关闭开关恢复原对称到位判定。
+配置在启动时读取，修改后需重新加载应用，不支持热更新。
+
+内部误差 ey=wrap(实测yaw−预测弹道目标yaw)，ep=实测pitch−目标pitch。
+以同一有效收敛 track 装甲板的局部预测 yaw 导数确定 s，a=s*ey；a<0 为落后、a>0 为前侧。
+Ry 在后侧为 ratio*R、前侧为 R，到位要求 (ey/Ry)^2+(ep/R)^2<1，严格小于边界。
+可信近零使用原对称圆；无可信相邻点或局部明显反向时，yaw 两侧均为 ratio*R、pitch 仍为 R。
+换板、预瞄、回退及未收敛点不参与方向差分。方向不来自目标自转符号、实测云台速度或 MPC/下发速度。
+新窗口为原窗口子集：它筛除跟随不足时的开火许可，不补偿云台控制滞后，也不增加预测提前量。
+
+规划 settled、Plan::relative_to() 和发送端角度阻断诊断复用同一窗口算法。
+实测模式 settled/发送参考分别为第0/1列，参考平滑模式均为第30列。
+`fire_tolerance` 继续表示基础 R，相邻计划目标跳变的 2*R 检查保持原语义。
+发送线程按最新反馈复核固定绝对目标；不能把规划阶段已拒绝的 fire 重新置为 true。
+
+最终发送遥测新增 `send_fire_directional_enabled`、`send_fire_direction_state`（moving/stationary/unknown）、
+`send_fire_yaw_direction`、`send_fire_reference_yaw_rate`（rad/s）、`send_fire_aligned_yaw_error`（rad，前正后负）、
+`send_fire_yaw_tolerance`、`send_fire_lag_tolerance`（rad）、`send_fire_error_normalized_sq` 和 `send_fire_window_passed`。
+现有 send_target_yaw 为目标减实测，与 ey 符号相反；moving 时 a=-s*send_target_yaw。
+无有效目标时新增数值字段为 null；未知导数与非 moving 状态的 a 为 null。
+原 send_fire_tolerance 仍为基础 R，不能单凭它推断整个窗口。
+这些字段随同一 send_plan_id/send_sequence 快照发布，send_angle_outside 与该快照的窗口判定一致。
+
+Planner trace 新增 `fire_windows`，分别保存 settled/command 的参考索引、绝对目标、方向、参数与判定结果；
+配置快照包含三个新键，完整目标回放比较新增上下文并沿用构建指纹校验。
+旧 trace 仍可在原有兼容范围内做轴回放，缺少新字段不能证明验证了方向门控。
+仅比较窗口时应使用同一批发送反馈；不同实际运行不能把 mode=2 许可时间当命中率。

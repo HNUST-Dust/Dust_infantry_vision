@@ -76,6 +76,9 @@ public:
   Tracker(const std::string & config_path, Solver & solver);
   Tracker(const TrackerConfig & config, Solver & solver);
 
+  // MCU: 0/unknown uses the configured color, 1 red, 2 blue.
+  void set_enemy_color(uint8_t enemy_color);
+
   std::string state() const;
   TrackerState state_enum() const;
 
@@ -97,6 +100,7 @@ public:
 private:
   Solver & solver_;
   Color enemy_color_;
+  const Color configured_enemy_color_;
   int min_detect_count_;
   int max_temp_lost_count_;
   int detect_count_;

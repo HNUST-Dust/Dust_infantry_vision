@@ -56,6 +56,9 @@ int benchmark(const std::string & path)
     sample.time = j.at("planned_s").get<double>();
     sample.initial = {j.at("initial_state").at("pitch").get<double>(),
                       j.at("initial_state").at("pitch_vel").get<double>()};
+    if (j.contains("mpc_sampling"))
+      for (int r = 0; r < 2; ++r)
+        sample.initial[r] = j.at("mpc_sampling").at("pitch_x0").at(r).at(0).get<double>();
     for (int k = 0; k < HORIZON; ++k)
       for (int r = 0; r < 2; ++r)
         sample.reference(r, k) = j.at("reference").at(r + 2).at(k).get<double>();

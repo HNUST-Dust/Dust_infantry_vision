@@ -14,6 +14,7 @@
 #include "tasks/auto_aim/planner/planner.hpp"
 #include "tools/estimation/angle_rate_estimator.hpp"
 #include "tools/math/trajectory.hpp"
+#include "tools/runtime/yaml_config.hpp"
 
 using namespace std::chrono_literals;
 
@@ -208,6 +209,132 @@ void check_fire_tolerances()
   }
 }
 
+void check_directional_windows()
+{
+  using namespace auto_aim;
+  const double r = 3.0 / 57.3;
+  FireWindow window;
+  window.enabled = true;
+  window.base_tolerance = r;
+  window.motion = {FireDirectionState::moving, 1, 1.0};
+  require(!window.evaluate(-2.0 / 57.3, 0).passed && window.evaluate(2.0 / 57.3, 0).passed,
+          "Reject insufficient lead while retaining the original ahead allowance");
+  require(window.evaluate(-1.0 / 57.3, 2.0 / 57.3).passed &&
+            !window.evaluate(-1.0 / 57.3, 2.5 / 57.3).passed,
+          "Yaw and pitch must share the directional ellipse budget");
+  require(!window.evaluate(-r * 0.5, 0).passed && !window.evaluate(r, 0).passed &&
+            !window.evaluate(0, r).passed && window.evaluate(-r * 0.499, 0).passed &&
+            !window.evaluate(-r * 0.501, 0).passed,
+          "Both sides retain strict boundaries");
+  for (auto state :
+       {FireDirectionState::moving, FireDirectionState::unknown, FireDirectionState::stationary}) {
+    window.motion.state = state;
+    for (double ratio : {0.25, 0.5, 0.75, 1.0}) {
+      window.lag_ratio = ratio;
+      for (int y = -24; y <= 24; ++y) {
+        for (int p = -24; p <= 24; ++p) {
+          const double ey = y * r / 20, ep = p * r / 20;
+          const bool old = std::hypot(ey, ep) < r;
+          const auto check = window.evaluate(ey, ep);
+          require(!check.passed || old, "New gate must be a subset of the old gate");
+          if (ratio == 1 || state == FireDirectionState::stationary)
+            require(check.passed == old, "Symmetric modes preserve the original circle");
+          window.motion.direction = -1;
+          require(window.evaluate(-ey, ep).passed == check.passed,
+                  "Direction and error mirror together");
+          window.motion.direction = 1;
+          window.enabled = false;
+          require(window.evaluate(ey, ep).passed == old, "Disabled mode preserves the old gate");
+          window.enabled = true;
+        }
+      }
+    }
+  }
+  window.lag_ratio = 0.5;
+  window.motion.state = FireDirectionState::unknown;
+  require(!window.evaluate(-0.75 * r, 0).passed && !window.evaluate(0.75 * r, 0).passed,
+          "Unknown direction tightens both yaw sides");
+  for (double invalid :
+       {std::numeric_limits<double>::infinity(), std::numeric_limits<double>::quiet_NaN()})
+    require(!window.evaluate(invalid, 0).passed && !window.evaluate(0, invalid).passed,
+            "Nonfinite errors must not pass");
+  Plan plan;
+  plan.control = plan.fire = true;
+  plan.fire_tolerance = r;
+  plan.fire_window = window;
+  plan.fire_window.motion = {FireDirectionState::moving, 1, 1.0};
+  plan.absolute_target_yaw = M_PI - 0.01;
+  auto sent = plan.relative_to(-M_PI + 0.01, 0);
+  require(sent.fire && sent.fire_window_check.passed &&
+            std::abs(*sent.fire_window_check.aligned_yaw_error - 0.02) < 1e-7,
+          "Latest feedback and wrapped yaw use the same directional gate");
+  sent = plan.relative_to(plan.absolute_target_yaw - 0.75 * r, 0);
+  require(!sent.fire && !sent.fire_window_check.passed,
+          "Latest lagging feedback removes permission");
+  plan.fire = false;
+  require(!plan.relative_to(plan.absolute_target_yaw, 0).fire,
+          "Feedback conversion cannot promote a rejected plan");
+}
+
+void check_directional_config()
+{
+  Config file;
+  auto yaml = YAML::LoadFile(file.path);
+  const auto save = [&] {
+    std::ofstream out(file.path);
+    out << yaml;
+  };
+  require(!auto_aim::PlannerConfig::parse(tools::YamlConfig(file.path))
+             .fire_directional_tolerance_enabled,
+          "Legacy configuration must default to symmetric tolerance");
+  yaml["fire_directional_tolerance_enabled"] = true;
+  yaml["fire_lag_tolerance_ratio"] = 0.5;
+  yaml["fire_direction_min_yaw_rate"] = 0.05;
+  save();
+  const auto parsed = auto_aim::PlannerConfig::parse(tools::YamlConfig(file.path));
+  const auto replay = YAML::Load(parsed.replay_yaml);
+  require(parsed.fire_directional_tolerance_enabled &&
+            replay["fire_lag_tolerance_ratio"].as<double>() == 0.5 &&
+            replay["fire_direction_min_yaw_rate"].as<double>() == 0.05 &&
+            replay["fire_directional_tolerance_enabled"].as<bool>(),
+          "Replay config must capture all directional parameters");
+  for (const auto & key :
+       {"fire_lag_tolerance_ratio", "fire_direction_min_yaw_rate", "first_tolerance"}) {
+    const auto original = YAML::Clone(yaml[key]);
+    for (double value : {0.0, -1.0, std::numeric_limits<double>::quiet_NaN()}) {
+      yaml[key] = value;
+      save();
+      bool rejected = false;
+      try {
+        auto_aim::PlannerConfig::parse(tools::YamlConfig(file.path));
+      } catch (const std::invalid_argument &) {
+        rejected = true;
+      }
+      require(rejected, "Invalid directional configuration must fail at load");
+    }
+    yaml[key] = original;
+  }
+  yaml["fire_lag_tolerance_ratio"] = 1.01;
+  save();
+  bool rejected = false;
+  try {
+    auto_aim::PlannerConfig::parse(tools::YamlConfig(file.path));
+  } catch (const std::invalid_argument &) {
+    rejected = true;
+  }
+  require(rejected, "Ratio cannot expand the original tolerance");
+  yaml["fire_lag_tolerance_ratio"] = 0.5;
+  yaml["fire_directional_tolerance_enabled"] = "typo";
+  save();
+  rejected = false;
+  try {
+    auto_aim::PlannerConfig::parse(tools::YamlConfig(file.path));
+  } catch (const std::invalid_argument &) {
+    rejected = true;
+  }
+  require(rejected, "Malformed enable flag must fail instead of silently disabling");
+}
+
 void check_tracking_threshold_switches()
 {
   const auto t = std::chrono::steady_clock::now();
@@ -342,6 +469,8 @@ int main(int argc, char ** argv)
     check_pitch_reference_switches();
     check_feedback();
     check_fire_tolerances();
+    check_directional_windows();
+    check_directional_config();
     check_tracking_threshold_switches();
     Config config(argc > 1 ? std::stoi(argv[1]) : 0, true, argc > 2 ? std::stod(argv[2]) : 0.0);
     auto_aim::Planner planner(config.path);

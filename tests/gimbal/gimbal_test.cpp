@@ -56,7 +56,7 @@ int main(int argc, char * argv[])
     }
     auto ypr = tools::eulers(orientation->q, 2, 0, 1);
 
-    auto fired = state.bullet_count > last_bullet_count;
+    auto fired = state.bullet_count < last_bullet_count;
     last_bullet_count = state.bullet_count;
 
     if (!first_fired && fired) {

@@ -29,6 +29,27 @@ Json number(double value)
 {
   return std::isfinite(value) ? Json(value) : Json(nullptr);
 }
+Json optional_number(std::optional<double> value)
+{
+  return value ? number(*value) : Json(nullptr);
+}
+Json fire_window_json(const FireWindow & window, const FireWindowCheck & check, int index,
+                      double target_yaw, double target_pitch)
+{
+  return {{"reference_index", index},
+          {"absolute_target_yaw", number(target_yaw)},
+          {"absolute_target_pitch", number(target_pitch)},
+          {"enabled", window.enabled},
+          {"base_tolerance", number(window.base_tolerance)},
+          {"lag_ratio", number(window.lag_ratio)},
+          {"direction_state", to_string(window.motion.state)},
+          {"yaw_direction", window.motion.direction},
+          {"reference_yaw_rate", optional_number(window.motion.rate)},
+          {"aligned_yaw_error", optional_number(check.aligned_yaw_error)},
+          {"applied_yaw_tolerance", number(check.applied_yaw_tolerance)},
+          {"normalized_error_squared", optional_number(check.normalized_error_squared)},
+          {"passed", check.passed}};
+}
 template <typename Derived> Json matrix(const Eigen::MatrixBase<Derived> & value)
 {
   Json rows = Json::array();
@@ -181,58 +202,88 @@ Json planner_trace_json(const PlannerDiagnosticEvent & event,
       reference_pitch_rate_valid.push_back(tag.rate_valid);
     }
   }
-  Json j = {{"schema_version", 1},
-            {"units", "rad,rad/s,rad/s2,s"},
-            {"solver_mode", "cold"},
-            {"build_id", DUST_MPC_BUILD_ID},
-            {"session", session},
-            {"plan_id", event.plan_id},
-            {"frame_sequence", event.source.frame_sequence},
-            {"feedback_sequence", event.source.feedback_sequence},
-            {"planned_s", number(std::chrono::duration<double>(p.planned_at - origin).count())},
-            {"planning_ms", number(event.planning_ms)},
-            {"feedback_age_ms", number(p.feedback_age_ms)},
-            {"plan_status", to_string(p.status)},
-            {"error_message", p.error_message},
-            {"control", p.control},
-            {"fire", p.fire},
-            {"received_state", state_json(t.received_state, origin)},
-            {"initial_state", state_json(p.initial_state, origin)},
-            {"bullet_speed", number(t.bullet_speed)},
-            {"yaw_offset", number(t.yaw_offset)},
-            {"pitch_offset", number(t.pitch_offset)},
-            {"target_available", t.target_available},
-            {"target_state", t.target_state},
-            {"reference_available", t.reference_available},
-            {"reference", t.reference_available ? matrix(t.reference) : Json(nullptr)},
-            {"reference_modes", std::move(reference_modes)},
-            {"reference_xyza", std::move(reference_xyza)},
-            {"reference_fly_time", std::move(reference_fly_time)},
-            {"reference_selection_valid", std::move(reference_selection_valid)},
-            {"reference_converged", std::move(reference_converged)},
-            {"reference_armor_ids", std::move(reference_armor_ids)},
-            {"reference_pitch_rate_valid", std::move(reference_pitch_rate_valid)},
-            {"yaw_origin", number(p.initial_state.yaw)},
-            {"yaw_config", mpc_config_json(t.yaw_config)},
-            {"pitch_config", mpc_config_json(t.pitch_config)},
-            {"yaw_mpc", mpc_diagnostics_json(p.yaw_mpc)},
-            {"pitch_mpc", mpc_diagnostics_json(p.pitch_mpc)},
-            {"aim",
-             {{"xyza", matrix(a.xyza)},
-              {"armor_id", a.armor_id},
-              {"mode", to_string(a.mode)},
-              {"candidate_available", a.candidate_available},
-              {"selection_valid", a.selection_valid},
-              {"ballistic_converged", a.ballistic_converged},
-              {"display_valid", a.display_valid}}},
-            {"output",
-             {{"absolute_yaw", number(p.absolute_yaw)},
-              {"absolute_pitch", number(p.absolute_pitch)},
-              {"yaw_vel", number(p.yaw_vel)},
-              {"pitch_vel", number(p.pitch_vel)},
-              {"yaw_acc", number(p.yaw_acc)},
-              {"pitch_acc", number(p.pitch_acc)}}}};
+  Json j = {
+    {"schema_version", 1},
+    {"units", "rad,rad/s,rad/s2,s"},
+    {"solver_mode", "cold"},
+    {"build_id", DUST_MPC_BUILD_ID},
+    {"session", session},
+    {"plan_id", event.plan_id},
+    {"frame_sequence", event.source.frame_sequence},
+    {"feedback_sequence", event.source.feedback_sequence},
+    {"planned_s", number(std::chrono::duration<double>(p.planned_at - origin).count())},
+    {"planning_ms", number(event.planning_ms)},
+    {"feedback_age_ms", number(p.feedback_age_ms)},
+    {"plan_status", to_string(p.status)},
+    {"error_message", p.error_message},
+    {"control", p.control},
+    {"fire", p.fire},
+    {"received_state", state_json(t.received_state, origin)},
+    {"initial_state", state_json(p.initial_state, origin)},
+    {"bullet_speed", number(t.bullet_speed)},
+    {"yaw_offset", number(t.yaw_offset)},
+    {"pitch_offset", number(t.pitch_offset)},
+    {"target_available", t.target_available},
+    {"target_state", t.target_state},
+    {"reference_available", t.reference_available},
+    {"reference", t.reference_available ? matrix(t.reference) : Json(nullptr)},
+    {"reference_modes", std::move(reference_modes)},
+    {"reference_xyza", std::move(reference_xyza)},
+    {"reference_fly_time", std::move(reference_fly_time)},
+    {"reference_selection_valid", std::move(reference_selection_valid)},
+    {"reference_converged", std::move(reference_converged)},
+    {"reference_armor_ids", std::move(reference_armor_ids)},
+    {"reference_pitch_rate_valid", std::move(reference_pitch_rate_valid)},
+    {"yaw_origin", number(p.initial_state.yaw)},
+    {"yaw_config", mpc_config_json(t.yaw_config)},
+    {"pitch_config", mpc_config_json(t.pitch_config)},
+    {"yaw_mpc", mpc_diagnostics_json(p.yaw_mpc)},
+    {"pitch_mpc", mpc_diagnostics_json(p.pitch_mpc)},
+    {"mpc_sampling",
+     {{"mode", to_string(t.mpc_mode)},
+      {"state_index", t.state_index},
+      {"input_index", t.input_index},
+      {"yaw_x0", t.reference_available ? matrix(t.yaw_x0) : Json(nullptr)},
+      {"pitch_x0", t.reference_available ? matrix(t.pitch_x0) : Json(nullptr)},
+      {"reference_anchor", t.mpc_mode == MpcMode::reference_smoothing ? "center_hit" : "launch"},
+      {"reference_start_s",
+       t.mpc_mode == MpcMode::reference_smoothing ? -SMOOTHING_CENTER * DT : 0.0},
+      {"launch_delay_s", number(t.launch_delay)},
+      {"center_fly_time_s", number(t.center_fly_time)},
+      {"command_offset_s",
+       p.command_at == std::chrono::steady_clock::time_point{}
+         ? Json(nullptr)
+         : number(std::chrono::duration<double>(p.command_at - p.planned_at).count())}}},
+    {"optimized_feedforward",
+     {{"yaw_vel", number(p.mpc_feedforward[0])},
+      {"yaw_acc", number(p.mpc_feedforward[1])},
+      {"pitch_vel", number(p.mpc_feedforward[2])},
+      {"pitch_acc", number(p.mpc_feedforward[3])}}},
+    {"aim",
+     {{"xyza", matrix(a.xyza)},
+      {"armor_id", a.armor_id},
+      {"mode", to_string(a.mode)},
+      {"candidate_available", a.candidate_available},
+      {"selection_valid", a.selection_valid},
+      {"ballistic_converged", a.ballistic_converged},
+      {"display_valid", a.display_valid}}},
+    {"output",
+     {{"absolute_yaw", number(p.absolute_yaw)},
+      {"absolute_pitch", number(p.absolute_pitch)},
+      {"yaw_vel", number(p.yaw_vel)},
+      {"pitch_vel", number(p.pitch_vel)},
+      {"yaw_acc", number(p.yaw_acc)},
+      {"pitch_acc", number(p.pitch_acc)}}}};
   // Integer nanoseconds relative to planned_at preserve exact clock reconstruction.
+  j["fire_windows"] = nullptr;
+  if (p.control && t.reference_available) {
+    const int k = p.settled_reference_index;
+    j["fire_windows"] = {
+      {"settled", fire_window_json(p.settled_window, p.settled_check, k,
+                                   t.reference(0, k) + p.initial_state.yaw, t.reference(2, k))},
+      {"command", fire_window_json(p.fire_window, p.fire_window_check, p.fire_reference_index,
+                                   p.absolute_target_yaw, p.absolute_target_pitch)}};
+  }
   const auto relative_ns = [&](auto timestamp) {
     return std::chrono::duration_cast<std::chrono::nanoseconds>(timestamp - p.planned_at).count();
   };

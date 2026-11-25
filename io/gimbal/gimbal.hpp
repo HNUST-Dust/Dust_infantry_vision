@@ -4,6 +4,7 @@
 #include <Eigen/Geometry>
 #include <atomic>
 #include <chrono>
+#include <cstddef>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -28,13 +29,21 @@ struct __attribute__((packed)) GimbalToVision
   float yaw;
   float yaw_vel;  // rad/s
   float pitch;
-  float pitch_vel;  // rad/s
-  float bullet_speed;
-  uint16_t bullet_count;  // 子弹累计发送次数
+  float pitch_vel;        // rad/s
+  float bullet_speed;     // 最近一次实际弹速，m/s
+  uint16_t bullet_count;  // 当前 17 mm 允许发弹量
+  uint8_t enemy_color;    // 0: 未知, 1: 红方, 2: 蓝方
   uint16_t crc16;
 };
 
-static_assert(sizeof(GimbalToVision) <= 64);
+static_assert(sizeof(GimbalToVision) == 44);
+static_assert(offsetof(GimbalToVision, q) == 3);
+static_assert(offsetof(GimbalToVision, yaw) == 19);
+static_assert(offsetof(GimbalToVision, pitch) == 27);
+static_assert(offsetof(GimbalToVision, bullet_speed) == 35);
+static_assert(offsetof(GimbalToVision, bullet_count) == 39);
+static_assert(offsetof(GimbalToVision, enemy_color) == 41);
+static_assert(offsetof(GimbalToVision, crc16) == 42);
 
 struct __attribute__((packed)) VisionToGimbal
 {
@@ -65,7 +74,8 @@ struct GimbalState
   float pitch;      // pitch angle in radians
   float pitch_vel;  // pitch velocity in radians/sec
   float bullet_speed;
-  uint16_t bullet_count;
+  uint16_t bullet_count;  // 当前 17 mm 允许发弹量
+  uint8_t enemy_color;    // 0: 未知, 1: 红方, 2: 蓝方
 };
 
 struct GimbalFeedback

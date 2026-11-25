@@ -27,6 +27,9 @@ struct Sample
   AxisReference yaw_reference = AxisReference::Zero(), pitch_reference = AxisReference::Zero();
   Eigen::Vector2d yaw_x0 = Eigen::Vector2d::Zero(), pitch_x0 = Eigen::Vector2d::Zero();
   MpcConfig yaw_config, pitch_config;
+  bool smoothing = false;
+  int state_index = COMMAND_STEP;
+  int input_index = 0;
 };
 Sample parse_sample(const json & j)
 {
@@ -55,6 +58,25 @@ Sample parse_sample(const json & j)
   const auto & state = j.at("initial_state");
   s.yaw_x0 = {0.0, state.at("yaw_vel").get<double>()};
   s.pitch_x0 = {state.at("pitch").get<double>(), state.at("pitch_vel").get<double>()};
+  if (j.contains("mpc_sampling")) {
+    const auto & sampling = j.at("mpc_sampling");
+    const auto mode = sampling.at("mode").get<std::string>();
+    require(mode == "measured_state" || mode == "reference_smoothing", "Unknown MPC mode");
+    s.smoothing = mode == "reference_smoothing";
+    s.state_index = sampling.at("state_index").get<int>();
+    s.input_index = sampling.at("input_index").get<int>();
+    require(s.state_index == (s.smoothing ? SMOOTHING_CENTER : COMMAND_STEP) &&
+              s.input_index == (s.smoothing ? SMOOTHING_CENTER : 0),
+            "MPC sampling index mismatch");
+    for (int row = 0; row < 2; ++row) {
+      s.yaw_x0[row] = sampling.at("yaw_x0").at(row).at(0).get<double>();
+      s.pitch_x0[row] = sampling.at("pitch_x0").at(row).at(0).get<double>();
+    }
+    if (s.smoothing)
+      require((s.yaw_x0 - s.yaw_reference.col(0)).norm() == 0.0 &&
+                (s.pitch_x0 - s.pitch_reference.col(0)).norm() == 0.0,
+              "Smoothing initial state must equal reference first column");
+  }
   require(s.yaw_x0.allFinite() && s.pitch_x0.allFinite(), "Nonfinite initial state");
   return s;
 }
@@ -105,13 +127,17 @@ void reproduce(const Sample & s)
     compare(d, expected);
     if (s.record.at("control").get<bool>()) {
       const auto & output = s.record.at("output");
-      close_number(solver.states()(0, COMMAND_STEP) +
+      close_number(solver.states()(0, s.state_index) +
                      (axis == 0 ? s.record.at("yaw_origin").get<double>() : 0.0),
                    output.at("absolute_" + name), "absolute " + name, 1e-6);
-      close_number(solver.states()(1, COMMAND_STEP), output.at(name + "_vel"), name + " velocity",
-                   1e-6);
-      close_number(solver.inputs()(0, 0) * solver.config().max_acc, output.at(name + "_acc"),
-                   name + " acceleration", 1e-6);
+      const auto & optimized = s.smoothing ? s.record.at("optimized_feedforward") : output;
+      close_number(solver.states()(1, s.state_index), optimized.at(name + "_vel"),
+                   name + " velocity", 1e-6);
+      close_number(solver.inputs()(0, s.input_index) * solver.config().max_acc,
+                   optimized.at(name + "_acc"), name + " acceleration", 1e-6);
+      if (s.smoothing)
+        require(output.at(name + "_vel") == 0.0 && output.at(name + "_acc") == 0.0,
+                "Position-only mode must send zero feedforward");
     }
   }
 }
@@ -149,6 +175,10 @@ void self_test()
             j.at("yaw_config").at("normalized_r") == j.at("pitch_config").at("normalized_r"),
           "Trace must distinguish fixed input scaling from physical acceleration limits");
   reproduce(parse_sample(j));
+  auto legacy = j;
+  legacy.erase("mpc_sampling");
+  legacy.erase("optimized_feedforward");
+  reproduce(parse_sample(legacy));
   auto bad = j;
   for (const auto * field : {"input_scale", "normalized_input_limit"}) {
     bad = j;

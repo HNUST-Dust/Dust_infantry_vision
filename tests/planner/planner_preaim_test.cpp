@@ -246,6 +246,8 @@ int main(int argc, char ** argv)
       }
     } cleanup{directory};
     auto yaml = YAML::LoadFile(argv[1]);
+    // This regression exercises the forward launch-time reference path.
+    yaml["mpc_mode"] = "measured_state";
     // Geometry is fixed at the proposed window; all MPC costs/limits come from supplied config.
     yaml["comming_angle"] = 35;
     yaml["leaving_angle"] = 20;

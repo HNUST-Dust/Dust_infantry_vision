@@ -19,6 +19,25 @@ void check_config(const std::string & config_path, const std::filesystem::path &
 {
   const auto config = load_application_config(config_path);
   const auto yaml = tools::load(config_path);
+  // Exercise MCU overrides and return-to-config for both configured colors.
+  Solver solver(config.solver);
+  for (const auto configured_color : {Color::red, Color::blue}) {
+    auto tracker_config = config.tracker;
+    tracker_config.enemy_color = configured_color;
+    Tracker tracker(tracker_config, solver);
+    for (const uint8_t reported : {0, 1, 2, 0, 2, 1, 0}) {
+      tracker.set_enemy_color(reported);
+      const auto expected = reported == 1   ? Color::red
+                            : reported == 2 ? Color::blue
+                                            : configured_color;
+      Armor friendly(0, 1.0F, cv::Rect(0, 0, 20, 10), {{0, 0}, {20, 0}, {20, 10}, {0, 10}});
+      friendly.color = expected == Color::red ? Color::blue : Color::red;
+      std::list<Armor> armors{friendly};
+      const auto targets = tracker.track(armors, std::chrono::steady_clock::now());
+      assert(armors.empty() && targets.empty());
+    }
+  }
+
   assert(config.detector.net.model_path == yaml["yolov5_model_path"].as<std::string>());
   assert(config.detector.postprocess.detector.classifier.model_path ==
          yaml["classify_model"].as<std::string>());
@@ -30,6 +49,9 @@ void check_config(const std::string & config_path, const std::filesystem::path &
   assert(config.camera && config.camera->name == yaml["camera_name"].as<std::string>());
   const auto saved = YAML::Load(config.planner.replay_yaml);
   assert(saved["max_pitch_acc"].as<double>() == config.planner.pitch.max_acc);
+  assert(config.planner.fire_directional_tolerance_enabled);
+  assert(saved["fire_directional_tolerance_enabled"].as<bool>());
+  assert(config.planner.fire_lag_tolerance_ratio == 0.5);
 
   {
     std::ofstream output(invalid_path);
@@ -86,6 +108,9 @@ void check_telemetry()
   snapshot.send.target_yaw = 0.04;
   snapshot.send.target_pitch = -0.02;
   snapshot.send.fire_tolerance = 0.035;
+  snapshot.send.fire_window = {true, 0.035, 0.5, {FireDirectionState::moving, 1, 0.2}};
+  snapshot.send.fire_window_check =
+    snapshot.send.fire_window.evaluate(-snapshot.send.target_yaw, -snapshot.send.target_pitch);
   snapshot.send.fire_block_mask = send_observation_fire_stale | send_angle_outside;
   snapshot.send.mode2_time_s = 0.012;
   snapshot.send.total_time_s = 0.03;
@@ -127,6 +152,15 @@ void check_telemetry()
   assert(data.at("send_target_valid") == true);
   assert(data.at("send_target_yaw") == 0.04 && data.at("send_target_pitch") == -0.02);
   assert(data.at("send_fire_tolerance") == 0.035);
+  assert(data.at("send_fire_directional_enabled") == true);
+  assert(data.at("send_fire_direction_state") == "moving");
+  assert(data.at("send_fire_yaw_direction") == 1);
+  assert(data.at("send_fire_reference_yaw_rate") == 0.2);
+  assert(data.at("send_fire_aligned_yaw_error") == -0.04);
+  assert(data.at("send_fire_yaw_tolerance") == 0.0175);
+  assert(data.at("send_fire_lag_tolerance") == 0.0175);
+  assert(data.at("send_fire_error_normalized_sq").get<double>() > 1);
+  assert(data.at("send_fire_window_passed") == false);
   assert(data.at("send_fire_block_mask") == (send_observation_fire_stale | send_angle_outside));
   assert(data.at("send_block_observation_fire_stale") == true);
   assert(data.at("send_block_angle_outside") == true);
@@ -148,6 +182,10 @@ void check_telemetry()
   assert(before_first_send.at("send_target_yaw").is_null());
   assert(before_first_send.at("send_target_pitch").is_null());
   assert(before_first_send.at("send_fire_tolerance").is_null());
+  for (const auto * field :
+       {"send_fire_yaw_direction", "send_fire_reference_yaw_rate", "send_fire_aligned_yaw_error",
+        "send_fire_yaw_tolerance", "send_fire_lag_tolerance", "send_fire_error_normalized_sq"})
+    assert(before_first_send.at(field).is_null());
   assert(before_first_send.at("send_total_time_s") == 0.0);
 
   // Control may be cleared after relative_to(); retain the error for diagnosing that gate.

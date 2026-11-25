@@ -17,6 +17,14 @@ class YamlConfig;
 
 namespace auto_aim
 {
+constexpr int SMOOTHING_CENTER = HORIZON / 2;
+enum class MpcMode
+{
+  measured_state,
+  reference_smoothing
+};
+const char * to_string(MpcMode mode);
+
 enum class PlanStatus
 {
   not_run,
@@ -61,8 +69,27 @@ struct AimDebugSnapshot
   bool display_valid = false;
 };
 
+struct FireWindowCheck
+{
+  bool passed = false;
+  std::optional<double> aligned_yaw_error;
+  double applied_yaw_tolerance = 0.0;
+  std::optional<double> normalized_error_squared;
+};
+
+struct FireWindow
+{
+  bool enabled = false;
+  double base_tolerance = 0.0;
+  double lag_ratio = 0.5;
+  FireYawMotion motion;
+  // Errors are measured minus target; positive aligned error means ahead.
+  FireWindowCheck evaluate(double yaw_error, double pitch_error) const;
+};
+
 struct Plan
 {
+  MpcMode mpc_mode = MpcMode::measured_state;
   PlanStatus status = PlanStatus::not_run;
   std::string error_message;
   AimDebugSnapshot aim_debug;
@@ -82,11 +109,20 @@ struct Plan
   double absolute_target_yaw = 0.0;
   double absolute_target_pitch = 0.0;
   double fire_tolerance = 0.0;
+  int settled_reference_index = 0;
+  int fire_reference_index = COMMAND_STEP;
+  FireWindow settled_window, fire_window;
+  FireWindowCheck settled_check, fire_window_check;
   double feedback_age_ms = 0.0;
   PlanningState initial_state;
   MpcDiagnostics yaw_mpc;
   MpcDiagnostics pitch_mpc;
+  // Raw optimized yaw velocity/acceleration, pitch velocity/acceleration.
+  // Position-only mode sends zeros in the four command feedforward fields above.
+  Eigen::Vector4d mpc_feedforward = Eigen::Vector4d::Zero();
   std::chrono::steady_clock::time_point planned_at{};
+  std::chrono::steady_clock::time_point command_at{};
+  // Sender expiry, independent of the command sampling time.
   std::chrono::steady_clock::time_point valid_at{};
 
   int mode() const
@@ -107,6 +143,14 @@ struct PlannerHistory
 
 struct PlanningTrace
 {
+  MpcMode mpc_mode = MpcMode::measured_state;
+  int state_index = COMMAND_STEP;
+  int input_index = 0;
+  Eigen::Vector2d yaw_x0 = Eigen::Vector2d::Zero();
+  Eigen::Vector2d pitch_x0 = Eigen::Vector2d::Zero();
+  double launch_delay = 0.0;
+  // Smoothing columns share a hit-time anchor; measured columns are launch-time samples.
+  double center_fly_time = 0.0;
   bool reference_available = false;
   Trajectory reference = Trajectory::Zero();
   ReferenceTags reference_tags{};
@@ -133,6 +177,7 @@ struct AimPoint
 
 struct PlannerConfig
 {
+  MpcMode mpc_mode = MpcMode::measured_state;
   MpcConfig yaw, pitch;
   std::string replay_yaml;
   double yaw_offset = 0.0;
@@ -148,6 +193,9 @@ struct PlannerConfig
   double second_tolerance = 0.0;
   double first_tolerance_high_speed = 0.0;
   double second_tolerance_high_speed = 0.0;
+  bool fire_directional_tolerance_enabled = false;
+  double fire_lag_tolerance_ratio = 0.5;
+  double fire_direction_min_yaw_rate = 0.05;
   double judge_distance = 0.0;
   bool auto_fire = false;
   bool gap_preaim_enabled = false;
@@ -174,6 +222,7 @@ public:
   void restore_history(const PlannerHistory & history);
 
 private:
+  MpcMode mpc_mode_ = MpcMode::measured_state;
   std::string planner_config_yaml_;
   double yaw_offset_;
   double pitch_offset_;
@@ -182,6 +231,9 @@ private:
   double comming_angle_, leaving_angle_;
   double first_tolerance_, second_tolerance_, judge_distance_;
   double first_tolerance_high_speed_, second_tolerance_high_speed_;
+  bool fire_directional_tolerance_enabled_ = false;
+  double fire_lag_tolerance_ratio_ = 0.5;
+  double fire_direction_min_yaw_rate_ = 0.05;
   bool auto_fire_;
   bool gap_preaim_enabled_ = false;
   double max_state_age_ = 0.02;
@@ -221,6 +273,10 @@ private:
                       const Eigen::Matrix3d & R_gimbal2world, Trajectory & out,
                       ReferenceTags & tags, AimDecision & decision,
                       Eigen::Vector4d & aim_xyza) const;
+  bool get_smoothing_trajectory(const Target & launch_target, double yaw_origin,
+                                double bullet_speed, const Eigen::Matrix3d & rotation,
+                                Trajectory & out, ReferenceTags & tags, AimDecision & decision,
+                                Eigen::Vector4d & aim_xyza) const;
 };
 }  // namespace auto_aim
 

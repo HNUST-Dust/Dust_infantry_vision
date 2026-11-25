@@ -16,6 +16,9 @@ if(BUILD_TESTING)
   target_link_libraries(quaternion_buffer_test PRIVATE tools_core)
 
   if(build_offline)
+    add_regression(gimbal_protocol gimbal_protocol_test gimbal/gimbal_protocol_test.cpp offline)
+    target_link_libraries(gimbal_protocol_test PRIVATE gimbal_io tools)
+
     add_regression(planner_reference planner_reference_test planner/planner_reference_test.cpp offline)
     target_link_libraries(planner_reference_test PRIVATE tools_core)
 
@@ -25,7 +28,7 @@ if(BUILD_TESTING)
     add_regression(dynamic_roi dynamic_roi_test detection/dynamic_roi_test.cpp offline)
     target_link_libraries(dynamic_roi_test PRIVATE aim_roi)
 
-    foreach(test planner_replay mpc_cost planner_diagnostics planner_preaim)
+    foreach(test planner_replay mpc_cost planner_diagnostics planner_preaim planner_smoothing)
       set(arguments)
       if(test STREQUAL "planner_replay")
         set(arguments --self-test)

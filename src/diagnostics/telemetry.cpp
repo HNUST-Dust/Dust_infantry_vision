@@ -75,6 +75,23 @@ nlohmann::json telemetry_json(const TelemetrySnapshot & snapshot)
     send.target_valid ? nlohmann::json(send.target_pitch) : nlohmann::json(nullptr);
   data["send_fire_tolerance"] =
     send.target_valid ? nlohmann::json(send.fire_tolerance) : nlohmann::json(nullptr);
+  const auto & window = send.fire_window;
+  const auto & check = send.fire_window_check;
+  const auto optional_metric = [&](std::optional<double> value) {
+    return send.target_valid && value && std::isfinite(*value) ? nlohmann::json(*value)
+                                                               : nlohmann::json(nullptr);
+  };
+  data["send_fire_directional_enabled"] = send.target_valid && window.enabled;
+  data["send_fire_direction_state"] =
+    send.target_valid ? to_string(window.motion.state) : "unknown";
+  data["send_fire_yaw_direction"] =
+    send.target_valid ? nlohmann::json(window.motion.direction) : nlohmann::json(nullptr);
+  data["send_fire_reference_yaw_rate"] = optional_metric(window.motion.rate);
+  data["send_fire_aligned_yaw_error"] = optional_metric(check.aligned_yaw_error);
+  data["send_fire_yaw_tolerance"] = optional_metric(check.applied_yaw_tolerance);
+  data["send_fire_lag_tolerance"] = optional_metric(window.base_tolerance * window.lag_ratio);
+  data["send_fire_error_normalized_sq"] = optional_metric(check.normalized_error_squared);
+  data["send_fire_window_passed"] = send.target_valid && check.passed;
   data["send_fire_block_mask"] = send.fire_block_mask;
   data["send_block_no_control"] = (send.fire_block_mask & send_no_control) != 0;
   data["send_block_planner_no_fire"] = (send.fire_block_mask & send_planner_no_fire) != 0;

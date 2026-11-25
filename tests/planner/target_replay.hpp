@@ -127,5 +127,8 @@ inline void reproduce(const Json & record)
         "reference_selection_valid", "reference_converged", "aim", "output"})
     if (record.at(key) != regenerated.at(key))
       throw std::runtime_error(std::string("Target replay differs: ") + key);
+  for (const auto * key : {"mpc_sampling", "optimized_feedforward", "fire_windows"})
+    if (record.contains(key) && record.at(key) != regenerated.at(key))
+      throw std::runtime_error(std::string("Target replay differs: ") + key);
 }
 }  // namespace target_replay

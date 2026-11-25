@@ -32,6 +32,11 @@ std::optional<double> selection_rate(const Eigen::VectorXd & x, int armor_num, A
 }
 }  // namespace
 
+const char * to_string(MpcMode mode)
+{
+  return mode == MpcMode::reference_smoothing ? "reference_smoothing" : "measured_state";
+}
+
 const char * to_string(PlanStatus status)
 {
   switch (status) {
@@ -74,6 +79,11 @@ const char * to_string(PlanStatus status)
 PlannerConfig PlannerConfig::parse(const tools::YamlConfig & yaml)
 {
   PlannerConfig config;
+  const auto mode = yaml.get<std::string>("mpc_mode", "measured_state");
+  if (mode == "reference_smoothing")
+    config.mpc_mode = MpcMode::reference_smoothing;
+  else if (mode != "measured_state")
+    yaml.fail("mpc_mode", "must be measured_state or reference_smoothing");
   config.yaw = MpcConfig::parse(yaml, "yaw");
   config.pitch = MpcConfig::parse(yaml, "pitch");
   config.yaw_offset = yaml.get<double>("yaw_offset") / 57.3;
@@ -91,6 +101,22 @@ PlannerConfig PlannerConfig::parse(const tools::YamlConfig & yaml)
     yaml.get("first_tolerance_high_speed", config.first_tolerance * 57.3) / 57.3;
   config.second_tolerance_high_speed =
     yaml.get("second_tolerance_high_speed", config.second_tolerance * 57.3) / 57.3;
+  config.fire_directional_tolerance_enabled = yaml.get("fire_directional_tolerance_enabled", false);
+  config.fire_lag_tolerance_ratio = yaml.get("fire_lag_tolerance_ratio", 0.5);
+  config.fire_direction_min_yaw_rate = yaml.get("fire_direction_min_yaw_rate", 0.05);
+  if (!std::isfinite(config.fire_lag_tolerance_ratio) || config.fire_lag_tolerance_ratio <= 0 ||
+      config.fire_lag_tolerance_ratio > 1)
+    yaml.fail("fire_lag_tolerance_ratio", "must be finite and in (0, 1]");
+  if (!std::isfinite(config.fire_direction_min_yaw_rate) || config.fire_direction_min_yaw_rate <= 0)
+    yaml.fail("fire_direction_min_yaw_rate", "must be finite and positive");
+  if (config.fire_directional_tolerance_enabled) {
+    for (const auto * key : {"first_tolerance", "second_tolerance", "first_tolerance_high_speed",
+                             "second_tolerance_high_speed"}) {
+      const double value = yaml.get(key, 1.0);
+      if (!std::isfinite(value) || value <= 0)
+        yaml.fail(key, "must be finite and positive when directional tolerance is enabled");
+    }
+  }
   config.judge_distance = yaml.get<double>("judge_distance");
   config.auto_fire = yaml.get<bool>("auto_fire");
 
@@ -103,7 +129,8 @@ PlannerConfig PlannerConfig::parse(const tools::YamlConfig & yaml)
   if (!std::isfinite(config.high_speed_delay_time) || config.high_speed_delay_time < 0)
     yaml.fail("high_speed_delay_time", "must be finite and nonnegative");
   YAML::Node replay_config;
-  for (const auto * key : {"yaw_offset",
+  for (const auto * key : {"mpc_mode",
+                           "yaw_offset",
                            "pitch_offset",
                            "fire_thresh",
                            "fire_thresh_high_speed",
@@ -116,6 +143,9 @@ PlannerConfig PlannerConfig::parse(const tools::YamlConfig & yaml)
                            "second_tolerance",
                            "first_tolerance_high_speed",
                            "second_tolerance_high_speed",
+                           "fire_directional_tolerance_enabled",
+                           "fire_lag_tolerance_ratio",
+                           "fire_direction_min_yaw_rate",
                            "judge_distance",
                            "auto_fire",
                            "gap_preaim_enabled",
@@ -147,6 +177,7 @@ Planner::Planner(const std::string & config_path)
 Planner::Planner(const PlannerConfig & config)
     : planner_config_yaml_(config.replay_yaml), yaw_solver_(config.yaw), pitch_solver_(config.pitch)
 {
+  mpc_mode_ = config.mpc_mode;
   yaw_offset_ = config.yaw_offset;
   pitch_offset_ = config.pitch_offset;
   fire_thresh_ = config.fire_thresh;
@@ -160,6 +191,9 @@ Planner::Planner(const PlannerConfig & config)
   second_tolerance_ = config.second_tolerance;
   first_tolerance_high_speed_ = config.first_tolerance_high_speed;
   second_tolerance_high_speed_ = config.second_tolerance_high_speed;
+  fire_directional_tolerance_enabled_ = config.fire_directional_tolerance_enabled;
+  fire_lag_tolerance_ratio_ = config.fire_lag_tolerance_ratio;
+  fire_direction_min_yaw_rate_ = config.fire_direction_min_yaw_rate;
   judge_distance_ = config.judge_distance;
   auto_fire_ = config.auto_fire;
   gap_preaim_enabled_ = config.gap_preaim_enabled;
@@ -463,6 +497,96 @@ bool Planner::get_trajectory(const Target & launch_target, double yaw_origin, do
   return out.allFinite();
 }
 
+bool Planner::get_smoothing_trajectory(const Target & launch_target, double yaw_origin,
+                                       double bullet_speed, const Eigen::Matrix3d & rotation,
+                                       Trajectory & out, ReferenceTags & tags,
+                                       AimDecision & decision, Eigen::Vector4d & aim_xyza) const
+{
+  tags = {};
+  if (!resolve_aim_time(launch_target, bullet_speed, rotation, lock_id_, decision))
+    return false;
+  const auto center = solve_xyza(decision.reference_xyza, bullet_speed, rotation);
+  if (!center)
+    return false;
+  decision.command_valid = decision.valid && decision.converged;
+  aim_xyza = decision.reference_xyza;
+  const auto write = [&](int k, const AimDecision & d, const AimSolution & solution,
+                         double previous_yaw) {
+    const double yaw = previous_yaw + tools::limit_rad(solution.yaw - previous_yaw);
+    out(0, k) = yaw - yaw_origin;
+    out(2, k) = solution.pitch;
+    tags[k] = {d.id,
+               d.converged && (d.valid || d.mode == AimMode::preaim),
+               d.mode,
+               d.reference_xyza,
+               solution.fly_time,
+               d.valid,
+               d.converged};
+    return yaw;
+  };
+  const double center_yaw = write(SMOOTHING_CENTER, decision, *center, yaw_origin);
+  Target hit = launch_target;
+  hit.predict(decision.fly_time);
+  // The center decision owns the lock. Each side evolves its own copy; past samples
+  // are independently predicted from the hit anchor, never integrated backwards in-place.
+  for (int direction : {-1, 1}) {
+    int lock = decision.lock;
+    int previous_id = decision.id;
+    double previous_yaw = center_yaw;
+    for (int k = SMOOTHING_CENTER + direction; k >= 0 && k < HORIZON; k += direction) {
+      Target sample = hit;
+      sample.predict((k - SMOOTHING_CENTER) * DT);
+      auto candidate = choose_reference(sample, lock, previous_id);
+      const auto solution = candidate.id >= 0
+                              ? solve_xyza(candidate.reference_xyza, bullet_speed, rotation)
+                              : std::nullopt;
+      if (!solution) {
+        out(0, k) = out(0, k - direction);
+        out(2, k) = out(2, k - direction);
+        continue;
+      }
+      // The shared hit-time grid requires no new flight-time iteration at each side sample.
+      candidate.converged = decision.converged;
+      previous_yaw = write(k, candidate, *solution, previous_yaw);
+      previous_id = candidate.id;
+    }
+  }
+  for (int k = 0; k < HORIZON; ++k) {
+    const int left = std::max(0, k - 1);
+    const int right = std::min(HORIZON - 1, k + 1);
+    out(1, k) = (out(0, right) - out(0, left)) / ((right - left) * DT);
+  }
+  if (gap_preaim_enabled_)
+    fill_segment_reference_velocity(out, tags);
+  else
+    fill_pitch_reference_velocity(out, tags);
+  return out.allFinite();
+}
+
+FireWindowCheck FireWindow::evaluate(double yaw_error, double pitch_error) const
+{
+  FireWindowCheck check;
+  check.applied_yaw_tolerance = base_tolerance;
+  if (motion.state == FireDirectionState::moving && std::isfinite(yaw_error))
+    check.aligned_yaw_error = motion.direction * yaw_error;
+  if (enabled && lag_ratio < 1 &&
+      (motion.state == FireDirectionState::unknown ||
+       (check.aligned_yaw_error && *check.aligned_yaw_error < 0)))
+    check.applied_yaw_tolerance *= lag_ratio;
+  if (!std::isfinite(yaw_error) || !std::isfinite(pitch_error) || !std::isfinite(base_tolerance) ||
+      base_tolerance <= 0 || !std::isfinite(check.applied_yaw_tolerance) ||
+      check.applied_yaw_tolerance <= 0)
+    return check;
+  const double normalized =
+    std::hypot(yaw_error / check.applied_yaw_tolerance, pitch_error / base_tolerance);
+  if (std::isfinite(normalized * normalized))
+    check.normalized_error_squared = normalized * normalized;
+  const bool inside_original = std::hypot(yaw_error, pitch_error) < base_tolerance;
+  check.passed =
+    inside_original && (check.applied_yaw_tolerance == base_tolerance || normalized < 1);
+  return check;
+}
+
 Plan Plan::relative_to(double measured_yaw, double measured_pitch) const
 {
   if (!control || !std::isfinite(measured_yaw) || !std::isfinite(measured_pitch))
@@ -472,7 +596,9 @@ Plan Plan::relative_to(double measured_yaw, double measured_pitch) const
   result.pitch = absolute_pitch - measured_pitch;
   result.target_yaw = tools::limit_rad(absolute_target_yaw - measured_yaw);
   result.target_pitch = absolute_target_pitch - measured_pitch;
-  result.fire = fire && std::hypot(result.target_yaw, result.target_pitch) < fire_tolerance;
+  result.fire_window.base_tolerance = fire_tolerance;
+  result.fire_window_check = result.fire_window.evaluate(-result.target_yaw, -result.target_pitch);
+  result.fire = fire && result.fire_window_check.passed;
   return result;
 }
 
@@ -500,10 +626,17 @@ Plan Planner::plan_at(std::optional<Target> target, std::chrono::steady_clock::t
                       double bullet_speed, const PlanningState & state, PlanningTrace * trace)
 {
   Plan result;
+  result.mpc_mode = mpc_mode_;
+  const bool smoothing = mpc_mode_ == MpcMode::reference_smoothing;
+  const int state_index = smoothing ? SMOOTHING_CENTER : COMMAND_STEP;
+  const int input_index = smoothing ? SMOOTHING_CENTER : 0;
   result.planned_at = now;
   result.initial_state = state;
   if (trace) {
     *trace = PlanningTrace{};
+    trace->mpc_mode = mpc_mode_;
+    trace->state_index = state_index;
+    trace->input_index = input_index;
     trace->received_state = state;
     trace->yaw_config = yaw_solver_.config();
     trace->pitch_config = pitch_solver_.config();
@@ -577,57 +710,93 @@ Plan Planner::plan_at(std::optional<Target> target, std::chrono::steady_clock::t
   const auto ekf_x = target->ekf_x();
   const bool high_speed = std::abs(ekf_x[7]) > decision_speed_;
   const double delay = high_speed ? high_speed_delay_time_ : low_speed_delay_time_;
+  if (trace)
+    trace->launch_delay = delay;
   target->predict(now + std::chrono::duration_cast<std::chrono::steady_clock::duration>(
                           std::chrono::duration<double>(delay)));
   Trajectory reference;
   ReferenceTags reference_tags;
   AimDecision decision;
   Eigen::Vector4d aim_xyza;
-  if (!get_trajectory(*target, initial.yaw, bullet_speed, initial.R_gimbal2world, reference,
-                      reference_tags, decision, aim_xyza))
+  const bool reference_ready =
+    smoothing ? get_smoothing_trajectory(*target, initial.yaw, bullet_speed, initial.R_gimbal2world,
+                                         reference, reference_tags, decision, aim_xyza)
+              : get_trajectory(*target, initial.yaw, bullet_speed, initial.R_gimbal2world,
+                               reference, reference_tags, decision, aim_xyza);
+  if (!reference_ready)
     return fail(PlanStatus::trajectory_unavailable);
 
   result.aim_debug.xyza = aim_xyza;
   result.aim_debug.armor_id = decision.id;
   result.aim_debug.mode = decision.mode;
-  result.aim_debug.candidate_available = reference_tags[0].armor_id >= 0;
+  const int decision_index = smoothing ? SMOOTHING_CENTER : 0;
+  result.aim_debug.candidate_available = reference_tags[decision_index].armor_id >= 0;
   result.aim_debug.selection_valid = decision.valid;
   result.aim_debug.ballistic_converged = decision.converged;
+  const Eigen::Vector2d yaw_x0 = smoothing ? Eigen::Vector2d(reference.block<2, 1>(0, 0))
+                                           : Eigen::Vector2d(0.0, initial.yaw_vel);
+  const Eigen::Vector2d pitch_x0 = smoothing ? Eigen::Vector2d(reference.block<2, 1>(2, 0))
+                                             : Eigen::Vector2d(initial.pitch, initial.pitch_vel);
   if (trace) {
     trace->reference = reference;
     trace->reference_tags = reference_tags;
     trace->reference_available = true;
+    trace->yaw_x0 = yaw_x0;
+    trace->pitch_x0 = pitch_x0;
+    trace->center_fly_time = smoothing ? decision.fly_time : 0.0;
   }
 
-  result.yaw_mpc = yaw_solver_.solve({0.0, initial.yaw_vel}, reference.topRows<2>());
-  result.pitch_mpc =
-    pitch_solver_.solve({initial.pitch, initial.pitch_vel}, reference.bottomRows<2>());
+  result.yaw_mpc = yaw_solver_.solve(yaw_x0, reference.topRows<2>());
+  result.pitch_mpc = pitch_solver_.solve(pitch_x0, reference.bottomRows<2>());
   if (!result.yaw_mpc.solved || !result.pitch_mpc.solved)
     return fail(PlanStatus::mpc_failed);
 
   result.status = PlanStatus::ok;
   result.control = true;
-  result.absolute_yaw = yaw_solver_.states()(0, COMMAND_STEP) + initial.yaw;
-  result.absolute_pitch = pitch_solver_.states()(0, COMMAND_STEP);
-  result.absolute_target_yaw = reference(0, COMMAND_STEP) + initial.yaw;
-  result.absolute_target_pitch = reference(2, COMMAND_STEP);
-  result.yaw_vel = yaw_solver_.states()(1, COMMAND_STEP);
-  result.pitch_vel = pitch_solver_.states()(1, COMMAND_STEP);
-  result.yaw_acc = yaw_solver_.inputs()(0, 0) * yaw_solver_.config().max_acc;
-  result.pitch_acc = pitch_solver_.inputs()(0, 0) * pitch_solver_.config().max_acc;
+  result.absolute_yaw = yaw_solver_.states()(0, state_index) + initial.yaw;
+  result.absolute_pitch = pitch_solver_.states()(0, state_index);
+  result.absolute_target_yaw = reference(0, state_index) + initial.yaw;
+  result.absolute_target_pitch = reference(2, state_index);
+  result.mpc_feedforward = {yaw_solver_.states()(1, state_index),
+                            yaw_solver_.inputs()(0, input_index) * yaw_solver_.config().max_acc,
+                            pitch_solver_.states()(1, state_index),
+                            pitch_solver_.inputs()(0, input_index) *
+                              pitch_solver_.config().max_acc};
+  if (!smoothing) {
+    result.yaw_vel = result.mpc_feedforward[0];
+    result.yaw_acc = result.mpc_feedforward[1];
+    result.pitch_vel = result.mpc_feedforward[2];
+    result.pitch_acc = result.mpc_feedforward[3];
+  }
   result.valid_at = now + std::chrono::duration_cast<std::chrono::steady_clock::duration>(
                             std::chrono::duration<double>(COMMAND_STEP * DT));
+  result.command_at = smoothing ? now : result.valid_at;
   const bool far_distance = std::hypot(ekf_x[0], ekf_x[2]) > judge_distance_;
   result.fire_tolerance =
     high_speed ? (far_distance ? second_tolerance_high_speed_ : first_tolerance_high_speed_)
                : (far_distance ? second_tolerance_ : first_tolerance_);
   const double tracking_threshold = high_speed ? fire_thresh_high_speed_ : fire_thresh_;
   const bool reachable =
-    std::hypot(reference(0, COMMAND_STEP) - yaw_solver_.states()(0, COMMAND_STEP),
-               reference(2, COMMAND_STEP) - pitch_solver_.states()(0, COMMAND_STEP)) <
+    std::hypot(reference(0, state_index) - yaw_solver_.states()(0, state_index),
+               reference(2, state_index) - pitch_solver_.states()(0, state_index)) <
     tracking_threshold;
-  const bool settled =
-    std::hypot(reference(0, 0), reference(2, 0) - initial.pitch) < result.fire_tolerance;
+  const auto window_at = [&](int index) {
+    FireWindow window;
+    window.enabled = fire_directional_tolerance_enabled_;
+    window.base_tolerance = result.fire_tolerance;
+    window.lag_ratio = fire_lag_tolerance_ratio_;
+    if (window.enabled)
+      window.motion =
+        fire_yaw_motion(reference, reference_tags, index, fire_direction_min_yaw_rate_);
+    return window;
+  };
+  result.settled_reference_index = decision_index;
+  result.fire_reference_index = state_index;
+  result.settled_window = window_at(decision_index);
+  result.fire_window = window_at(state_index);
+  result.settled_check = result.settled_window.evaluate(
+    -reference(0, decision_index), initial.pitch - reference(2, decision_index));
+  const bool settled = result.settled_check.passed;
   const double since_last = std::chrono::duration<double>(now - last_plan_at_).count();
   result.fire = auto_fire_ && state.rates_measured && have_last_command_ && since_last > 0.0 &&
                 since_last <= max_state_age_ && decision.command_valid && reachable && settled &&

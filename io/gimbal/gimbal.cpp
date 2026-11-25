@@ -321,6 +321,7 @@ void Gimbal::read_thread()
     state_.bullet_speed = rx_data_.bullet_speed;
     // tools::logger()->info("[Gimbal] bullet_speed: {:.2f}", state_.bullet_speed);
     state_.bullet_count = rx_data_.bullet_count;
+    state_.enemy_color = rx_data_.enemy_color;
     feedback_timestamp_ = t;
     feedback_q_ = q;
     ++feedback_sequence_;

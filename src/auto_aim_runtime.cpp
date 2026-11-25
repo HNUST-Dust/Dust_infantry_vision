@@ -239,13 +239,14 @@ int run(const RuntimeOptions & options)
       send_sample.target_yaw = plan.target_yaw;
       send_sample.target_pitch = plan.target_pitch;
       send_sample.fire_tolerance = update.plan.fire_tolerance;
+      send_sample.fire_window = plan.fire_window;
+      send_sample.fire_window_check = plan.fire_window_check;
       auto & blocked = send_sample.fire_block_mask;
       if (!plan.control)
         blocked |= send_no_control;
       if (update.plan.control && !update.plan.fire)
         blocked |= send_planner_no_fire;
-      if (send_sample.target_valid &&
-          !(std::hypot(plan.target_yaw, plan.target_pitch) < update.plan.fire_tolerance))
+      if (send_sample.target_valid && !plan.fire_window_check.passed)
         blocked |= send_angle_outside;
       if (update.generated_at == epoch)
         blocked |= send_no_plan;
@@ -325,7 +326,7 @@ int run(const RuntimeOptions & options)
         latency_summary = latency_stats.summary();
       }
 
-      const bool fired = gs.bullet_count > last_bullet_count;
+      const bool fired = gs.bullet_count < last_bullet_count;
       last_bullet_count = gs.bullet_count;
       std::optional<TelemetryTarget> target;
       if (target_update.target) {
@@ -469,6 +470,7 @@ int run(const RuntimeOptions & options)
     auto armors = std::move(detection->armors);
     const auto t = detection->timestamp;
 
+    tracker.set_enemy_color(gimbal.state().enemy_color);
     auto targets = tracker.track(armors, t);
 
     const auto current_state = tracker.state_enum();
@@ -518,6 +520,7 @@ int run(const RuntimeOptions & options)
     if (!detection->q)
       continue;
     solver.set_R_gimbal2world(*detection->q);
+    tracker.set_enemy_color(gimbal.state().enemy_color);
     auto targets = tracker.track(armors, detection->timestamp);
     target_queue.push({targets.empty() ? std::nullopt : std::optional<Target>(targets.front()),
                        detection->timestamp, tracker.last_observed_timestamp(),
