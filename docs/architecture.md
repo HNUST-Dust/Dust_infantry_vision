@@ -33,6 +33,10 @@
 
 每条遥测中的 `capture_time_ms`、`detection_submit_ms`、`inference_time_ms`、`inference_wait_ms`、`postprocess_time_ms` 和 `result_delivery_ms` 来自同一个检测结果。`detection_sequence` 标识该帧，`detection_frame_t` 是以遥测 `t` 为同一起点的帧时间戳，单位为秒。首次结果前，帧号和六项耗时均为 0，帧时间戳为 null。遥测采样读取最近一次结果，连续两行的检测帧号可能重复或跳号。
 
+### 下位机弹速遥测
+
+`/vision/telemetry` 的 `bullet_speed` 为下位机回传的最近一次实际弹速，单位 m/s，直接取自云台反馈，不使用规划器的弹速回退值。随现有遥测约 50 Hz 发布；在 Foxglove Plot 面板添加 `/vision/telemetry.bullet_speed` 即可查看曲线。两次弹速更新之间保持最近值；模拟云台模式下为模拟值。
+
 ### 最终发送遥测
 
 `/vision/telemetry` 原有的 `mode`、`fire` 仍表示规划结果。`send_mode` 表示发送线程完成相对角更新、角度检查和超时门控后交给 IO 的模式（0 停止控制、1 控制但不允许开火、2 允许开火），不代表下位机已收到或实际发弹。

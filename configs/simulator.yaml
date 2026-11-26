@@ -71,8 +71,7 @@ pitch_offset: 0.0 # degree 向上为正
 comming_angle: 55 # degree
 leaving_angle: 20 # degree
 decision_speed: 8 # rad/s
-high_speed_delay_time: 0.01 # s 规划，下发，云台到达，发弹延迟
-low_speed_delay_time: 0.01 # s
+launch_delay_time: 0.01 # s 从规划时刻到弹丸出膛的额外延迟补偿，不含弹丸飞行时间
 
 #####-----planner 开火参数（原 shooter，2026-10-03 并入）-----#####
 first_tolerance: 3 # 近距离低速射击容差，degree

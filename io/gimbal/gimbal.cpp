@@ -1,4 +1,5 @@
 #include "gimbal.hpp"
+#include "frame_parser.hpp"
 
 #include "tools/protocol/crc.hpp"
 #include "tools/diagnostics/logger.hpp"
@@ -223,6 +224,7 @@ void Gimbal::read_thread()
 {
   tools::logger()->info("[Gimbal] read_thread started.");
   int error_count = 0;
+  GimbalFrameParser<GimbalToVision> parser;
   auto last_rate_log = std::chrono::steady_clock::time_point{};
 
   while (!quit_) {
@@ -233,111 +235,90 @@ void Gimbal::read_thread()
       continue;
     }
 
-    if (!read(reinterpret_cast<uint8_t *>(&rx_data_), sizeof(rx_data_.head))) {
-      error_count++;
+    std::array<uint8_t, sizeof(GimbalToVision)> chunk{};
+    size_t count = 0;
+    try {
+      count = serial_.read(chunk.data(), chunk.size());
+    } catch (const std::exception &) {
+      ++error_count;
       continue;
     }
-
-    if (rx_data_.head[0] != 'S' || rx_data_.head[1] != 'P')
-      continue;
-
-    auto t = std::chrono::steady_clock::now();
-
-    if (!read(reinterpret_cast<uint8_t *>(&rx_data_) + sizeof(rx_data_.head),
-              sizeof(rx_data_) - sizeof(rx_data_.head))) {
-      error_count++;
+    if (count == 0) {
+      ++error_count;
       continue;
     }
-
-    // uint16_t crc = rx_data_.crc16;
-    // tools::logger()->info("[Gimbal] Received data, CRC: 0x{:04X}", crc);
-
-    if (!tools::check_crc16(reinterpret_cast<uint8_t *>(&rx_data_), sizeof(rx_data_))) {
-      if (!skip_crc_) {
-        uint16_t received_crc = rx_data_.crc16;
-        uint16_t calculated_crc = tools::get_crc16(reinterpret_cast<uint8_t *>(&rx_data_),
-                                                   sizeof(rx_data_) - sizeof(rx_data_.crc16));
-        tools::logger()->info(
-          "[Gimbal] CRC16 check failed. Received: 0x{:04X}, Calculated: 0x{:04X}", received_crc,
-          calculated_crc);
-        error_count++;
+    for (size_t i = 0; i < count && !quit_; ++i) {
+      if (!parser.push(chunk[i], rx_data_, skip_crc_))
+        continue;
+      auto t = std::chrono::steady_clock::now();
+      error_count = 0;
+      Eigen::Quaterniond q(rx_data_.q[0], rx_data_.q[1], rx_data_.q[2], rx_data_.q[3]);
+      if (!q.coeffs().allFinite() || !std::isfinite(q.norm()) || q.norm() < 1e-6 ||
+          !std::isfinite(rx_data_.yaw_vel) || !std::isfinite(rx_data_.pitch_vel)) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        feedback_valid_ = false;
         continue;
       }
-      // else: skip CRC check silently
-    }
+      if (!orientations_.push(q, t))
+        continue;
+      q.normalize();
+      // 云台关节轴为 Z(yaw)-X(pitch)-Y(roll)，按同一顺序提取反馈角。
+      Eigen::Vector3d zxy = tools::eulers(q, 2, 0, 1);
+      double yaw_angle = zxy[0];    // Z
+      double pitch_angle = zxy[1];  // X
+      // double roll_angle  = zxy[2];  // Y
 
-    // uint16_t received_crc = rx_data_.crc16;
-    // uint16_t calculated_crc = tools::get_crc16(
-    //   reinterpret_cast<uint8_t *>(&rx_data_), sizeof(rx_data_) - sizeof(rx_data_.crc16));
-    // tools::logger()->info("[Gimbal] CRC16 check passed. Received: 0x{:04X}, Calculated: 0x{:04X}", received_crc, calculated_crc);
+      // tools::logger()->info(
+      //   "[Gimbal] Euler from q (ZXY) -> Yaw(Z): {:.4f} rad ({:.2f} deg), Pitch(X): {:.4f} rad ({:.2f} deg), Roll(Y): {:.4f} rad ({:.2f} deg)",
+      //   yaw_angle, yaw_angle * 180.0 / M_PI,
+      //   pitch_angle, pitch_angle * 180.0 / M_PI,
+      //   roll_angle, roll_angle * 180.0 / M_PI);
+      // 打印原始数据
+      std::string raw_hex;
+      for (size_t i = 0; i < sizeof(rx_data_); ++i) {
+        raw_hex += fmt::format("{:02x} ", reinterpret_cast<uint8_t *>(&rx_data_)[i]);
+      }
+      // tools::logger()->debug("[Gimbal] Raw data: {}", raw_hex);
 
-    error_count = 0;
-    Eigen::Quaterniond q(rx_data_.q[0], rx_data_.q[1], rx_data_.q[2], rx_data_.q[3]);
-    if (!q.coeffs().allFinite() || !std::isfinite(q.norm()) || q.norm() < 1e-6 ||
-        !std::isfinite(rx_data_.yaw_vel) || !std::isfinite(rx_data_.pitch_vel)) {
+      // 打印四元数
+      // tools::logger()->debug("[Gimbal] Quaternion: q=[{}, {}, {}, {}]", q.w(), q.x(), q.y(), q.z());
+
+      // if (last_rate_log == std::chrono::steady_clock::time_point{} ||
+      //     t - last_rate_log >= std::chrono::seconds(1)) {
+      //   tools::logger()->info(
+      //     "[GimbalRxRate] feedback (rad/s): yaw={:.6f}, pitch={:.6f}",
+      //     static_cast<float>(rx_data_.yaw_vel), static_cast<float>(rx_data_.pitch_vel));
+      //   last_rate_log = t;
+      // }
+
       std::lock_guard<std::mutex> lock(mutex_);
-      feedback_valid_ = false;
-      continue;
-    }
-    if (!orientations_.push(q, t))
-      continue;
-    q.normalize();
-    // 云台关节轴为 Z(yaw)-X(pitch)-Y(roll)，按同一顺序提取反馈角。
-    Eigen::Vector3d zxy = tools::eulers(q, 2, 0, 1);
-    double yaw_angle = zxy[0];    // Z
-    double pitch_angle = zxy[1];  // X
-    // double roll_angle  = zxy[2];  // Y
 
-    // tools::logger()->info(
-    //   "[Gimbal] Euler from q (ZXY) -> Yaw(Z): {:.4f} rad ({:.2f} deg), Pitch(X): {:.4f} rad ({:.2f} deg), Roll(Y): {:.4f} rad ({:.2f} deg)",
-    //   yaw_angle, yaw_angle * 180.0 / M_PI,
-    //   pitch_angle, pitch_angle * 180.0 / M_PI,
-    //   roll_angle, roll_angle * 180.0 / M_PI);
-    // 打印原始数据
-    std::string raw_hex;
-    for (size_t i = 0; i < sizeof(rx_data_); ++i) {
-      raw_hex += fmt::format("{:02x} ", reinterpret_cast<uint8_t *>(&rx_data_)[i]);
-    }
-    // tools::logger()->debug("[Gimbal] Raw data: {}", raw_hex);
+      // MCU angular rates already use rad/s, matching the planner state.
+      state_.yaw = yaw_angle;
+      state_.yaw_vel = rx_data_.yaw_vel;
+      state_.pitch = pitch_angle;
+      state_.pitch_vel = rx_data_.pitch_vel;
+      state_.bullet_speed = rx_data_.bullet_speed;
+      // tools::logger()->info("[Gimbal] bullet_speed: {:.2f}", state_.bullet_speed);
+      state_.bullet_count = rx_data_.bullet_count;
+      state_.enemy_color = rx_data_.enemy_color;
+      feedback_timestamp_ = t;
+      feedback_q_ = q;
+      ++feedback_sequence_;
+      feedback_valid_ = true;
 
-    // 打印四元数
-    // tools::logger()->debug("[Gimbal] Quaternion: q=[{}, {}, {}, {}]", q.w(), q.x(), q.y(), q.z());
-
-    // if (last_rate_log == std::chrono::steady_clock::time_point{} ||
-    //     t - last_rate_log >= std::chrono::seconds(1)) {
-    //   tools::logger()->info(
-    //     "[GimbalRxRate] feedback (rad/s): yaw={:.6f}, pitch={:.6f}",
-    //     static_cast<float>(rx_data_.yaw_vel), static_cast<float>(rx_data_.pitch_vel));
-    //   last_rate_log = t;
-    // }
-
-    std::lock_guard<std::mutex> lock(mutex_);
-
-    // MCU angular rates already use rad/s, matching the planner state.
-    state_.yaw = yaw_angle;
-    state_.yaw_vel = rx_data_.yaw_vel;
-    state_.pitch = pitch_angle;
-    state_.pitch_vel = rx_data_.pitch_vel;
-    state_.bullet_speed = rx_data_.bullet_speed;
-    // tools::logger()->info("[Gimbal] bullet_speed: {:.2f}", state_.bullet_speed);
-    state_.bullet_count = rx_data_.bullet_count;
-    state_.enemy_color = rx_data_.enemy_color;
-    feedback_timestamp_ = t;
-    feedback_q_ = q;
-    ++feedback_sequence_;
-    feedback_valid_ = true;
-
-    switch (rx_data_.mode) {
-    case 0:
-      mode_ = GimbalMode::IDLE;
-      break;
-    case 1:
-      mode_ = GimbalMode::AUTO_AIM;
-      break;
-    default:
-      mode_ = GimbalMode::IDLE;
-      tools::logger()->warn("[Gimbal] Invalid mode: {}", rx_data_.mode);
-      break;
+      switch (rx_data_.mode) {
+      case 0:
+        mode_ = GimbalMode::IDLE;
+        break;
+      case 1:
+        mode_ = GimbalMode::AUTO_AIM;
+        break;
+      default:
+        mode_ = GimbalMode::IDLE;
+        tools::logger()->warn("[Gimbal] Invalid mode: {}", rx_data_.mode);
+        break;
+      }
     }
   }
 

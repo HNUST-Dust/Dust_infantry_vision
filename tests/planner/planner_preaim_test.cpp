@@ -251,7 +251,7 @@ int main(int argc, char ** argv)
     // Geometry is fixed at the proposed window; all MPC costs/limits come from supplied config.
     yaml["comming_angle"] = 35;
     yaml["leaving_angle"] = 20;
-    yaml["high_speed_delay_time"] = yaml["low_speed_delay_time"] = .01;
+    yaml["launch_delay_time"] = .01;
     yaml["auto_fire"] = true;
     yaml["first_tolerance"] = yaml["second_tolerance"] = 180;
     yaml["fire_thresh"] = 10;

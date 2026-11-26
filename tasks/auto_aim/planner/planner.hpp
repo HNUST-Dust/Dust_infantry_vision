@@ -185,8 +185,7 @@ struct PlannerConfig
   double fire_thresh = 0.0;
   double fire_thresh_high_speed = 0.0;
   double decision_speed = 0.0;
-  double high_speed_delay_time = 0.0;
-  double low_speed_delay_time = 0.0;
+  double launch_delay_time = 0.0;
   double comming_angle = 0.0;
   double leaving_angle = 0.0;
   double first_tolerance = 0.0;
@@ -226,7 +225,7 @@ private:
   std::string planner_config_yaml_;
   double yaw_offset_;
   double pitch_offset_;
-  double low_speed_delay_time_, high_speed_delay_time_, decision_speed_;
+  double launch_delay_time_, decision_speed_;
   double fire_thresh_, fire_thresh_high_speed_;
   double comming_angle_, leaving_angle_;
   double first_tolerance_, second_tolerance_, judge_distance_;

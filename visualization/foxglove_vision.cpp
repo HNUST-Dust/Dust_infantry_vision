@@ -106,6 +106,7 @@ foxglove::Schema telemetry_schema()
       "gimbal_yaw_vel": {"type": "number"},
       "gimbal_pitch": {"type": "number"},
       "gimbal_pitch_vel": {"type": "number"},
+      "bullet_speed": {"type": "number", "description": "Latest bullet speed reported by the MCU in m/s"},
       "target_yaw": {"type": "number"},
       "target_pitch": {"type": "number"},
       "plan_absolute_yaw": {"type": "number", "description": "MPC absolute yaw command in rad"},

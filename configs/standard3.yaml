@@ -7,12 +7,12 @@ runtime:
   headless: true          # 关闭检测可视化与窗口事件，无桌面运行（如开机自启）时置 true（默认 false）
   verbose_ekf: false      # 每帧输出 EKF 11 维状态，165fps 下会刷满日志（默认 false）
   foxglove: true         # 启用 Foxglove 图像与遥测推送，监听与编码参数见下面的 foxglove 段（默认 false）
-  fire_timeout_ms: 30     # 最后一次真实匹配超过此时间后禁止开火
-  control_timeout_ms: 80  # 最后一次真实匹配超过此时间后停止目标控制
+  fire_timeout_ms: 100     # 最后一次真实匹配超过此时间后禁止开火
+  control_timeout_ms: 200  # 最后一次真实匹配超过此时间后停止目标控制
   feedback_timeout_ms: 100 # 云台姿态反馈超时后停止目标控制
   plan_timeout_ms: 20     # 计划生成超时后停止目标控制
   planner_diagnostics:
-    trace_enabled: true  # 下一次运行记录完整规划；达到上限后自动停止记录
+    trace_enabled: false  # 下一次运行记录完整规划；达到上限后自动停止记录
     trace_mode: all
     trace_directory: logs/planner_trace
     trace_max_mb: 512
@@ -71,14 +71,13 @@ armor_association:
     angle_prior_rad: 0.15
 
 #####-----planner 瞄准/弹道参数（原 aimer，2026-10-03 并入）-----#####
-yaw_offset: -10.0 # degree -2.5  向右为负
-pitch_offset: -5 # degree 2  向上为正
+yaw_offset: -9.0 # degree -2.5  向右为负
+pitch_offset: 0 # degree 2  向上为正
 gap_preaim_enabled: true # 空窗来板边界预瞄；预瞄仅控制，不发弹
 comming_angle: 50 # degree
 leaving_angle: 40 # degree
 decision_speed: 7.5 # rad/s
-high_speed_delay_time: 0.01 # s  规划，下发，云台到达，发弹延迟
-low_speed_delay_time: 0.01 # s 
+launch_delay_time: 0.15 # s 从规划时刻到弹丸出膛的额外延迟补偿，不含弹丸飞行时间
 
 #####-----planner 开火参数（原 shooter，2026-10-03 并入）-----#####
 first_tolerance: 3 # 近距离低速射击容差，degree
@@ -126,16 +125,16 @@ foxglove:
   jpeg_quality: 40    # JPEG 质量 (1-100)
 
 #####-----planner TinyMPC-----#####
-mpc_mode: reference_smoothing # measured_state / reference_smoothing (position-only MCU)
+mpc_mode: measured_state # measured_state / reference_smoothing (position-only MCU)
 fire_thresh: 0.02 # rad，|目标转速| <= decision_speed 时的 MPC 跟踪误差阈值
 fire_thresh_high_speed: 0.04 # rad，|目标转速| > decision_speed 时的 MPC 跟踪误差阈值
 
-max_yaw_acc: 200
+max_yaw_acc: 55
 mpc_cost_yaw:
   scales: [0.1, 1.0, 10.0] # rad, rad/s, rad/s²
-  weights: [9e9, 0, 0.175]
+  weights: [15.0, 0.05, 0.175]
 
 max_pitch_acc: 50
 mpc_cost_pitch:
   scales: [0.1, 1.0, 10.0] # rad, rad/s, rad/s²
-  weights: [15.0, 0, 0.2]
+  weights: [15.0, 0.05, 0.2]

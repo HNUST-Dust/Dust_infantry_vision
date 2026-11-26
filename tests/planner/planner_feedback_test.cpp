@@ -41,7 +41,7 @@ struct Config
     std::ofstream out(path);
     out << "yaw_offset: 0\npitch_offset: 0\n"
         << "fire_thresh: 0.01\n"
-        << "decision_speed: 8\nhigh_speed_delay_time: 0.01\nlow_speed_delay_time: 0.01\n"
+        << "decision_speed: 8\nlaunch_delay_time: 0.01\n"
         << "comming_angle: 55\nleaving_angle: 20\nfirst_tolerance: 1\n"
         << "second_tolerance: 0.5\njudge_distance: 5\nauto_fire: " << (auto_fire ? "true" : "false")
         << "\n"

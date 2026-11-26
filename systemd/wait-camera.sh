@@ -2,7 +2,7 @@
 set -eu
 config_path=${1:-/home/rmul/Dust_infantry_vision/configs/standard3.yaml}
 timeout_seconds=${CAMERA_WAIT_TIMEOUT_SECONDS:-60}
-vid_pid=$(awk '/^[[:space:]]*vid_pid:/ {print $2; exit}' "$config_path" | tr -d "")
+vid_pid=$(awk '/^[[:space:]]*vid_pid:/ {print $2; exit}' "$config_path" | tr -d '\042\047')
 if [ -z "$vid_pid" ]; then
   echo "wait-camera: vid_pid is missing from $config_path" >&2
   exit 1

@@ -38,8 +38,7 @@ pitch_offset: 0
 fire_thresh: 0.02
 fire_thresh_high_speed: 0.04
 decision_speed: 8
-high_speed_delay_time: 0.01
-low_speed_delay_time: 0.01
+launch_delay_time: 0.01
 comming_angle: 55
 leaving_angle: 20
 first_tolerance: 1

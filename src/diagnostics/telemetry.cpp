@@ -36,6 +36,7 @@ nlohmann::json telemetry_json(const TelemetrySnapshot & snapshot)
   data["gimbal_yaw_vel"] = gs.yaw_vel;
   data["gimbal_pitch"] = gs.pitch;
   data["gimbal_pitch_vel"] = gs.pitch_vel;
+  data["bullet_speed"] = gs.bullet_speed;
   data["target_yaw"] = plan.target_yaw;
   data["target_pitch"] = plan.target_pitch;
   data["plan_control"] = plan.control;

@@ -558,7 +558,7 @@ tests/                    调试和测试程序（CMakeLists.txt 集中注册目
 | 瞄准 | `yaw_offset` / `pitch_offset` | 枪管相对瞄准点的机械补偿（度） |
 | 瞄准 | `comming_angle` / `leaving_angle` | 旋转目标的进入/离开角门限（度，拼写与源码一致） |
 | 瞄准 | `decision_speed` | 高/低速判定阈值（rad/s） |
-| 瞄准 | `high_speed_delay_time` / `low_speed_delay_time` | 高/低速下的额外预测时延（秒） |
+| 瞄准 | `launch_delay_time` | 从规划时刻到弹丸出膛的统一延迟补偿（秒），不含弹丸飞行时间 |
 | 射击 | `auto_fire` | 是否由视觉控制射击（`Planner` 使用） |
 | 射击 | `first_tolerance` / `second_tolerance` | 近距离/远距离低速射击角度容差（度） |
 | 射击 | `first_tolerance_high_speed` / `second_tolerance_high_speed` | 近距离/远距离高速射击角度容差（度）；缺省沿用对应低速值 |
@@ -579,7 +579,7 @@ tests/                    调试和测试程序（CMakeLists.txt 集中注册目
 | Foxglove | `foxglove.sched` | `auto`（默认，发布线程降级让出 CPU）或 `off` |
 | Foxglove | `foxglove.jpeg_quality` | JPEG 质量，默认 `80`，范围 `1-100` |
 
-`yaw_offset`、`pitch_offset`、`comming_angle`、`leaving_angle`、`decision_speed`、`high_speed_delay_time`、`low_speed_delay_time`、`first_tolerance`、`second_tolerance`、`judge_distance`、`auto_fire` 全部由 `Planner` 读取（原 `Aimer` / `Shooter` 的键名与取值不变，只是 2026-10-03 起并入 `Planner`）。
+`yaw_offset`、`pitch_offset`、`comming_angle`、`leaving_angle`、`decision_speed`、`launch_delay_time`、`first_tolerance`、`second_tolerance`、`judge_distance`、`auto_fire` 全部由 `Planner` 读取（原 `Aimer` / `Shooter` 自 2026-10-03 起并入 `Planner`；原高低速延迟已合并为 `launch_delay_time`）。
 
 ### `configs/calibration.yaml`
 

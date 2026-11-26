@@ -91,8 +91,7 @@ PlannerConfig PlannerConfig::parse(const tools::YamlConfig & yaml)
   config.fire_thresh = yaml.get<double>("fire_thresh");
   config.fire_thresh_high_speed = yaml.get("fire_thresh_high_speed", config.fire_thresh);
   config.decision_speed = yaml.get<double>("decision_speed");
-  config.high_speed_delay_time = yaml.get<double>("high_speed_delay_time");
-  config.low_speed_delay_time = yaml.get<double>("low_speed_delay_time");
+  config.launch_delay_time = yaml.get<double>("launch_delay_time");
   config.comming_angle = yaml.get<double>("comming_angle") / 57.3;
   config.leaving_angle = yaml.get<double>("leaving_angle") / 57.3;
   config.first_tolerance = yaml.get<double>("first_tolerance") / 57.3;
@@ -124,10 +123,8 @@ PlannerConfig PlannerConfig::parse(const tools::YamlConfig & yaml)
   config.max_state_age = yaml.get("mpc_max_state_age_ms", 20.0) * 1e-3;
   if (!std::isfinite(config.max_state_age) || config.max_state_age <= 0)
     yaml.fail("mpc_max_state_age_ms", "must be finite and positive");
-  if (!std::isfinite(config.low_speed_delay_time) || config.low_speed_delay_time < 0)
-    yaml.fail("low_speed_delay_time", "must be finite and nonnegative");
-  if (!std::isfinite(config.high_speed_delay_time) || config.high_speed_delay_time < 0)
-    yaml.fail("high_speed_delay_time", "must be finite and nonnegative");
+  if (!std::isfinite(config.launch_delay_time) || config.launch_delay_time < 0)
+    yaml.fail("launch_delay_time", "must be finite and nonnegative");
   YAML::Node replay_config;
   for (const auto * key : {"mpc_mode",
                            "yaw_offset",
@@ -135,8 +132,7 @@ PlannerConfig PlannerConfig::parse(const tools::YamlConfig & yaml)
                            "fire_thresh",
                            "fire_thresh_high_speed",
                            "decision_speed",
-                           "high_speed_delay_time",
-                           "low_speed_delay_time",
+                           "launch_delay_time",
                            "comming_angle",
                            "leaving_angle",
                            "first_tolerance",
@@ -183,8 +179,7 @@ Planner::Planner(const PlannerConfig & config)
   fire_thresh_ = config.fire_thresh;
   fire_thresh_high_speed_ = config.fire_thresh_high_speed;
   decision_speed_ = config.decision_speed;
-  high_speed_delay_time_ = config.high_speed_delay_time;
-  low_speed_delay_time_ = config.low_speed_delay_time;
+  launch_delay_time_ = config.launch_delay_time;
   comming_angle_ = config.comming_angle;
   leaving_angle_ = config.leaving_angle;
   first_tolerance_ = config.first_tolerance;
@@ -709,7 +704,7 @@ Plan Planner::plan_at(std::optional<Target> target, std::chrono::steady_clock::t
     trace->bullet_speed = bullet_speed;
   const auto ekf_x = target->ekf_x();
   const bool high_speed = std::abs(ekf_x[7]) > decision_speed_;
-  const double delay = high_speed ? high_speed_delay_time_ : low_speed_delay_time_;
+  const double delay = launch_delay_time_;
   if (trace)
     trace->launch_delay = delay;
   target->predict(now + std::chrono::duration_cast<std::chrono::steady_clock::duration>(
